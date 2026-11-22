@@ -1,0 +1,20 @@
+# OS
+.DS_Store
+
+# AI assistants and agent configurations
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.opencode/
+.windsurf/
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+
+# Impeccable design tooling artifacts
+.impeccable/
+/DESIGN.md
+/PRODUCT.md
