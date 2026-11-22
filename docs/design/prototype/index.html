@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* ==========================================================================
-   CodeLab Studio v3.1 — Arc UI Calm & Progressive Disclosure Edition
+   CodeLab Studio v3.2 — Balanced Density Edition
    原则：单一视觉入口 · 渐进披露 · 纯中性留白 · 零认知压力
    ========================================================================== */
 :root {
@@ -52,9 +52,6 @@
   --topbar-h: 48px;
   --tabbar-h: 38px;
   --tree-w: 204px;
-  --manual-w: 38%;
-  --ai-w: 368px;
-  --term-h: 212px;
   --code-size: 13.5px;
   --code-lh: 22px;
 }
@@ -381,16 +378,16 @@ h1, h2, h3, h4, p { margin: 0; }
 .view.is-active { display: flex; flex-direction: column; }
 
 /* ================= VIEW 1: CALM WELCOME HOME (Single Clear Entry) ================= */
-.welcome-scroll { flex: 1; overflow-y: auto; padding: 36px 40px 72px; background: var(--background); }
-.welcome-inner { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+.welcome-scroll { flex: 1; overflow-y: auto; padding: 24px 48px 40px; background: var(--background); }
+.welcome-inner { max-width: var(--home-max-w); margin: 0 auto; display: flex; flex-direction: column; gap: var(--home-section-gap); }
 
 /* Centered Arc Atmospheric Hero — ONE unmistakable entry point */
 .hero-panel {
   border-radius: var(--r-surface);
   background: var(--arc-hero-bg);
   border: 1px solid var(--border);
-  padding: 52px 44px;
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px;
+  padding: 26px 32px;
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px;
 }
 .hero-eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
@@ -400,26 +397,26 @@ h1, h2, h3, h4, p { margin: 0; }
   font-size: 12px; color: var(--text-secondary);
 }
 .hero-panel h1 {
-  font-family: var(--font-display); font-size: 40px; line-height: 1.12;
+  font-family: var(--font-display); font-size: 34px; line-height: 1.12;
   font-weight: 500; letter-spacing: var(--tracking-display); color: var(--foreground);
-  max-width: 18ch;
+  max-width: none;
 }
 .hero-panel .hero-sub {
-  font-size: 15px; line-height: 1.55; color: var(--text-secondary); max-width: 44ch;
+  font-size: 14px; line-height: 1.55; color: var(--text-secondary); max-width: 60ch;
 }
 .hero-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 .hero-foot {
   display: flex; align-items: center; justify-content: center; gap: 16px;
-  margin-top: 6px; font-size: 12px; color: var(--text-muted);
+  margin-top: 0; font-size: 12px; color: var(--text-muted);
 }
 
-/* Course Library — Airy, Scannable, 1-line descriptions */
+/* Course Library — Balanced 2×2 cards */
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .section-head h2 { font-family: var(--font-display); font-size: 18px; font-weight: 500; letter-spacing: -0.02em; }
 
-.course-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.course-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--course-gap); }
 .c-card {
-  display: flex; flex-direction: column; gap: 14px; padding: 22px 24px;
+  display: flex; flex-direction: column; gap: 9px; padding: var(--course-padding);
   border-radius: 18px; background: var(--surface); border: 1px solid var(--border);
   transition: border-color var(--dur-fast), box-shadow var(--dur-base) var(--ease-standard), transform var(--dur-base) var(--ease-standard);
   cursor: pointer;
@@ -436,24 +433,24 @@ h1, h2, h3, h4, p { margin: 0; }
   background: var(--surface); border: 1px solid var(--border); overflow: hidden;
 }
 .recent-row {
-  display: flex; align-items: center; gap: 14px; padding: 13px 18px;
+  display: flex; align-items: center; gap: 14px; padding: 9px 16px;
   border-bottom: 1px solid var(--border-subtle); transition: background var(--dur-fast);
   cursor: pointer;
 }
 .recent-row:last-child { border-bottom: 0; }
 .recent-row:hover { background: var(--surface-muted); }
 
-/* ================= VIEW 2: CALM TWO-PANE DEFAULT WORKBENCH ================= */
+/* ================= VIEW 2: TWO-PANE DEFAULT WORKBENCH ================= */
 .wb { flex: 1; min-height: 0; display: flex; position: relative; overflow: hidden; background: var(--background); }
 
 /* Left Pane: Guided 3-Step Editorial Manual */
 .pane-left {
-  width: var(--manual-w); min-width: 340px; max-width: 54%; flex: none;
+  width: var(--manual-w); min-width: 320px; max-width: 54%; flex: none;
   display: flex; flex-direction: column; background: var(--surface);
   border-right: 1px solid var(--border); position: relative;
   transition: width var(--dur-base) var(--ease-standard);
 }
-.wb.is-focus .pane-left { width: 44px !important; min-width: 44px; }
+.wb.is-focus .pane-left { width: 52px !important; min-width: 52px; }
 .wb.is-focus .manual-head-full, .wb.is-focus .manual-scroll, .wb.is-focus .outline-drawer { display: none !important; }
 .focus-rail { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 12px 0; height: 100%; background: var(--sidebar-fill); }
 .wb.is-focus .focus-rail { display: flex; }
@@ -483,10 +480,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .ch-item:hover { background: var(--hover-fill); color: var(--foreground); }
 .ch-item.is-active { background: var(--surface-muted); color: var(--foreground); font-weight: 500; }
 
-.manual-scroll { flex: 1; overflow-y: auto; padding: 28px 32px 60px; }
-.manual-inner { max-width: 580px; display: flex; flex-direction: column; gap: 26px; }
-.manual-hero { display: flex; flex-direction: column; gap: 10px; }
-.manual-hero h2 { font-family: var(--font-display); font-size: 23px; line-height: 1.24; font-weight: 500; letter-spacing: -0.025em; }
+.manual-scroll { flex: 1; overflow-y: auto; padding: var(--manual-padding); }
+.manual-inner { max-width: 580px; display: flex; flex-direction: column; gap: var(--manual-section-gap); }
+.manual-hero { display: flex; flex-direction: column; gap: 6px; }
+.manual-hero h2 { font-family: var(--font-display); font-size: 21px; line-height: 1.24; font-weight: 500; letter-spacing: -0.025em; }
 .manual-hero p { font-size: 14px; line-height: 1.65; color: var(--text-secondary); }
 .manual-inner code {
   font-family: var(--font-mono); font-size: 12px; padding: 2px 6px;
@@ -495,7 +492,7 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 /* Numbered Guided Step Blocks — crystal-clear reading order */
-.step-section { display: flex; flex-direction: column; gap: 11px; }
+.step-section { display: flex; flex-direction: column; gap: 8px; }
 .step-head { display: flex; align-items: center; gap: 9px; }
 .step-num {
   width: 22px; height: 22px; border-radius: 50%; flex: none;
@@ -529,16 +526,16 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .cwd-pill:hover { border-color: var(--border-strong); color: var(--foreground); }
 .cmd-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
-.cmd-code { margin: 0; padding: 13px 14px; font-family: var(--font-mono); font-size: 13px; line-height: 20px; overflow-x: auto; color: var(--foreground); user-select: text; }
+.cmd-code { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 13px; line-height: 20px; overflow-x: auto; color: var(--foreground); user-select: text; }
 
 /* Verification Card — crisp & uncluttered */
 .verify-card {
   border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
-  padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; display: flex; flex-direction: column; gap: 7px;
 }
 .verify-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .v-item {
-  display: flex; flex-direction: column; gap: 8px; padding: 9px 11px;
+  display: flex; flex-direction: column; gap: 8px; padding: 7px 9px;
   border-radius: 10px; background: var(--surface-muted); border: 1px solid var(--border-subtle);
 }
 .v-row { display: flex; align-items: center; gap: 9px; font-size: 13px; }
@@ -587,7 +584,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .split-y:hover::after, .split-y.is-drag::after { background: var(--accent); }
 
 /* Center Pane: Collapsible File Tree (collapsed by default!) + Spacious Editor + Compact Bottom */
-.pane-center { flex: 1; min-width: 360px; display: flex; flex-direction: column; min-height: 0; background: var(--background); }
+.pane-center { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--background); }
 .center-top { flex: 1; min-height: 180px; display: flex; min-width: 0; overflow: hidden; }
 
 .tree-pane {
@@ -841,14 +838,23 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; }
 .toasts { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 120; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
 .toast { display: flex; align-items: center; gap: 9px; padding: 9px 15px; pointer-events: auto; border-radius: var(--r-pill); background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-floating); font-size: 12.5px; font-weight: 500; white-space: nowrap; animation: popIn var(--dur-base) var(--ease-enter); }
 
-/* Responsive Desktop */
-.wb.has-ai .pane-left { width: 32%; }
-@media (max-width: 1360px) {
-  .wb.has-ai .tree-pane { width: 0; border-right: 0; }
+/* B: preserve the editor while the AI drawer is docked. */
+.wb.has-ai .pane-left {
+  width: calc(100% - var(--ai-w) - var(--editor-docked-min-w));
+  max-width: calc(100% - var(--ai-w) - var(--editor-docked-min-w));
+}
+.wb.has-ai .manual-scroll { padding: 18px 18px 28px; }
+.wb.has-ai .tree-pane { width: 0; border-right: 0; }
+.ai-protocol { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); }
+.ai-protocol button { flex: 1; border-radius: 8px; padding: 6px; background: var(--surface-muted); color: var(--text-secondary); font-size: 12px; }
+.ai-protocol button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
+.ai-hint { font-size: 11px; color: var(--text-muted); padding: 7px 14px; border-bottom: 1px solid var(--border-subtle); }
+@media (max-width: 1439px) {
+  .wb.has-ai .manual-hero p { font-size: 13px; }
 }
 @media (max-width: 1279px) {
   .pane-ai { position: absolute; right: 0; top: 0; bottom: 0; z-index: 35; box-shadow: var(--shadow-floating); }
-  .wb.has-ai .pane-left { width: var(--manual-w); }
+  .wb.has-ai .pane-left { width: var(--manual-w); max-width: 54%; }
 }
 @media (max-width: 960px) {
   .course-grid { grid-template-columns: 1fr; }
@@ -859,6 +865,7 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 </style>
+<link rel="stylesheet" href="../tokens.css">
 </head>
 <body>
 <a href="#mainView" class="skip-link">跳到主内容</a>
@@ -1111,7 +1118,7 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; }
         </section>
 
         <!-- RIGHT PANE: AI Tutor Drawer (On-Demand) -->
-        <aside class="pane-ai" id="paneAi" aria-label="AI 助教">
+        <aside class="pane-ai" id="paneAi" aria-label="AI 助教" inert>
           <div class="ai-inner">
             <div class="ai-head">
               <span class="ic" data-ic="sparkles" data-s="15" style="color:var(--ai)"></span>
@@ -1119,6 +1126,11 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; }
               <button class="badge badge--ai" id="aiBackendBadge" title="切换 BYOK 或 ACP Agent" style="cursor:pointer">ACP · Claude Code</button>
               <button class="btn btn--ghost btn--icon btn--xs" style="margin-left:auto" id="closeAiBtn" aria-label="关闭"><span class="ic" data-ic="x" data-s="14"></span></button>
             </div>
+            <div class="ai-protocol" id="aiProtocolSeg" role="group" aria-label="AI 连接方式">
+              <button data-proto="byok" aria-pressed="false">BYOK 对话</button>
+              <button data-proto="acp" aria-pressed="true">ACP Agent</button>
+            </div>
+            <p class="ai-hint">原型演示 · 回复与权限审批均为模拟</p>
             <div class="ai-mode-bar">
               <div class="seg" id="aiStyleSeg" role="group" aria-label="教学风格">
                 <button data-style="socratic" aria-pressed="true">引导思考</button>
@@ -2176,11 +2188,30 @@ selBar.addEventListener('click', e => { const b = e.target.closest('[data-selact
 $('#manualScroll').addEventListener('scroll', hideSelBar); $('#editorBody').addEventListener('scroll', hideSelBar); $('#termViewport').addEventListener('scroll', hideSelBar);
 
 /* AI Drawer */
-function setAiOpen(on) { STATE.aiOpen = on; $('#wb').classList.toggle('has-ai', on); $('#aiDrawerBtn').setAttribute('aria-pressed', on); }
+function setAiOpen(on) {
+  const wasOpen = STATE.aiOpen;
+  STATE.aiOpen = on;
+  $('#wb').classList.toggle('has-ai', on);
+  $('#paneAi').inert = !on;
+  $('#aiDrawerBtn').setAttribute('aria-pressed', on);
+  if (on && !wasOpen) $('#aiInput').focus();
+  if (!on && wasOpen) $('#aiDrawerBtn').focus();
+}
 $('#aiDrawerBtn').onclick = () => setAiOpen(!STATE.aiOpen);
 $('#closeAiBtn').onclick = () => setAiOpen(false);
 $('#aiBackendBadge').onclick = () => openSettings('ai');
-function syncAiBadges() { $('#aiBackendBadge').textContent = STATE.aiProto === 'acp' ? `ACP · ${STATE.aiAgentName}` : `BYOK · ${STATE.aiProviderName}`; }
+function syncAiBadges() { $('#aiBackendBadge').textContent = STATE.aiProto === 'acp' ? `ACP · ${STATE.aiAgentName}` : `BYOK · ${STATE.aiProviderName}`;
+  $$('#aiProtocolSeg button, #aiProtoSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.proto === STATE.aiProto));
+  $('#protoByokBox').style.display = STATE.aiProto === 'byok' ? 'flex' : 'none';
+  $('#protoAcpBox').style.display = STATE.aiProto === 'acp' ? 'flex' : 'none';
+}
+function selectAiProtocol(e) {
+  const button = e.target.closest('[data-proto]');
+  if (!button) return;
+  STATE.aiProto = button.dataset.proto;
+  syncAiBadges();
+}
+$('#aiProtocolSeg').onclick = selectAiProtocol;
 function updateFileChip() {
   const f = getActiveFileObj(); if (!f) return;
   const ex = STATE.aiChips.find(x => x.id === 'file');
@@ -2276,7 +2307,7 @@ $('#exitFocusBtn').onclick = () => $('#wb').classList.remove('is-focus');
 (function initSplits() {
   const sl = $('#splitLeft'), pl = $('#paneLeft'), sb = $('#splitBottom'), cb = $('#centerBottom');
   sl.addEventListener('dblclick', () => { pl.style.width = ''; });
-  sl.addEventListener('pointerdown', e => { e.preventDefault(); sl.setPointerCapture(e.pointerId); sl.classList.add('is-drag'); const m = ev => { pl.style.width = Math.max(320, Math.min(innerWidth * 0.54, ev.clientX)) + 'px'; }; const u = () => { sl.classList.remove('is-drag'); sl.removeEventListener('pointermove', m); sl.removeEventListener('pointerup', u); }; sl.addEventListener('pointermove', m); sl.addEventListener('pointerup', u); });
+  sl.addEventListener('pointerdown', e => { e.preventDefault(); sl.setPointerCapture(e.pointerId); sl.classList.add('is-drag'); const m = ev => { const docked = STATE.aiOpen && innerWidth >= 1280; const maxWidth = docked ? innerWidth - $('#paneAi').offsetWidth - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--editor-docked-min-w')) : innerWidth * 0.54; pl.style.width = Math.max(320, Math.min(maxWidth, ev.clientX)) + 'px'; }; const u = () => { sl.classList.remove('is-drag'); sl.removeEventListener('pointermove', m); sl.removeEventListener('pointerup', u); }; sl.addEventListener('pointermove', m); sl.addEventListener('pointerup', u); });
   sb.addEventListener('pointerdown', e => { e.preventDefault(); sb.setPointerCapture(e.pointerId); sb.classList.add('is-drag'); cb.classList.remove('is-max'); const m = ev => { cb.style.height = Math.max(115, Math.min(innerHeight - 220, innerHeight - ev.clientY)) + 'px'; }; const u = () => { sb.classList.remove('is-drag'); sb.removeEventListener('pointermove', m); sb.removeEventListener('pointerup', u); }; sb.addEventListener('pointermove', m); sb.addEventListener('pointerup', u); });
 })();
 
@@ -2308,7 +2339,7 @@ $('#openRtSettings').onclick = () => { $('#preflightPop').classList.remove('is-o
 function openSettings(tab = 'ai') { openModal('settingsModal'); $$('#settingsNav button').forEach(b => b.classList.toggle('is-active', b.dataset.stab === tab)); $$('.s-pane').forEach(p => p.classList.toggle('is-active', p.dataset.spane === tab)); }
 $('#settingsBtn').onclick = () => openSettings('ai');
 $('#settingsNav').onclick = e => { const b = e.target.closest('[data-stab]'); if (b) openSettings(b.dataset.stab); };
-$('#aiProtoSeg').onclick = e => { const b = e.target.closest('[data-proto]'); if (!b) return; STATE.aiProto = b.dataset.proto; $$('#aiProtoSeg button').forEach(x => x.setAttribute('aria-pressed', x === b)); $('#protoByokBox').style.display = STATE.aiProto === 'byok' ? 'flex' : 'none'; $('#protoAcpBox').style.display = STATE.aiProto === 'acp' ? 'flex' : 'none'; };
+$('#aiProtoSeg').onclick = selectAiProtocol;
 const BYOK_MAP = { deepseek: ['DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat'], openai: ['OpenAI', 'https://api.openai.com/v1', 'gpt-4.1-mini'], anthropic: ['Anthropic', 'https://api.anthropic.com', 'claude-sonnet-4'], ollama: ['Ollama', 'http://127.0.0.1:11434/v1', 'qwen2.5-coder:14b'], custom: ['自定义', 'https://endpoint.example/v1', 'model'] };
 $('#byokPreset').onchange = e => { const [n, u, m] = BYOK_MAP[e.target.value]; STATE.aiProviderName = n; $('#byokUrl').value = u; $('#byokModel').value = m; };
 const ACP_MAP = { claude: ['Claude Code', 'claude --acp'], gemini: ['Gemini CLI', 'gemini --acp'], codex: ['Codex CLI', 'codex --acp'], opencode: ['OpenCode', 'opencode acp'], custom: ['自定义 Agent', 'my-agent --acp'] };
@@ -2366,7 +2397,7 @@ $('#compareDiffBtn').onclick = () => {
 
 document.addEventListener('keydown', e => {
   const mod = e.metaKey || e.ctrlKey;
-  if (e.key === 'Escape') { hideSelBar(); $$('.overlay.is-open').forEach(m => m.classList.remove('is-open')); $('#appearanceDrawer').classList.remove('is-open'); $('#preflightPop').classList.remove('is-open'); $('#courseDdMenu').classList.remove('is-open'); }
+  if (e.key === 'Escape') { if (!document.querySelector('.overlay.is-open, .drawer-scrim.is-open')) setAiOpen(false); hideSelBar(); $$('.overlay.is-open').forEach(m => m.classList.remove('is-open')); $('#appearanceDrawer').classList.remove('is-open'); $('#preflightPop').classList.remove('is-open'); $('#courseDdMenu').classList.remove('is-open'); }
   if (mod && e.key.toLowerCase() === 'b' && STATE.view === 'workbench') { e.preventDefault(); $('#wb').classList.toggle('is-focus'); }
   if (mod && e.key.toLowerCase() === 's' && STATE.view === 'workbench') { e.preventDefault(); saveActiveFile(); }
 });

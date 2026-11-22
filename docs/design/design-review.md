@@ -1,7 +1,24 @@
-# CodeLab Studio v3.1 — 设计评审与实机验证报告
+# CodeLab Studio — 设计评审与实机验证报告
 
 > 评审对象：[design-system.md](./design-system.md) · [tokens.css](./tokens.css) · [tailwind.config.js](./tailwind.config.js) · [prototype/index.html](./prototype/index.html)
 > 实机截图：[首页](./screenshots/01-welcome-light.png) · [默认两栏工作台](./screenshots/02-workbench-default-light.png) · [按需展开 AI 与 ACP](./screenshots/03-workbench-active-ai.png) · [深色模式验收通过](./screenshots/04-workbench-dark.png)
+
+---
+
+## B 方案定稿验证（v3.2）
+
+用户选定 B「均衡紧凑」。正式原型已同步首页卡片密度、三步手册间距、360px AI 抽屉与 BYOK / ACP 直接切换，移除实验控制条。旧版截图和下文 R1–R3 记录保留为历史证据。
+
+Google Chrome 157.0.8103.80 无头模式，设备缩放比 1，共生成 16 张正式原型截图。45 项浏览器检查通过；捕获状态无 JavaScript 错误及页面横向溢出。AI 展开时，两种尺寸、两种主题下的编辑区均为 560px。检查包含协议与设置同步、审批允许/拒绝、上下文删除、Esc 与关闭按钮、焦点恢复、隐藏抽屉不可聚焦、分栏拖拽宽度限制，以及 1024px 覆盖抽屉。具体结果见 [verification.json](./screenshots/b-balanced/verification.json)。
+
+| 尺寸与主题 | 首页 | 工作台 | BYOK | ACP |
+|---|---|---|---|---|
+| 1440x900 浅色 | [home](./screenshots/b-balanced/home-1440x900-light.png) | [work](./screenshots/b-balanced/work-1440x900-light.png) | [ai](./screenshots/b-balanced/ai-1440x900-light.png) | [acp](./screenshots/b-balanced/acp-1440x900-light.png) |
+| 1440x900 深色 | [home](./screenshots/b-balanced/home-1440x900-dark.png) | [work](./screenshots/b-balanced/work-1440x900-dark.png) | [ai](./screenshots/b-balanced/ai-1440x900-dark.png) | [acp](./screenshots/b-balanced/acp-1440x900-dark.png) |
+| 1280x800 浅色 | [home](./screenshots/b-balanced/home-1280x800-light.png) | [work](./screenshots/b-balanced/work-1280x800-light.png) | [ai](./screenshots/b-balanced/ai-1280x800-light.png) | [acp](./screenshots/b-balanced/acp-1280x800-light.png) |
+| 1280x800 深色 | [home](./screenshots/b-balanced/home-1280x800-dark.png) | [work](./screenshots/b-balanced/work-1280x800-dark.png) | [ai](./screenshots/b-balanced/ai-1280x800-dark.png) | [acp](./screenshots/b-balanced/acp-1280x800-dark.png) |
+
+AI 与终端依然是交互模拟，以上检查不表示已接通实际模型或 ACP 进程。
 
 ---
 

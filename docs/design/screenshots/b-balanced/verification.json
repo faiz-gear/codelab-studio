@@ -1,0 +1,1152 @@
+{
+  "browser": "157.0.8103.80",
+  "checks": [
+    {
+      "name": "1440/light/home: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/light/work: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/light/ai: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/light/ai: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1440/light/ai: input visible",
+      "pass": true
+    },
+    {
+      "name": "1440/light/acp: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/light/acp: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1440/light/acp: input visible",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/home: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/work: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/ai: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/ai: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/ai: input visible",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/acp: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/acp: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1440/dark/acp: input visible",
+      "pass": true
+    },
+    {
+      "name": "1280/light/home: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/light/work: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/light/ai: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/light/ai: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1280/light/ai: input visible",
+      "pass": true
+    },
+    {
+      "name": "1280/light/acp: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/light/acp: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1280/light/acp: input visible",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/home: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/work: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/ai: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/ai: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/ai: input visible",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/acp: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/acp: editor >= 520",
+      "pass": true
+    },
+    {
+      "name": "1280/dark/acp: input visible",
+      "pass": true
+    },
+    {
+      "name": "protocol synchronized into settings",
+      "pass": true
+    },
+    {
+      "name": "protocol synchronized into drawer",
+      "pass": true
+    },
+    {
+      "name": "Escape closes AI",
+      "pass": true
+    },
+    {
+      "name": "focus returns to AI button",
+      "pass": true
+    },
+    {
+      "name": "closed drawer inert",
+      "pass": true
+    },
+    {
+      "name": "drag preserves editor width",
+      "pass": true
+    },
+    {
+      "name": "removable context",
+      "pass": true
+    },
+    {
+      "name": "reject approval",
+      "pass": true
+    },
+    {
+      "name": "allow approval",
+      "pass": true
+    },
+    {
+      "name": "1024 overlay",
+      "pass": true
+    },
+    {
+      "name": "1024 no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "close button",
+      "pass": true
+    },
+    {
+      "name": "no page errors",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "captures": [
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "scene": "home",
+      "file": "home-1440x900-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "manual": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "ai": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "input": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "verify": null,
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cards": [
+        528.453125,
+        528.453125,
+        668.140625,
+        668.140625
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "scene": "work",
+      "file": "work-1440x900-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 504,
+        "y": 84,
+        "width": 935,
+        "height": 532,
+        "bottom": 616,
+        "right": 1439
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 504,
+        "height": 852,
+        "bottom": 900,
+        "right": 504
+      },
+      "ai": {
+        "x": 1439,
+        "y": 48,
+        "width": 1,
+        "height": 852,
+        "bottom": 900,
+        "right": 1440
+      },
+      "input": {
+        "x": 1455,
+        "y": 797.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 848,
+        "right": 1785
+      },
+      "verify": {
+        "x": 378.546875,
+        "y": 482.71875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 512.71875,
+        "right": 468
+      },
+      "terminal": {
+        "x": 504,
+        "y": 644,
+        "width": 935,
+        "height": 256,
+        "bottom": 900,
+        "right": 1439
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "scene": "ai",
+      "file": "ai-1440x900-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 520,
+        "y": 84,
+        "width": 560,
+        "height": 532,
+        "bottom": 616,
+        "right": 1080
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 520,
+        "height": 852,
+        "bottom": 900,
+        "right": 520
+      },
+      "ai": {
+        "x": 1080,
+        "y": 48,
+        "width": 360,
+        "height": 852,
+        "bottom": 900,
+        "right": 1440
+      },
+      "input": {
+        "x": 1096,
+        "y": 797.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 848,
+        "right": 1426
+      },
+      "verify": {
+        "x": 398.546875,
+        "y": 456.921875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 486.921875,
+        "right": 488
+      },
+      "terminal": {
+        "x": 520,
+        "y": 644,
+        "width": 560,
+        "height": 256,
+        "bottom": 900,
+        "right": 1080
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "scene": "acp",
+      "file": "acp-1440x900-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 520,
+        "y": 84,
+        "width": 560,
+        "height": 532,
+        "bottom": 616,
+        "right": 1080
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 520,
+        "height": 852,
+        "bottom": 900,
+        "right": 520
+      },
+      "ai": {
+        "x": 1080,
+        "y": 48,
+        "width": 360,
+        "height": 852,
+        "bottom": 900,
+        "right": 1440
+      },
+      "input": {
+        "x": 1096,
+        "y": 797.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 848,
+        "right": 1426
+      },
+      "verify": {
+        "x": 398.546875,
+        "y": 456.921875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 486.921875,
+        "right": 488
+      },
+      "terminal": {
+        "x": 520,
+        "y": 644,
+        "width": 560,
+        "height": 256,
+        "bottom": 900,
+        "right": 1080
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "dark",
+      "scene": "home",
+      "file": "home-1440x900-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "manual": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "ai": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "input": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "verify": null,
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cards": [
+        528.453125,
+        528.453125,
+        668.140625,
+        668.140625
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "dark",
+      "scene": "work",
+      "file": "work-1440x900-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 504,
+        "y": 84,
+        "width": 935,
+        "height": 532,
+        "bottom": 616,
+        "right": 1439
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 504,
+        "height": 852,
+        "bottom": 900,
+        "right": 504
+      },
+      "ai": {
+        "x": 1439,
+        "y": 48,
+        "width": 1,
+        "height": 852,
+        "bottom": 900,
+        "right": 1440
+      },
+      "input": {
+        "x": 1455,
+        "y": 797.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 848,
+        "right": 1785
+      },
+      "verify": {
+        "x": 378.546875,
+        "y": 482.71875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 512.71875,
+        "right": 468
+      },
+      "terminal": {
+        "x": 504,
+        "y": 644,
+        "width": 935,
+        "height": 256,
+        "bottom": 900,
+        "right": 1439
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "dark",
+      "scene": "ai",
+      "file": "ai-1440x900-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 520,
+        "y": 84,
+        "width": 560,
+        "height": 532,
+        "bottom": 616,
+        "right": 1080
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 520,
+        "height": 852,
+        "bottom": 900,
+        "right": 520
+      },
+      "ai": {
+        "x": 1080,
+        "y": 48,
+        "width": 360,
+        "height": 852,
+        "bottom": 900,
+        "right": 1440
+      },
+      "input": {
+        "x": 1096,
+        "y": 797.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 848,
+        "right": 1426
+      },
+      "verify": {
+        "x": 398.546875,
+        "y": 456.921875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 486.921875,
+        "right": 488
+      },
+      "terminal": {
+        "x": 520,
+        "y": 644,
+        "width": 560,
+        "height": 256,
+        "bottom": 900,
+        "right": 1080
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "theme": "dark",
+      "scene": "acp",
+      "file": "acp-1440x900-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 520,
+        "y": 84,
+        "width": 560,
+        "height": 532,
+        "bottom": 616,
+        "right": 1080
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 520,
+        "height": 852,
+        "bottom": 900,
+        "right": 520
+      },
+      "ai": {
+        "x": 1080,
+        "y": 48,
+        "width": 360,
+        "height": 852,
+        "bottom": 900,
+        "right": 1440
+      },
+      "input": {
+        "x": 1096,
+        "y": 797.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 848,
+        "right": 1426
+      },
+      "verify": {
+        "x": 398.546875,
+        "y": 456.921875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 486.921875,
+        "right": 488
+      },
+      "terminal": {
+        "x": 520,
+        "y": 644,
+        "width": 560,
+        "height": 256,
+        "bottom": 900,
+        "right": 1080
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "light",
+      "scene": "home",
+      "file": "home-1280x800-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "manual": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "ai": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "input": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "verify": null,
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cards": [
+        528.453125,
+        528.453125,
+        668.140625,
+        668.140625
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "light",
+      "scene": "work",
+      "file": "work-1280x800-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 448,
+        "y": 84,
+        "width": 831,
+        "height": 432,
+        "bottom": 516,
+        "right": 1279
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 448,
+        "height": 752,
+        "bottom": 800,
+        "right": 448
+      },
+      "ai": {
+        "x": 1279,
+        "y": 48,
+        "width": 1,
+        "height": 752,
+        "bottom": 800,
+        "right": 1280
+      },
+      "input": {
+        "x": 1295,
+        "y": 697.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 748,
+        "right": 1625
+      },
+      "verify": {
+        "x": 322.546875,
+        "y": 482.71875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 512.71875,
+        "right": 412
+      },
+      "terminal": {
+        "x": 448,
+        "y": 544,
+        "width": 831,
+        "height": 256,
+        "bottom": 800,
+        "right": 1279
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "light",
+      "scene": "ai",
+      "file": "ai-1280x800-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 360,
+        "y": 84,
+        "width": 560,
+        "height": 432,
+        "bottom": 516,
+        "right": 920
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 360
+      },
+      "ai": {
+        "x": 920,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 1280
+      },
+      "input": {
+        "x": 936,
+        "y": 697.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 748,
+        "right": 1266
+      },
+      "verify": {
+        "x": 238.546875,
+        "y": 498.3125,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 528.3125,
+        "right": 328
+      },
+      "terminal": {
+        "x": 360,
+        "y": 544,
+        "width": 560,
+        "height": 256,
+        "bottom": 800,
+        "right": 920
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "light",
+      "scene": "acp",
+      "file": "acp-1280x800-light.png",
+      "overflow": false,
+      "editor": {
+        "x": 360,
+        "y": 84,
+        "width": 560,
+        "height": 432,
+        "bottom": 516,
+        "right": 920
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 360
+      },
+      "ai": {
+        "x": 920,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 1280
+      },
+      "input": {
+        "x": 936,
+        "y": 697.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 748,
+        "right": 1266
+      },
+      "verify": {
+        "x": 238.546875,
+        "y": 498.3125,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 528.3125,
+        "right": 328
+      },
+      "terminal": {
+        "x": 360,
+        "y": 544,
+        "width": 560,
+        "height": 256,
+        "bottom": 800,
+        "right": 920
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "dark",
+      "scene": "home",
+      "file": "home-1280x800-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "manual": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "ai": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "input": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "verify": null,
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "bottom": 0,
+        "right": 0
+      },
+      "cards": [
+        528.453125,
+        528.453125,
+        668.140625,
+        668.140625
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "dark",
+      "scene": "work",
+      "file": "work-1280x800-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 448,
+        "y": 84,
+        "width": 831,
+        "height": 432,
+        "bottom": 516,
+        "right": 1279
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 448,
+        "height": 752,
+        "bottom": 800,
+        "right": 448
+      },
+      "ai": {
+        "x": 1279,
+        "y": 48,
+        "width": 1,
+        "height": 752,
+        "bottom": 800,
+        "right": 1280
+      },
+      "input": {
+        "x": 1295,
+        "y": 697.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 748,
+        "right": 1625
+      },
+      "verify": {
+        "x": 322.546875,
+        "y": 482.71875,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 512.71875,
+        "right": 412
+      },
+      "terminal": {
+        "x": 448,
+        "y": 544,
+        "width": 831,
+        "height": 256,
+        "bottom": 800,
+        "right": 1279
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "dark",
+      "scene": "ai",
+      "file": "ai-1280x800-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 360,
+        "y": 84,
+        "width": 560,
+        "height": 432,
+        "bottom": 516,
+        "right": 920
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 360
+      },
+      "ai": {
+        "x": 920,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 1280
+      },
+      "input": {
+        "x": 936,
+        "y": 697.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 748,
+        "right": 1266
+      },
+      "verify": {
+        "x": 238.546875,
+        "y": 498.3125,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 528.3125,
+        "right": 328
+      },
+      "terminal": {
+        "x": 360,
+        "y": 544,
+        "width": 560,
+        "height": 256,
+        "bottom": 800,
+        "right": 920
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "theme": "dark",
+      "scene": "acp",
+      "file": "acp-1280x800-dark.png",
+      "overflow": false,
+      "editor": {
+        "x": 360,
+        "y": 84,
+        "width": 560,
+        "height": 432,
+        "bottom": 516,
+        "right": 920
+      },
+      "manual": {
+        "x": 0,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 360
+      },
+      "ai": {
+        "x": 920,
+        "y": 48,
+        "width": 360,
+        "height": 752,
+        "bottom": 800,
+        "right": 1280
+      },
+      "input": {
+        "x": 936,
+        "y": 697.5,
+        "width": 330,
+        "height": 50.5,
+        "bottom": 748,
+        "right": 1266
+      },
+      "verify": {
+        "x": 238.546875,
+        "y": 498.3125,
+        "width": 89.453125,
+        "height": 30,
+        "bottom": 528.3125,
+        "right": 328
+      },
+      "terminal": {
+        "x": 360,
+        "y": 544,
+        "width": 560,
+        "height": 256,
+        "bottom": 800,
+        "right": 920
+      },
+      "cards": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

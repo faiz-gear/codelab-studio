@@ -1,5 +1,5 @@
 /* ==========================================================================
-   CodeLab Studio — Design Tokens v3.0 (Arc UI Design Language)
+   CodeLab Studio — Design Tokens v3.2 (Arc UI Design Language)
    参考来源：https://uiarc.dev/docs/introduction · /docs/theming · /docs/motion
    三层架构：Primitives (oklch 纯中性灰 + 冷却粉彩色系) → Semantic → Component
    支持：Light（默认）/ Dark 双主题 × 8 组内建强调色（data-accent）× 弹簧物理动效
@@ -83,8 +83,8 @@
   --tabbar-h: 36px;
   --cmdhead-h: 34px;
   --tree-w: 204px;
-  --manual-w: 36%;
-  --ai-w: 376px;
+  --manual-w: 35%;
+  --ai-w: 360px;
   --term-h: 256px;
 }
 
@@ -260,6 +260,14 @@
 
 /* ---------- Layer 3 · Component ---------- */
 :root {
+  /* B · Balanced density */
+  --home-max-w: 1080px;
+  --home-section-gap: 24px;
+  --course-gap: 12px;
+  --course-padding: 16px 20px;
+  --manual-padding: 20px 22px 28px;
+  --manual-section-gap: 17px;
+  --editor-docked-min-w: 560px;
   --btn-h-xs: 26px;
   --btn-h-sm: 30px;
   --btn-h-md: 34px;
