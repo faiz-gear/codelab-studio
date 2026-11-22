@@ -1,25 +1,34 @@
 # CodeLab Studio
 
-面向个人开发者的**本地交互式编程实践学习工作台**——将任意符合约定的静态 Markdown 开发实践手册转化为「交互式导学手册 + 本地代码工作区 + 一键多终端执行 + 划选上下文感知 AI 助教 + 自动化验收」的一体化实战环境。
+开源、本地优先（Local-first）的 **Tauri 2 桌面交互式编程实践工作台**——将任意标准 Markdown 实践手册或本地 / Git 课程包，转化为「编号引导手册 + 本地代码工作区 + 智能多终端与四语言函数判题 + 划选上下文感知 AI / ACP 助教」一体化实战环境。
 
-## 项目目录结构
+- **支持语言**：JS/TS、Go、Java、Python（内置托管隔离运行时与多文件函数判题）
+- **AI 助教**：支持自定义 LLM Provider（BYOK，钥匙串加密）与 **ACP（Agent Client Protocol）** 连接本地 Coding Agent
+- **视觉体系**：采用 **Arc UI** 纯中性极简风格（浅/深双主题 × 8 组强调色 × 渐进披露工作台）
+
+## 项目文档与产物导航
 
 ```text
 codelab-studio/
 ├── README.md
 └── docs/
-    └── prd/
-        ├── 01-需求清单与优先级排序.md
-        ├── 02-产品需求文档-PRD.md
-        ├── 02b-结构化任务拆解-prd.json
-        ├── 03-设计需求文档.md
-        └── 04-PRD量化评审报告.md
+    ├── prd/
+    │   ├── PRD.md                               # 完整产品需求文档（v3.1 定稿版）
+    │   └── prd-stories.json                     # 结构化任务拆解（18 条原子用户故事）
+    └── design/
+        ├── design-system.md                     # Arc UI 设计系统与渐进披露规范
+        ├── tokens.css                           # 三层 oklch 色彩 / 字体 / 动效令牌
+        ├── tailwind.config.js                   # Tailwind 映射配置
+        ├── design-review.md                     # 设计评审与实机回归报告
+        ├── prototype/
+        │   └── index.html                       # 单文件高保真交互原型（浏览器直接打开）
+        └── screenshots/
+            ├── 01-welcome-light.png             # 首页（单一主入口）
+            ├── 02-workbench-default-light.png   # 默认两栏三步流工作台
+            ├── 03-workbench-active-ai.png       # 按需展开 AI 与 ACP 审批态
+            └── 04-workbench-dark.png            # 深色黑曜石验收通过态
 ```
 
-## 文档导航
+## 快速预览原型
 
-- **需求清单与优先级排序**：[docs/prd/01-需求清单与优先级排序.md](docs/prd/01-需求清单与优先级排序.md)
-- **产品需求文档（PRD v1.0）**：[docs/prd/02-产品需求文档-PRD.md](docs/prd/02-产品需求文档-PRD.md)
-- **结构化任务拆解（16 条原子用户故事）**：[docs/prd/02b-结构化任务拆解-prd.json](docs/prd/02b-结构化任务拆解-prd.json)
-- **设计需求文档（信息架构、交互流程、视觉规范）**：[docs/prd/03-设计需求文档.md](docs/prd/03-设计需求文档.md)
-- **PRD 量化评审报告（10 分制）**：[docs/prd/04-PRD量化评审报告.md](docs/prd/04-PRD量化评审报告.md)
+直接用浏览器打开 [docs/design/prototype/index.html](docs/design/prototype/index.html) 即可体验完整交互流程（外观 8 色切换、四语言课程与真实 JS 判题、双终端路由、安全写入 Diff、高危命令拦截、BYOK / ACP 助教配置）。

@@ -1,0 +1,229 @@
+{
+  "project": "CodeLab Studio",
+  "version": "3.1",
+  "architecture": "Tauri 2 (Rust backend + Web frontend, Arc UI design system)",
+  "languages": ["JS/TS", "Go", "Java", "Python"],
+  "description": "Open-source, local-first Tauri 2 desktop interactive programming workbench turning Markdown handbooks and course packs into a calm two-pane workspace with managed 4-language runtimes, smart multi-terminal & function grading, and dual-protocol (BYOK + ACP) context-aware AI tutoring.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Initialize Tauri 2 desktop shell and local workspace metadata store",
+      "description": "As a learner, I want each course workspace to persist progress and metrics atomically in <workspace>/.codelab/ so learning state survives restarts without polluting source files.",
+      "acceptanceCriteria": [
+        "Scaffold Tauri 2 desktop app supporting macOS, Windows, and Linux (>= 1024x720)",
+        "Define versioned JSON schemas for workspace.json, progress.json, and metrics.json under <workspace>/.codelab/",
+        "Implement atomic temp-file + rename read/write with corruption recovery",
+        "Unit tests cover creation, existing directory binding, and schema migration"
+      ],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-002",
+      "title": "Build Markdown handbook parser and standardized Course Pack loader",
+      "description": "As a learner or author, I want standard Markdown tutorials, local directories, or Git course packs parsed into structured 3-step exercises, command blocks, checks, and reflections.",
+      "acceptanceCriteria": [
+        "Parse H2 headings into ordered Chapter/Exercise nodes with stable IDs",
+        "Parse bash/sh fenced blocks into CommandBlocks with cwd and daemon/oneshot inference",
+        "Load optional codelab.json, starter/, and .codelab-checks.json schema v1.0",
+        "Parse the Go/GoFrame handbook cleanly into Exercises 0-9 with zero data loss"
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-003",
+      "title": "Build 4-language RuntimeManager and Preflight environment checker",
+      "description": "As a learner, I want the app to detect local JS/TS, Go, Java, and Python toolchains and install isolated managed runtimes into ~/.codelab/runtimes/ without polluting my global PATH.",
+      "acceptanceCriteria": [
+        "Probe system PATH for Bun/Node, Go >= 1.22, JDK >= 21, Python/uv, git, curl, GOPROXY, and LSPs with 5s timeout per check",
+        "Support one-click isolated download & extraction of Bun, Go 1.23, Temurin JDK 21, and uv-managed Python 3.12",
+        "Expose structured status (ok | warn | missing) to topbar Preflight popover and Settings"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-004",
+      "title": "Implement local PTY multi-terminal manager with smart daemon/oneshot routing",
+      "description": "As a learner, I want long-lived servers and one-shot test/curl commands automatically isolated in separate terminals with clean shutdown.",
+      "acceptanceCriteria": [
+        "Implement portable-pty manager supporting spawn, write, resize, SIGINT, restart, and kill",
+        "Isolate daemon commands (e.g. go run .) into named service tabs and route oneshot commands only to idle terminals",
+        "Capture port-in-use errors (e.g. address already in use) and keep a 200-line ring buffer for AI context",
+        "Terminate all child PTY process groups cleanly on workspace switch or app exit"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-005",
+      "title": "Implement dangerous shell command guardrail and untrusted pack warning",
+      "description": "As a local developer, I want destructive shell commands blocked behind an explicit confirmation modal so running tutorial commands is always safe.",
+      "acceptanceCriteria": [
+        "Flag destructive patterns (rm -rf, sudo, mkfs, dd if=, chmod -R 777 /, pipe-to-shell) before execution",
+        "Show target cwd and full command in confirmation dialog with default focus on Cancel",
+        "Prompt trust confirmation on first open of external/Git course packs"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-006",
+      "title": "Implement sandboxed workspace file service and real-time watcher",
+      "description": "As a learner, I want workspace code changes synced within 500ms while preventing any path traversal outside the workspace root.",
+      "acceptanceCriteria": [
+        "Canonicalize and restrict all file CRUD operations strictly inside workspaceRoot (block ../ and external symlinks)",
+        "Emit debounced file tree updates within 500ms excluding .git, node_modules, and .codelab",
+        "Guard against opening binary files or text files > 2MB in the code editor"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-007",
+      "title": "Implement 4-language function grading and HTTP contract verification runner",
+      "description": "As a learner, I want one-click automated verification across JS/TS, Go, Java, and Python returning structured pass/fail diffs.",
+      "acceptanceCriteria": [
+        "Execute single/multi-file function tests via bun test, go test -json -race, JUnit 5, and pytest --json-report inside isolated process groups with timeout kill",
+        "Support HTTP assertion checks (status code, headers, JSON body) with daemon readiness pre-check",
+        "Return per-check pass/fail status, latency ms, expected vs actual diff, and update progress.json"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-008",
+      "title": "Implement secure BYOK LLM provider client with OS Keychain storage",
+      "description": "As a learner, I want to plug in my own OpenAI-compatible, DeepSeek, Anthropic, or offline Ollama model with API keys stored safely in the OS keychain.",
+      "acceptanceCriteria": [
+        "Store API keys exclusively in macOS Keychain / Windows Credential Manager / Linux Secret Service",
+        "Implement unified SSE streaming adapter with AbortController stop support and connection test",
+        "Mask secrets in logs and errors; keep all non-AI features 100% functional offline"
+      ],
+      "priority": 8,
+      "passes": false
+    },
+    {
+      "id": "US-009",
+      "title": "Implement ACP (Agent Client Protocol) client and permission approval gate",
+      "description": "As a developer using Claude Code, Gemini CLI, Codex CLI, or OpenCode, I want to connect my local coding agent over ACP stdio while keeping tool permissions under workbench control.",
+      "acceptanceCriteria": [
+        "Implement JSON-RPC 2.0 over stdio ACP Client supporting initialize, session/new, session/prompt, and streaming session/update",
+        "Intercept session/request_permission and render in-drawer approval cards for workspace read/write/command requests",
+        "Default Guided Read-only policy blocks write/exec unless explicitly approved per request"
+      ],
+      "priority": 9,
+      "passes": false
+    },
+    {
+      "id": "US-010",
+      "title": "Implement 4D AI context assembler with token budget and secret filtering",
+      "description": "As a learner, I want AI queries automatically enriched with my exercise, code snippet, and terminal error tail while letting me inspect and remove context chips.",
+      "acceptanceCriteria": [
+        "Assemble chapter summary, active file lines around selection, recent terminal error tail, and checklist state",
+        "Enforce 6,000 input token ceiling prioritizing selection and error tail",
+        "Exclude .env, *secret*, and *key* files automatically; expose removable ContextChips metadata",
+        "Support Socratic (default) and Direct teaching system prompts"
+      ],
+      "priority": 10,
+      "passes": false
+    },
+    {
+      "id": "US-011",
+      "title": "Implement Arc UI design tokens, Light/Dark themes, and Appearance drawer",
+      "description": "As a user, I want a calm, pure-neutral Arc UI interface with Light/Dark modes and 8 switchable accents that passes WCAG 2.1 AA.",
+      "acceptanceCriteria": [
+        "Load pure achromatic oklch neutral scale, cool pastel tone badges, Geist + Inter + JetBrains Mono typography, and spring easing tokens",
+        "Implement right slide-over Appearance drawer with 8 data-accent presets, Light/Dark segmented toggle, code font size, and Copy Theme CSS",
+        "Verify WCAG 2.1 AA (>= 4.5:1) contrast across both Light and Dark themes and honor prefers-reduced-motion"
+      ],
+      "priority": 11,
+      "passes": false
+    },
+    {
+      "id": "US-012",
+      "title": "Build calm single-entry Welcome Home and Course Pack import/author modal",
+      "description": "As a learner or author, I want an uncluttered home screen with one clear Continue entry, a 2x2 course grid, and a modal to import or author course packs.",
+      "acceptanceCriteria": [
+        "Render centered Arc atmospheric hero with one primary Continue button and one Import/Author button",
+        "Render clean 2x2 4-language course grid with language filter pills and concise 1-line descriptions",
+        "Implement Import (local .md/dir or Git URL with parse preview) and Author (.codelab-checks.json editor + live preview) modal"
+      ],
+      "priority": 12,
+      "passes": false
+    },
+    {
+      "id": "US-013",
+      "title": "Build progressive-disclosure two-pane Workbench shell and 3-step Manual",
+      "description": "As a learner, I want a focused two-pane default workbench with numbered steps (1 -> 2 -> 3) so I never feel overwhelmed when starting an exercise.",
+      "acceptanceCriteria": [
+        "Default to two panes: left 3-step manual (1. Start/Test -> 2. Edit Code -> 3. Run Verification) and right editor + compact terminal",
+        "Collapse file tree, secondary commands, reflection question, and AI drawer by default with 1-click progressive reveal",
+        "Support draggable splitters (double-click reset), chapter outline drawer, and Cmd/Ctrl+B focus mode"
+      ],
+      "priority": 13,
+      "passes": false
+    },
+    {
+      "id": "US-014",
+      "title": "Build collapsible File Tree, Multi-tab Monaco Editor, Safe-Write Diff, and External IDE bridge",
+      "description": "As a learner, I want a spacious multi-tab editor with optional file tree, safe-write diff confirmation, external edit conflict banner, and dual-file comparison.",
+      "acceptanceCriteria": [
+        "Toggle collapsible file tree from editor header; support new file creation, dual-file Diff modal, and Open in External IDE",
+        "Show dirty indicators, Cmd/Ctrl+S save, and external disk conflict banner (Load Disk vs Keep Draft)",
+        "Never overwrite user files silently from manual snippets; always confirm via side-by-side Diff modal"
+      ],
+      "priority": 14,
+      "passes": false
+    },
+    {
+      "id": "US-015",
+      "title": "Integrate optional 4-language LSP bridge with graceful degradation",
+      "description": "As a learner, I want completions, hover docs, and diagnostics when gopls/tsserver/pyright/jdtls is installed, with non-blocking fallback when absent.",
+      "acceptanceCriteria": [
+        "Scope LSP child processes to active project root (supporting multi-module repos like task-api and task-api-gf)",
+        "Display single-line LSP status indicator in editor footer linking directly to Runtime Manager when missing",
+        "Shut down LSP processes cleanly on workspace switch or app exit"
+      ],
+      "priority": 15,
+      "passes": false
+    },
+    {
+      "id": "US-016",
+      "title": "Build integrated xterm.js Multi-Terminal and Structured Grading Diff bottom panel",
+      "description": "As a learner, I want terminal tabs and structured test diff results unified cleanly in a resizable bottom panel.",
+      "acceptanceCriteria": [
+        "Render daemon service tabs with live pulse, stop/restart controls, plus oneshot tabs and + New Terminal",
+        "Render structured Grading tab showing pass count badge, latency, expected vs actual Diff, and one-click Ask AI button",
+        "Show port-conflict recovery banner when 8080/target port is occupied"
+      ],
+      "priority": 16,
+      "passes": false
+    },
+    {
+      "id": "US-017",
+      "title": "Build cross-area selection floating Ask-AI pill and on-demand AI Tutor drawer",
+      "description": "As a learner, I want to highlight any confusing concept, code line, or terminal error and immediately get contextual guidance.",
+      "acceptanceCriteria": [
+        "Show floating pill toolbar within 150ms on >= 2 char mouse selection in Manual, Editor, or Terminal without obscuring selection",
+        "Open right AI drawer with pinned quote card, removable 4D ContextChips, Socratic/Direct toggle, streaming response + Stop button, and ACP permission cards",
+        "Overlay AI drawer cleanly on narrow desktop viewports (< 1280px) without cramping editor width"
+      ],
+      "priority": 17,
+      "passes": false
+    },
+    {
+      "id": "US-018",
+      "title": "Build Settings modal and privacy-first local metrics controls",
+      "description": "As a learner, I want one clean settings dialog for BYOK/ACP AI config, 4-language runtimes, editor preferences, and local data reset.",
+      "acceptanceCriteria": [
+        "Provide 4 tabs: AI & ACP (with live handshake/connectivity test), 4-Language Runtimes, Editor & Desktop, Privacy & Local Data",
+        "Persist local metrics to .codelab/metrics.json with 13 unified event names and opt-in-only anonymized telemetry",
+        "Support clearing AI chat history and resetting chapter verification progress"
+      ],
+      "priority": 18,
+      "passes": false
+    }
+  ]
+}
