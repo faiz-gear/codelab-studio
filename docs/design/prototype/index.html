@@ -1,0 +1,2377 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-accent="neutral">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeLab Studio · 本地交互式编程实践工作台</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%23111111'/%3E%3Cpath d='M9 21V13a7 7 0 0 1 14 0v8' fill='none' stroke='%23FFFFFF' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M13 21v-6a3 3 0 0 1 6 0v6' fill='none' stroke='%23FFFFFF' stroke-width='2.2' stroke-linecap='round' opacity='.6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   CodeLab Studio v3.1 — Arc UI Calm & Progressive Disclosure Edition
+   原则：单一视觉入口 · 渐进披露 · 纯中性留白 · 零认知压力
+   ========================================================================== */
+:root {
+  color-scheme: light;
+  --neutral-0: oklch(100% 0 0);
+  --neutral-1: oklch(99% 0 0);
+  --neutral-2: oklch(97.8% 0 0);
+  --neutral-3: oklch(95.8% 0 0);
+  --neutral-4: oklch(91.5% 0 0);
+  --neutral-5: oklch(84% 0 0);
+  --neutral-6: oklch(72% 0 0);
+  --neutral-7: oklch(52% 0 0);
+  --neutral-8: oklch(46% 0 0);
+  --neutral-9: oklch(34% 0 0);
+  --neutral-10: oklch(23% 0 0);
+  --neutral-11: oklch(15% 0 0);
+
+  --font-display: "Geist", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --tracking-display: -0.03em;
+  --tracking-body: -0.01em;
+
+  --r-xs: 6px;
+  --r-ctrl: 10px;
+  --r-panel: 16px;
+  --r-surface: 24px;
+  --r-pill: 9999px;
+
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-instant: 100ms;
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --dur-slow: 340ms;
+
+  --topbar-h: 48px;
+  --tabbar-h: 38px;
+  --tree-w: 204px;
+  --manual-w: 38%;
+  --ai-w: 368px;
+  --term-h: 212px;
+  --code-size: 13.5px;
+  --code-lh: 22px;
+}
+
+/* ---------- Light Theme (Arc Gallery Default) ---------- */
+:root, :root[data-theme="light"] {
+  color-scheme: light;
+  --background: var(--neutral-0);
+  --surface: var(--neutral-0);
+  --surface-raised: var(--neutral-0);
+  --surface-muted: var(--neutral-2);
+  --surface-subtle: var(--neutral-3);
+  --sidebar-fill: color-mix(in oklab, var(--foreground) 2%, var(--background));
+  --hover-fill: color-mix(in oklab, var(--foreground) 4%, transparent);
+  --active-fill: color-mix(in oklab, var(--foreground) 7%, transparent);
+
+  --foreground: var(--neutral-11);
+  --text-secondary: var(--neutral-8);
+  --text-muted: var(--neutral-7);
+
+  --border: oklch(93% 0 0);
+  --border-subtle: oklch(96.2% 0 0);
+  --border-strong: oklch(82% 0 0);
+
+  --accent: oklch(33% 0 0);
+  --accent-strong: oklch(18% 0 0);
+  --accent-subtle: oklch(33% 0 0 / 0.08);
+  --control-on: oklch(18% 0 0);
+  --control-glyph: #ffffff;
+
+  --tone-teal: oklch(50% 0.095 182);
+  --tone-sky: oklch(51% 0.11 240);
+  --tone-violet: oklch(51% 0.16 290);
+  --tone-rose: oklch(53% 0.18 10);
+  --tone-amber: oklch(50% 0.12 68);
+  --tone-green: oklch(50% 0.12 162);
+
+  --success: var(--tone-green);
+  --warning: var(--tone-amber);
+  --danger: var(--tone-rose);
+  --info: var(--tone-sky);
+  --ai: var(--tone-violet);
+
+  --badge-tint: 9%;
+  --badge-ink: 86%;
+
+  --arc-gradient-soft: linear-gradient(135deg, oklch(97.8% 0.014 300), oklch(98.2% 0.013 65));
+  --arc-gradient-line: oklch(87% 0.04 295);
+  --arc-hero-bg:
+    radial-gradient(ellipse 38% 52% at 2% 98%, #ecd0d1 0%, transparent 100%),
+    radial-gradient(ellipse 40% 58% at 98% 2%, #c9daf9 0%, transparent 100%),
+    radial-gradient(ellipse 48% 46% at 54% 114%, #efe5c6 0%, transparent 100%),
+    #faf9f7;
+
+  --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.03);
+  --shadow-raised: 0 8px 24px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.03);
+  --shadow-floating: 0 20px 48px oklch(0% 0 0 / 0.11), 0 3px 10px oklch(0% 0 0 / 0.04);
+  --overlay-scrim: oklch(15% 0 0 / 0.22);
+  --focus-ring: 0 0 0 2px var(--background), 0 0 0 4px var(--accent);
+
+  --syn-kw: oklch(50% 0.17 12);
+  --syn-fn: oklch(49% 0.16 290);
+  --syn-str: oklch(46% 0.11 162);
+  --syn-num: oklch(49% 0.12 242);
+  --syn-type: oklch(50% 0.12 58);
+  --syn-com: oklch(54% 0 0);
+  --syn-op: oklch(34% 0 0);
+  --active-line: color-mix(in oklab, var(--accent) 4.5%, transparent);
+}
+
+/* ---------- Dark Theme (Arc Obsidian Neutral) ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: oklch(19% 0 0);
+  --surface: oklch(21.5% 0 0);
+  --surface-raised: oklch(24% 0 0);
+  --surface-muted: oklch(25.5% 0 0);
+  --surface-subtle: oklch(28.5% 0 0);
+  --sidebar-fill: oklch(17.8% 0 0);
+  --hover-fill: color-mix(in oklab, var(--foreground) 5.5%, transparent);
+  --active-fill: color-mix(in oklab, var(--foreground) 9%, transparent);
+
+  --foreground: oklch(96% 0 0);
+  --text-secondary: oklch(77% 0 0);
+  --text-muted: oklch(66% 0 0);
+
+  --border: oklch(28.5% 0 0);
+  --border-subtle: oklch(24.5% 0 0);
+  --border-strong: oklch(39% 0 0);
+
+  --accent: oklch(80% 0 0);
+  --accent-strong: oklch(93% 0 0);
+  --accent-subtle: oklch(80% 0 0 / 0.13);
+  --control-on: oklch(94% 0 0);
+  --control-glyph: oklch(18% 0 0);
+
+  --tone-teal: oklch(79% 0.13 182);
+  --tone-sky: oklch(79% 0.095 236);
+  --tone-violet: oklch(74% 0.125 290);
+  --tone-rose: oklch(71% 0.155 8);
+  --tone-amber: oklch(83% 0.12 78);
+  --tone-green: oklch(79% 0.14 162);
+
+  --success: var(--tone-green);
+  --warning: var(--tone-amber);
+  --danger: var(--tone-rose);
+  --info: var(--tone-sky);
+  --ai: var(--tone-violet);
+
+  --badge-tint: 14%;
+  --badge-ink: 94%;
+
+  --arc-gradient-soft: linear-gradient(135deg, oklch(24.5% 0.016 300), oklch(25% 0.014 65));
+  --arc-gradient-line: oklch(44% 0.05 295);
+  --arc-hero-bg:
+    radial-gradient(ellipse 38% 52% at 2% 98%, #543135 0%, transparent 100%),
+    radial-gradient(ellipse 40% 58% at 98% 2%, #253654 0%, transparent 100%),
+    radial-gradient(ellipse 48% 46% at 54% 114%, #443d2c 0%, transparent 100%),
+    #1c1d20;
+
+  --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.22);
+  --shadow-raised: 0 8px 24px oklch(0% 0 0 / 0.30);
+  --shadow-floating: 0 22px 55px oklch(0% 0 0 / 0.48);
+  --overlay-scrim: oklch(0% 0 0 / 0.56);
+  --focus-ring: 0 0 0 2px var(--background), 0 0 0 4px var(--accent);
+
+  --syn-kw: oklch(74% 0.14 14);
+  --syn-fn: oklch(78% 0.12 290);
+  --syn-str: oklch(80% 0.11 162);
+  --syn-num: oklch(80% 0.10 236);
+  --syn-type: oklch(83% 0.11 72);
+  --syn-com: oklch(64% 0 0);
+  --syn-op: oklch(82% 0 0);
+  --active-line: color-mix(in oklab, var(--accent) 7%, transparent);
+}
+
+/* ---------- 8 Built-in Arc Accents ---------- */
+:root[data-accent="neutral"] { --accent: oklch(33% 0 0); --accent-strong: oklch(18% 0 0); --accent-subtle: oklch(33% 0 0 / 0.08); --control-on: oklch(18% 0 0); --control-glyph: #ffffff; }
+:root[data-accent="violet"]  { --accent: #7747ff; --accent-strong: #5528ce; --accent-subtle: rgb(119 71 255 / 0.12); --control-on: #7747ff; --control-glyph: #ffffff; }
+:root[data-accent="blue"]    { --accent: #0562ef; --accent-strong: #074db7; --accent-subtle: rgb(5 98 239 / 0.11);  --control-on: #0562ef; --control-glyph: #ffffff; }
+:root[data-accent="green"]   { --accent: #0a8f5f; --accent-strong: #087c54; --accent-subtle: rgb(13 184 121 / 0.13); --control-on: #0a8f5f; --control-glyph: #ffffff; }
+:root[data-accent="amber"]   { --accent: #b86e00; --accent-strong: #945700; --accent-subtle: rgb(243 173 32 / 0.16); --control-on: #b86e00; --control-glyph: #ffffff; }
+:root[data-accent="orange"]  { --accent: #c85200; --accent-strong: #a04100; --accent-subtle: rgb(244 129 32 / 0.14); --control-on: #c85200; --control-glyph: #ffffff; }
+:root[data-accent="coral"]   { --accent: #cf3d34; --accent-strong: #a82c24; --accent-subtle: rgb(241 95 85 / 0.13);  --control-on: #cf3d34; --control-glyph: #ffffff; }
+:root[data-accent="rose"]    { --accent: #c52a78; --accent-strong: #9f1e5f; --accent-subtle: rgb(237 78 157 / 0.13); --control-on: #c52a78; --control-glyph: #ffffff; }
+
+:root[data-theme="dark"][data-accent="neutral"] { --accent: oklch(80% 0 0); --accent-strong: oklch(93% 0 0); --accent-subtle: oklch(80% 0 0 / 0.13); --control-on: oklch(94% 0 0); --control-glyph: oklch(18% 0 0); }
+:root[data-theme="dark"][data-accent="violet"]  { --accent: #a78bff; --accent-strong: #c7b7ff; --accent-subtle: rgb(119 71 255 / 0.22); --control-on: #8a66ff; --control-glyph: #ffffff; }
+:root[data-theme="dark"][data-accent="blue"]    { --accent: #6ba3ff; --accent-strong: #a4c7ff; --accent-subtle: rgb(5 98 239 / 0.22);  --control-on: #3b82f6; --control-glyph: #ffffff; }
+:root[data-theme="dark"][data-accent="green"]   { --accent: #53dca6; --accent-strong: #93efd0; --accent-subtle: rgb(13 184 121 / 0.20); --control-on: #1fae78; --control-glyph: #0d1d15; }
+:root[data-theme="dark"][data-accent="amber"]   { --accent: #ffcb62; --accent-strong: #ffe0a1; --accent-subtle: rgb(243 173 32 / 0.20); --control-on: #e8a52a; --control-glyph: #1f1402; }
+:root[data-theme="dark"][data-accent="orange"]  { --accent: #ffad5e; --accent-strong: #ffd0a0; --accent-subtle: rgb(244 129 32 / 0.20); --control-on: #ef873a; --control-glyph: #1b1006; }
+:root[data-theme="dark"][data-accent="coral"]   { --accent: #ff9386; --accent-strong: #ffc1ba; --accent-subtle: rgb(241 95 85 / 0.20);  --control-on: #ec6a60; --control-glyph: #1e0b0a; }
+:root[data-theme="dark"][data-accent="rose"]    { --accent: #ff8bc5; --accent-strong: #ffc0df; --accent-subtle: rgb(237 78 157 / 0.20); --control-on: #e457a0; --control-glyph: #1f0815; }
+
+/* Base */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5; letter-spacing: var(--tracking-body);
+  background: var(--background); color: var(--foreground);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+}
+button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+h1, h2, h3, h4, p { margin: 0; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-ctrl); }
+::selection { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.muted { color: var(--text-muted); }
+.skip-link { position: fixed; top: -60px; left: 12px; z-index: 130; padding: 7px 14px; border-radius: var(--r-pill); background: var(--control-on); color: var(--control-glyph); font-size: 13px; font-weight: 500; }
+.skip-link:focus { top: 8px; }
+.ic { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ic svg { display: block; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ================= Arc Controls ================= */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 34px; padding: 0 14px; border-radius: var(--r-ctrl);
+  font-size: 13px; font-weight: 500; white-space: nowrap; user-select: none;
+  border: 1px solid transparent;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), transform var(--dur-instant);
+}
+.btn:active:not(:disabled) { transform: scale(0.975); }
+.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.btn--xs { height: 26px; padding: 0 9px; font-size: 12px; gap: 4px; border-radius: 8px; }
+.btn--sm { height: 30px; padding: 0 11px; font-size: 12.5px; gap: 5px; border-radius: 9px; }
+.btn--lg { height: 42px; padding: 0 22px; font-size: 14px; border-radius: var(--r-pill); }
+.btn--pill { border-radius: var(--r-pill); }
+.btn--icon { width: 30px; padding: 0; }
+.btn--icon.btn--xs { width: 26px; }
+.btn--primary { background: var(--control-on); color: var(--control-glyph); box-shadow: var(--shadow-resting); }
+.btn--primary:hover:not(:disabled) { opacity: 0.88; }
+.btn--secondary { background: var(--surface); color: var(--foreground); border-color: var(--border); box-shadow: var(--shadow-resting); }
+.btn--secondary:hover:not(:disabled) { background: var(--surface-muted); border-color: var(--border-strong); }
+.btn--ghost { color: var(--text-secondary); }
+.btn--ghost:hover:not(:disabled) { background: var(--hover-fill); color: var(--foreground); }
+.btn--ai-soft {
+  background: color-mix(in oklab, var(--ai) var(--badge-tint), var(--surface));
+  color: color-mix(in oklab, var(--ai) var(--badge-ink), var(--foreground));
+  border-color: color-mix(in oklab, var(--ai) 18%, var(--border));
+}
+.btn--ai-soft:hover:not(:disabled) { background: color-mix(in oklab, var(--ai) 16%, var(--surface)); }
+.btn--danger { background: var(--danger); color: #ffffff; }
+:root[data-theme="dark"] .btn--danger { color: oklch(16% 0.02 10); }
+.btn--danger-soft {
+  background: color-mix(in oklab, var(--danger) var(--badge-tint), var(--surface));
+  color: color-mix(in oklab, var(--danger) var(--badge-ink), var(--foreground));
+  border-color: color-mix(in oklab, var(--danger) 20%, var(--border));
+}
+
+.badge {
+  --bt: var(--text-secondary);
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 8px; border-radius: var(--r-pill);
+  font-size: 11.5px; font-weight: 500; white-space: nowrap;
+  background: var(--surface-muted); border: 1px solid var(--border); color: var(--text-secondary);
+}
+.badge--accent { background: var(--accent-subtle); border-color: transparent; color: var(--accent-strong); }
+.badge--ai { --bt: var(--tone-violet); background: color-mix(in oklab, var(--bt) var(--badge-tint), var(--surface)); border-color: transparent; color: color-mix(in oklab, var(--bt) var(--badge-ink), var(--foreground)); }
+.badge--success { --bt: var(--tone-green); background: color-mix(in oklab, var(--bt) var(--badge-tint), var(--surface)); border-color: transparent; color: color-mix(in oklab, var(--bt) var(--badge-ink), var(--foreground)); }
+.badge--warning { --bt: var(--tone-amber); background: color-mix(in oklab, var(--bt) var(--badge-tint), var(--surface)); border-color: transparent; color: color-mix(in oklab, var(--bt) 84%, var(--foreground)); }
+.badge--danger { --bt: var(--tone-rose); background: color-mix(in oklab, var(--bt) var(--badge-tint), var(--surface)); border-color: transparent; color: color-mix(in oklab, var(--bt) var(--badge-ink), var(--foreground)); }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.dot--ok { background: var(--success); }
+.dot--warn { background: var(--warning); }
+.dot--err { background: var(--danger); }
+.dot--muted { background: var(--border-strong); }
+.dot--pulse { background: var(--success); box-shadow: 0 0 0 0 color-mix(in oklab, var(--success) 50%, transparent); animation: pulse 2s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--success) 50%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+.lang-tag {
+  --lt: var(--tone-sky);
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 22px; padding: 0 8px; border-radius: var(--r-pill);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; flex: none;
+  background: color-mix(in oklab, var(--lt) var(--badge-tint), var(--surface));
+  color: color-mix(in oklab, var(--lt) var(--badge-ink), var(--foreground));
+}
+.lang-tag[data-lang="Go"]     { --lt: var(--tone-sky); }
+.lang-tag[data-lang="JS/TS"]  { --lt: var(--tone-amber); }
+.lang-tag[data-lang="Python"] { --lt: var(--tone-teal); }
+.lang-tag[data-lang="Java"]   { --lt: var(--tone-rose); }
+
+.seg {
+  display: inline-flex; flex: none; padding: 3px; gap: 2px;
+  border-radius: var(--r-ctrl); background: var(--surface-muted); border: 1px solid var(--border);
+}
+.seg--pill { border-radius: var(--r-pill); }
+.seg--pill button { border-radius: var(--r-pill); }
+.seg button {
+  height: 25px; padding: 0 11px; border-radius: 7px;
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+  color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid transparent; transition: all var(--dur-fast) var(--ease-standard);
+}
+.seg button:hover { color: var(--foreground); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--foreground); border-color: var(--border); box-shadow: var(--shadow-resting); }
+
+/* ================= Minimalist Desktop Topbar (48px) ================= */
+.app { display: flex; flex-direction: column; height: 100vh; background: var(--background); }
+.topbar {
+  flex: none; height: var(--topbar-h); display: flex; align-items: center; gap: 10px; padding: 0 16px;
+  background: color-mix(in oklab, var(--background) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none; z-index: 20;
+}
+.traffic { display: flex; align-items: center; gap: 7px; padding-right: 10px; border-right: 1px solid var(--border); }
+.traffic i { width: 10px; height: 10px; border-radius: 50%; display: block; background: var(--border-strong); transition: background var(--dur-fast); }
+.traffic:hover i:nth-child(1) { background: #ff5f57; }
+.traffic:hover i:nth-child(2) { background: #febc2e; }
+.traffic:hover i:nth-child(3) { background: #28c840; }
+
+.brand {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-weight: 500; font-size: 14.5px; letter-spacing: -0.02em;
+  padding: 4px 8px 4px 4px; border-radius: var(--r-ctrl); white-space: nowrap; flex: none;
+}
+.brand:hover { background: var(--hover-fill); }
+.brand-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--foreground); color: var(--background); display: grid; place-items: center; flex: none; }
+
+.course-dd { position: relative; min-width: 0; }
+.course-trigger {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px;
+  border-radius: var(--r-pill); background: var(--surface-muted); border: 1px solid var(--border);
+  font-size: 12.5px; font-weight: 500; max-width: 240px; white-space: nowrap;
+}
+.course-trigger:hover { border-color: var(--border-strong); background: var(--surface); }
+.course-trigger .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dd-menu {
+  position: absolute; top: calc(100% + 8px); left: 0; min-width: 296px; padding: 6px;
+  border-radius: var(--r-panel); background: var(--surface-raised);
+  border: 1px solid var(--border); box-shadow: var(--shadow-floating);
+  display: none; z-index: 55;
+}
+.dd-menu.is-open { display: block; animation: popIn var(--dur-fast) var(--ease-enter); }
+@keyframes popIn { from { opacity: 0; transform: translateY(-4px) scale(0.985); } to { opacity: 1; transform: none; } }
+.dd-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: var(--r-ctrl); text-align: left; }
+.dd-item:hover { background: var(--hover-fill); }
+.dd-item.is-active { background: var(--surface-muted); }
+
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.preflight-wrap { position: relative; }
+.popover {
+  position: absolute; top: calc(100% + 8px); right: 0; width: 400px; padding: 16px;
+  border-radius: var(--r-panel); background: var(--surface-raised);
+  border: 1px solid var(--border); box-shadow: var(--shadow-floating);
+  display: none; z-index: 60;
+}
+.popover.is-open { display: block; animation: popIn var(--dur-fast) var(--ease-enter); }
+
+.prog-track { height: 4px; border-radius: var(--r-pill); background: var(--surface-subtle); overflow: hidden; }
+.prog-fill { height: 100%; background: var(--control-on); border-radius: var(--r-pill); transition: width var(--dur-slow) var(--ease-enter); }
+
+/* Views */
+.view-host { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.view { display: none; height: 100%; }
+.view.is-active { display: flex; flex-direction: column; }
+
+/* ================= VIEW 1: CALM WELCOME HOME (Single Clear Entry) ================= */
+.welcome-scroll { flex: 1; overflow-y: auto; padding: 36px 40px 72px; background: var(--background); }
+.welcome-inner { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+
+/* Centered Arc Atmospheric Hero — ONE unmistakable entry point */
+.hero-panel {
+  border-radius: var(--r-surface);
+  background: var(--arc-hero-bg);
+  border: 1px solid var(--border);
+  padding: 52px 44px;
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px;
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--surface) 76%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+  font-size: 12px; color: var(--text-secondary);
+}
+.hero-panel h1 {
+  font-family: var(--font-display); font-size: 40px; line-height: 1.12;
+  font-weight: 500; letter-spacing: var(--tracking-display); color: var(--foreground);
+  max-width: 18ch;
+}
+.hero-panel .hero-sub {
+  font-size: 15px; line-height: 1.55; color: var(--text-secondary); max-width: 44ch;
+}
+.hero-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.hero-foot {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  margin-top: 6px; font-size: 12px; color: var(--text-muted);
+}
+
+/* Course Library — Airy, Scannable, 1-line descriptions */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.section-head h2 { font-family: var(--font-display); font-size: 18px; font-weight: 500; letter-spacing: -0.02em; }
+
+.course-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.c-card {
+  display: flex; flex-direction: column; gap: 14px; padding: 22px 24px;
+  border-radius: 18px; background: var(--surface); border: 1px solid var(--border);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-base) var(--ease-standard), transform var(--dur-base) var(--ease-standard);
+  cursor: pointer;
+}
+.c-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-raised); transform: translateY(-2px); }
+.c-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.c-card h3 { font-family: var(--font-display); font-size: 16.5px; font-weight: 500; line-height: 1.3; letter-spacing: -0.02em; }
+.c-card p { font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; }
+.c-card-foot { display: flex; align-items: center; gap: 12px; margin-top: 2px; }
+
+/* Subtle Quiet Recent List */
+.recent-list {
+  display: flex; flex-direction: column; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border); overflow: hidden;
+}
+.recent-row {
+  display: flex; align-items: center; gap: 14px; padding: 13px 18px;
+  border-bottom: 1px solid var(--border-subtle); transition: background var(--dur-fast);
+  cursor: pointer;
+}
+.recent-row:last-child { border-bottom: 0; }
+.recent-row:hover { background: var(--surface-muted); }
+
+/* ================= VIEW 2: CALM TWO-PANE DEFAULT WORKBENCH ================= */
+.wb { flex: 1; min-height: 0; display: flex; position: relative; overflow: hidden; background: var(--background); }
+
+/* Left Pane: Guided 3-Step Editorial Manual */
+.pane-left {
+  width: var(--manual-w); min-width: 340px; max-width: 54%; flex: none;
+  display: flex; flex-direction: column; background: var(--surface);
+  border-right: 1px solid var(--border); position: relative;
+  transition: width var(--dur-base) var(--ease-standard);
+}
+.wb.is-focus .pane-left { width: 44px !important; min-width: 44px; }
+.wb.is-focus .manual-head-full, .wb.is-focus .manual-scroll, .wb.is-focus .outline-drawer { display: none !important; }
+.focus-rail { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 12px 0; height: 100%; background: var(--sidebar-fill); }
+.wb.is-focus .focus-rail { display: flex; }
+.focus-rail .vtext { writing-mode: vertical-rl; font-size: 12px; color: var(--text-muted); letter-spacing: 0.08em; }
+
+.manual-head {
+  flex: none; height: 40px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border-subtle); background: var(--surface);
+}
+.manual-head .title {
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+}
+.outline-drawer {
+  position: absolute; left: 10px; top: 48px; bottom: 12px; width: 272px;
+  border-radius: var(--r-panel); background: var(--surface-raised);
+  border: 1px solid var(--border); box-shadow: var(--shadow-floating);
+  z-index: 25; display: none; flex-direction: column; overflow: hidden;
+}
+.outline-drawer.is-open { display: flex; animation: slideL var(--dur-fast) var(--ease-enter); }
+@keyframes slideL { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+.outline-list { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.ch-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px;
+  border-radius: var(--r-ctrl); text-align: left; font-size: 13px; color: var(--text-secondary);
+}
+.ch-item:hover { background: var(--hover-fill); color: var(--foreground); }
+.ch-item.is-active { background: var(--surface-muted); color: var(--foreground); font-weight: 500; }
+
+.manual-scroll { flex: 1; overflow-y: auto; padding: 28px 32px 60px; }
+.manual-inner { max-width: 580px; display: flex; flex-direction: column; gap: 26px; }
+.manual-hero { display: flex; flex-direction: column; gap: 10px; }
+.manual-hero h2 { font-family: var(--font-display); font-size: 23px; line-height: 1.24; font-weight: 500; letter-spacing: -0.025em; }
+.manual-hero p { font-size: 14px; line-height: 1.65; color: var(--text-secondary); }
+.manual-inner code {
+  font-family: var(--font-mono); font-size: 12px; padding: 2px 6px;
+  border-radius: 6px; background: var(--surface-muted); border: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+/* Numbered Guided Step Blocks — crystal-clear reading order */
+.step-section { display: flex; flex-direction: column; gap: 11px; }
+.step-head { display: flex; align-items: center; gap: 9px; }
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  background: var(--surface-muted); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; color: var(--foreground);
+  display: grid; place-items: center;
+}
+.step-head h3 { font-family: var(--font-display); font-size: 15px; font-weight: 500; letter-spacing: -0.015em; }
+.step-desc { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); }
+
+/* Clean Command Block */
+.cmd-card {
+  border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  overflow: hidden; position: relative; transition: border-color var(--dur-fast);
+}
+.cmd-card:hover { border-color: var(--border-strong); }
+.cmd-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; }
+.cmd-card.is-running::before { background: var(--accent); }
+.cmd-card.is-error::before { background: var(--danger); }
+.cmd-card.is-ok::before { background: var(--success); }
+.cmd-head {
+  display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 8px 0 12px;
+  background: var(--surface-muted); border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: nowrap; overflow: hidden;
+}
+.cwd-pill {
+  display: inline-block; height: 22px; line-height: 20px; padding: 0 8px;
+  border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;
+}
+.cwd-pill:hover { border-color: var(--border-strong); color: var(--foreground); }
+.cmd-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+.cmd-code { margin: 0; padding: 13px 14px; font-family: var(--font-mono); font-size: 13px; line-height: 20px; overflow-x: auto; color: var(--foreground); user-select: text; }
+
+/* Verification Card — crisp & uncluttered */
+.verify-card {
+  border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.verify-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.v-item {
+  display: flex; flex-direction: column; gap: 8px; padding: 9px 11px;
+  border-radius: 10px; background: var(--surface-muted); border: 1px solid var(--border-subtle);
+}
+.v-row { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.v-check {
+  width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border-strong);
+  display: grid; place-items: center; flex: none; color: transparent; transition: all var(--dur-fast);
+}
+.v-item.is-pass .v-check { background: var(--success); border-color: var(--success); color: #ffffff; }
+:root[data-theme="dark"] .v-item.is-pass .v-check { color: oklch(18% 0 0); }
+.v-item.is-fail .v-check { background: var(--danger); border-color: var(--danger); color: #ffffff; }
+:root[data-theme="dark"] .v-item.is-fail .v-check { color: oklch(18% 0 0); }
+.v-item.is-pass .v-text { color: var(--text-muted); }
+.v-diff {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 9px 11px;
+  border-radius: 8px; background: var(--surface); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
+}
+
+/* Progressive Disclosure <details> — hides secondary tools cleanly until clicked */
+.disclosure {
+  border-radius: 14px; border: 1px solid var(--border); background: var(--surface-muted);
+  overflow: hidden;
+}
+.disclosure summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 15px; font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  user-select: none; transition: color var(--dur-fast);
+}
+.disclosure summary::-webkit-details-marker { display: none; }
+.disclosure summary:hover { color: var(--foreground); }
+.disclosure[open] summary { border-bottom: 1px solid var(--border-subtle); color: var(--foreground); }
+.disclosure-body { padding: 14px 15px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); }
+
+.reflect-box {
+  border-radius: 12px; border: 1px solid var(--arc-gradient-line);
+  background: var(--arc-gradient-soft); padding: 14px 15px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+/* Splitters */
+.split-x { width: 5px; flex: none; cursor: col-resize; position: relative; z-index: 10; margin: 0 -2.5px; }
+.split-x::after { content: ""; position: absolute; inset: 0 2px; background: transparent; transition: background var(--dur-fast); }
+.split-x:hover::after, .split-x.is-drag::after { background: var(--accent); }
+.split-y { height: 5px; flex: none; cursor: row-resize; position: relative; z-index: 10; margin: -2.5px 0; }
+.split-y::after { content: ""; position: absolute; inset: 2px 0; background: transparent; transition: background var(--dur-fast); }
+.split-y:hover::after, .split-y.is-drag::after { background: var(--accent); }
+
+/* Center Pane: Collapsible File Tree (collapsed by default!) + Spacious Editor + Compact Bottom */
+.pane-center { flex: 1; min-width: 360px; display: flex; flex-direction: column; min-height: 0; background: var(--background); }
+.center-top { flex: 1; min-height: 180px; display: flex; min-width: 0; overflow: hidden; }
+
+.tree-pane {
+  width: var(--tree-w); flex: none; display: flex; flex-direction: column;
+  background: var(--sidebar-fill); border-right: 1px solid var(--border);
+  overflow: hidden; transition: width var(--dur-fast) var(--ease-standard);
+}
+.tree-pane.is-collapsed { width: 0; border-right: 0; }
+.tree-head {
+  height: var(--tabbar-h); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 8px 0 12px; border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px; font-weight: 500; color: var(--text-muted);
+}
+.tree-list { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+.t-row {
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px;
+  border-radius: 7px; font-size: 12.5px; color: var(--text-secondary); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-row:hover { background: var(--hover-fill); color: var(--foreground); }
+.t-row.is-active { background: color-mix(in oklab, var(--accent-subtle) 65%, var(--surface-muted)); color: var(--foreground); font-weight: 500; }
+.t-row.is-dir { color: var(--foreground); font-weight: 500; }
+.t-row .fname { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.tree-foot { padding: 8px; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 5px; }
+
+/* Editor */
+.editor-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+.etabs {
+  height: var(--tabbar-h); display: flex; align-items: center; gap: 4px; padding: 0 10px;
+  background: var(--sidebar-fill); border-bottom: 1px solid var(--border-subtle); overflow-x: auto;
+}
+.etab {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border-radius: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);
+  white-space: nowrap; flex: none; transition: all var(--dur-fast);
+}
+.etab:hover { color: var(--foreground); background: var(--hover-fill); }
+.etab.is-active { background: var(--surface); color: var(--foreground); border: 1px solid var(--border); box-shadow: var(--shadow-resting); }
+.etab .dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: none; }
+.etab.is-dirty .dirty { display: inline-block; }
+
+.conflict-banner {
+  display: none; align-items: center; gap: 10px; padding: 8px 16px;
+  background: color-mix(in oklab, var(--warning) 10%, var(--surface));
+  border-bottom: 1px solid color-mix(in oklab, var(--warning) 26%, var(--border));
+  font-size: 12.5px; color: color-mix(in oklab, var(--warning) 84%, var(--foreground));
+}
+.conflict-banner.is-open { display: flex; }
+
+.editor-body {
+  flex: 1; min-height: 0; overflow: auto; display: flex; position: relative;
+  font-family: var(--font-mono); font-size: var(--code-size); line-height: var(--code-lh);
+  background: var(--surface);
+}
+.gutter {
+  flex: none; position: sticky; left: 0; z-index: 2; min-width: 52px; padding: 18px 0;
+  text-align: right; background: var(--surface); color: var(--text-muted); opacity: 0.55;
+  user-select: none; border-right: 1px solid var(--border-subtle);
+}
+.gutter div { padding: 0 14px 0 8px; height: var(--code-lh); }
+.gutter div.is-active { color: var(--foreground); opacity: 1; font-weight: 500; }
+.code-stage { position: relative; flex: 1; min-width: 0; padding: 18px 0; }
+.code-hl, .code-ta { margin: 0; padding: 0 24px 0 18px; font: inherit; line-height: inherit; white-space: pre; tab-size: 4; }
+.code-hl { position: relative; pointer-events: none; color: var(--foreground); min-height: 100%; }
+.code-ta {
+  position: absolute; inset: 18px 0 18px 0; width: 100%; height: calc(100% - 36px);
+  border: 0; outline: none; resize: none; overflow: hidden; background: transparent;
+  color: transparent; caret-color: var(--foreground); -webkit-text-fill-color: transparent;
+}
+.code-ta::selection { background: color-mix(in oklab, var(--accent) 24%, transparent); -webkit-text-fill-color: transparent; }
+.code-ta:focus-visible { box-shadow: none; }
+.line-hl { position: absolute; left: 0; right: 0; height: var(--code-lh); background: var(--active-line); pointer-events: none; }
+.tk-k { color: var(--syn-kw); } .tk-f { color: var(--syn-fn); } .tk-s { color: var(--syn-str); }
+.tk-n { color: var(--syn-num); } .tk-t { color: var(--syn-type); } .tk-c { color: var(--syn-com); font-style: italic; }
+
+.editor-foot {
+  flex: none; height: 28px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  border-top: 1px solid var(--border-subtle); background: var(--sidebar-fill);
+  font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden;
+}
+.lsp-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px; border-radius: 6px; min-width: 0; overflow: hidden; }
+.lsp-pill:hover { background: var(--hover-fill); color: var(--foreground); }
+
+/* Bottom Panel */
+.center-bottom {
+  height: var(--term-h); min-height: 115px; flex: none; display: flex; flex-direction: column;
+  border-top: 1px solid var(--border); background: var(--surface);
+  transition: height var(--dur-base) var(--ease-standard);
+}
+.center-bottom.is-max { height: 76% !important; }
+.btabs {
+  flex: none; height: var(--tabbar-h); display: flex; align-items: center; gap: 4px; padding: 0 12px;
+  background: var(--sidebar-fill); border-bottom: 1px solid var(--border-subtle); overflow-x: auto;
+}
+.btab {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border-radius: 8px; font-size: 12px; font-weight: 500; color: var(--text-muted);
+  white-space: nowrap; border: 1px solid transparent; transition: all var(--dur-fast);
+}
+.btab:hover { background: var(--hover-fill); color: var(--foreground); }
+.btab.is-active { background: var(--surface); border-color: var(--border); color: var(--foreground); box-shadow: var(--shadow-resting); }
+.term-viewport {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 12px 18px;
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 20px; user-select: text;
+}
+.t-line { white-space: pre-wrap; word-break: break-word; }
+.t-line.cmd { color: var(--foreground); font-weight: 500; }
+.t-line.ok { color: var(--success); }
+.t-line.err { color: var(--danger); }
+.t-line.warn { color: var(--warning); }
+.t-line.dim { color: var(--text-muted); }
+
+.port-banner {
+  display: none; align-items: center; gap: 8px; padding: 7px 16px;
+  background: color-mix(in oklab, var(--warning) 10%, var(--surface));
+  border-top: 1px solid color-mix(in oklab, var(--warning) 26%, var(--border));
+  font-size: 12.5px; color: color-mix(in oklab, var(--warning) 84%, var(--foreground));
+}
+.port-banner.is-open { display: flex; }
+
+.term-prompt {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 18px;
+  border-top: 1px solid var(--border-subtle); background: var(--sidebar-fill);
+  font-family: var(--font-mono); font-size: 12.5px;
+}
+.term-prompt input { flex: 1; border: 0; outline: none; background: transparent; color: var(--foreground); }
+.grade-view { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px; display: none; flex-direction: column; gap: 8px; }
+.grade-view.is-active { display: flex; }
+
+/* Right Pane: AI Tutor Drawer (Hidden by default -> On-demand) */
+.pane-ai {
+  width: 0; flex: none; overflow: hidden; border-left: 1px solid transparent;
+  background: var(--surface); display: flex; flex-direction: column;
+  transition: width var(--dur-base) var(--ease-drawer), border-color var(--dur-base);
+}
+.wb.has-ai .pane-ai { width: var(--ai-w); border-left-color: var(--border); }
+.ai-inner { width: var(--ai-w); height: 100%; display: flex; flex-direction: column; }
+.ai-head {
+  flex: none; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border-subtle); background: var(--surface);
+}
+.ai-mode-bar {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); background: var(--sidebar-fill);
+}
+.ai-msgs { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+.msg { font-size: 13.5px; line-height: 1.62; animation: popIn var(--dur-base) var(--ease-enter); }
+.msg.user {
+  align-self: flex-end; max-width: 88%; padding: 10px 13px;
+  border-radius: 16px 16px 4px 16px;
+  background: color-mix(in oklab, var(--foreground) 5.5%, var(--surface));
+  border: 1px solid var(--border-subtle);
+}
+.msg.ai { display: flex; flex-direction: column; gap: 8px; color: var(--text-secondary); }
+.msg.ai strong { color: var(--foreground); font-weight: 500; }
+.msg.ai pre {
+  margin: 6px 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-muted); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.6; overflow-x: auto; color: var(--foreground);
+}
+.quote-card { padding: 8px 10px; border-radius: 10px; background: var(--arc-gradient-soft); border: 1px solid var(--arc-gradient-line); font-size: 12px; }
+.quote-card pre { margin: 4px 0 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--foreground); white-space: pre-wrap; word-break: break-word; max-height: 72px; overflow: hidden; background: transparent; border: 0; padding: 0; }
+.acp-perm {
+  padding: 12px 14px; border-radius: 14px;
+  background: color-mix(in oklab, var(--warning) 9%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--warning) 28%, var(--border));
+  display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: var(--foreground);
+}
+.acp-perm.is-done { background: var(--surface-muted); border-color: var(--border); color: var(--text-muted); }
+.msg-foot { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted); }
+.ai-chips { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 8px 14px 0; }
+.ctx-chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px 0 9px;
+  border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500; cursor: pointer;
+  background: color-mix(in oklab, var(--ai) var(--badge-tint), var(--surface));
+  color: color-mix(in oklab, var(--ai) var(--badge-ink), var(--foreground));
+}
+.ctx-chip .rm { padding: 0 3px; border-radius: var(--r-pill); opacity: 0.7; }
+.ctx-chip .rm:hover { opacity: 1; }
+.ai-compose { flex: none; margin: 8px 14px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted); }
+.ai-compose:focus-within { background: var(--surface); border-color: var(--border-strong); box-shadow: var(--shadow-resting); }
+.ai-compose textarea { display: block; width: 100%; min-height: 46px; max-height: 110px; padding: 10px 12px 0; border: 0; outline: none; resize: none; background: transparent; font-size: 13.5px; line-height: 1.5; }
+.ai-compose-foot { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 7px 12px; font-size: 11px; color: var(--text-muted); }
+
+/* Floating Selection Pill */
+.sel-bar {
+  position: fixed; z-index: 95; height: 34px; padding: 0 5px;
+  border-radius: var(--r-pill); background: var(--surface-raised);
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow-floating);
+  display: none; align-items: center; gap: 2px; animation: selPop var(--dur-fast) var(--ease-enter);
+}
+.sel-bar.is-open { display: flex; }
+@keyframes selPop { from { opacity: 0; transform: translateY(4px) scale(0.97); } to { opacity: 1; transform: none; } }
+.sel-bar button { height: 26px; padding: 0 10px; border-radius: var(--r-pill); font-size: 12px; font-weight: 500; color: var(--foreground); display: inline-flex; align-items: center; gap: 5px; }
+.sel-bar button:hover { background: var(--surface-muted); color: var(--accent-strong); }
+.sel-bar .sep { width: 1px; height: 14px; background: var(--border); margin: 0 1px; }
+
+/* Arc Appearance Drawer */
+.drawer-scrim { position: fixed; inset: 0; z-index: 88; background: var(--overlay-scrim); backdrop-filter: blur(8px); display: none; justify-content: flex-end; padding: 12px; }
+.drawer-scrim.is-open { display: flex; animation: fadeIn var(--dur-fast) var(--ease-enter); }
+.appearance-drawer {
+  width: min(350px, calc(100vw - 24px)); height: 100%;
+  border-radius: 22px; background: var(--surface-raised);
+  border: 1px solid var(--border); box-shadow: var(--shadow-floating);
+  display: flex; flex-direction: column; overflow: hidden; animation: drawerIn 260ms var(--ease-drawer);
+}
+@keyframes drawerIn { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border-subtle); }
+.drawer-head h3 { font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: -0.02em; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 22px; }
+.drawer-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 10px; display: block; }
+.swatch-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.swatch { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 2px solid transparent; transition: transform var(--dur-fast); color: transparent; }
+.swatch:hover { transform: scale(1.08); }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--foreground); color: #ffffff; }
+
+/* Modals */
+.overlay { position: fixed; inset: 0; z-index: 80; background: var(--overlay-scrim); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; padding: 20px; }
+.overlay.is-open { display: flex; animation: fadeIn var(--dur-fast) var(--ease-enter); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal { width: 100%; max-width: 720px; max-height: 86vh; display: flex; flex-direction: column; border-radius: 20px; background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-floating); overflow: hidden; animation: popIn var(--dur-base) var(--ease-enter); }
+.modal--sm { max-width: 480px; }
+.modal--lg { max-width: 840px; }
+.modal-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--border-subtle); background: var(--surface); }
+.modal-head h3 { font-family: var(--font-display); font-size: 16px; font-weight: 500; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+.modal-body { flex: 1; overflow-y: auto; padding: 20px; }
+.modal-foot { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 13px 20px; border-top: 1px solid var(--border-subtle); background: var(--surface-muted); }
+
+.settings-grid { display: grid; grid-template-columns: 188px 1fr; min-height: 420px; }
+.s-nav { padding: 10px; border-right: 1px solid var(--border-subtle); background: var(--sidebar-fill); display: flex; flex-direction: column; gap: 3px; }
+.s-nav button { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: var(--r-ctrl); font-size: 13px; color: var(--text-secondary); text-align: left; }
+.s-nav button:hover { background: var(--hover-fill); color: var(--foreground); }
+.s-nav button.is-active { background: var(--surface); color: var(--foreground); font-weight: 500; border: 1px solid var(--border); box-shadow: var(--shadow-resting); }
+.s-pane { padding: 20px 22px; overflow-y: auto; display: none; flex-direction: column; gap: 15px; }
+.s-pane.is-active { display: flex; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+.input, .select { height: 36px; padding: 0 11px; border-radius: var(--r-ctrl); border: 1px solid var(--border); background: var(--surface); font-size: 13px; outline: none; width: 100%; }
+.input:focus, .select:focus, textarea.input:focus { border-color: var(--foreground); box-shadow: 0 0 0 3px var(--accent-subtle); }
+textarea.input { height: auto; padding: 9px 11px; resize: vertical; }
+.rt-row { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border-radius: 12px; background: var(--surface-muted); border: 1px solid var(--border-subtle); }
+.diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+.diff-box { border-radius: 12px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; }
+.diff-box header { padding: 8px 12px; background: var(--surface-muted); border-bottom: 1px solid var(--border-subtle); font-size: 11.5px; color: var(--text-muted); }
+.diff-box pre { margin: 0; padding: 11px 12px; overflow-x: auto; }
+.d-add { background: color-mix(in oklab, var(--success) 13%, transparent); color: var(--success); display: block; margin: 0 -12px; padding: 0 12px; }
+.d-del { background: color-mix(in oklab, var(--danger) 13%, transparent); color: var(--danger); display: block; margin: 0 -12px; padding: 0 12px; }
+
+/* Centered Floating Toasts */
+.toasts { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 120; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 9px; padding: 9px 15px; pointer-events: auto; border-radius: var(--r-pill); background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-floating); font-size: 12.5px; font-weight: 500; white-space: nowrap; animation: popIn var(--dur-base) var(--ease-enter); }
+
+/* Responsive Desktop */
+.wb.has-ai .pane-left { width: 32%; }
+@media (max-width: 1360px) {
+  .wb.has-ai .tree-pane { width: 0; border-right: 0; }
+}
+@media (max-width: 1279px) {
+  .pane-ai { position: absolute; right: 0; top: 0; bottom: 0; z-index: 35; box-shadow: var(--shadow-floating); }
+  .wb.has-ai .pane-left { width: var(--manual-w); }
+}
+@media (max-width: 960px) {
+  .course-grid { grid-template-columns: 1fr; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .s-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<a href="#mainView" class="skip-link">跳到主内容</a>
+<div class="app">
+  <!-- ============ Minimalist Topbar (Only 6 Quiet Controls) ============ -->
+  <header class="topbar">
+    <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+
+    <button class="brand" id="goWelcomeBtn" title="返回课程主页">
+      <span class="brand-mark">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M5 19V11a7 7 0 0 1 14 0v8"/>
+          <path d="M9.5 19v-5.5a2.5 2.5 0 0 1 5 0V19" opacity="0.55"/>
+        </svg>
+      </span>
+      <span>CodeLab Studio</span>
+    </button>
+
+    <!-- Workbench-only breadcrumb -->
+    <div id="wbTopControls" style="display:none;align-items:center;gap:8px;min-width:0">
+      <span class="muted" style="font-size:13px">/</span>
+      <div class="course-dd">
+        <button class="course-trigger" id="courseDdBtn" aria-expanded="false" aria-haspopup="listbox">
+          <span class="lang-tag" id="topLangTag" data-lang="Go">Go</span>
+          <span class="t" id="topCourseName">Go 与 GoFrame 开发实践</span>
+          <span class="ic muted" data-ic="chevronDown" data-s="13"></span>
+        </button>
+        <div class="dd-menu" id="courseDdMenu" role="listbox"></div>
+      </div>
+      <span class="mono muted" style="font-size:12px;margin-left:2px" id="topProgText">4/10</span>
+    </div>
+
+    <div class="top-right">
+      <!-- Quiet Environment Status Pill -->
+      <div class="preflight-wrap">
+        <button class="btn btn--ghost btn--sm btn--pill" id="preflightBtn" aria-expanded="false" title="本机环境与四语言运行时">
+          <span class="dot dot--warn" id="pfDot"></span>
+          <span id="pfText">环境 3/4</span>
+        </button>
+        <div class="popover" id="preflightPop" role="dialog" aria-label="环境体检与多语言运行时">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <strong style="font-family:var(--font-display);font-size:14px;font-weight:500">本机环境与托管运行时</strong>
+            <button class="btn btn--ghost btn--xs" id="openRtSettings">管理全部 →</button>
+          </div>
+          <div id="pfList" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--text-muted)">
+            <span>隔离目录：<code class="mono">~/.codelab/runtimes/</code></span>
+            <button class="btn btn--ghost btn--xs" id="pfRefresh"><span class="ic" data-ic="refresh" data-s="12"></span>重新检测</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workbench-only Focus & AI buttons -->
+      <button class="btn btn--ghost btn--icon btn--sm btn--pill" id="focusToggleBtn" style="display:none" title="专注编码模式：收起/展开手册（⌘B）" aria-label="切换专注模式">
+        <span class="ic" data-ic="panelLeftClose" data-s="15"></span>
+      </button>
+
+      <button class="btn btn--secondary btn--sm btn--pill" id="aiDrawerBtn" style="display:none" aria-pressed="false">
+        <span class="ic" data-ic="sparkles" data-s="13" style="color:var(--ai)"></span>
+        <span>AI 助教</span>
+      </button>
+
+      <button class="btn btn--ghost btn--sm btn--pill" id="appearanceBtn" title="外观：8 组强调色与浅/深主题">
+        <span class="ic" data-ic="sliders" data-s="14"></span>
+        <span>外观</span>
+      </button>
+
+      <button class="btn btn--ghost btn--icon btn--sm btn--pill" id="settingsBtn" aria-label="设置" title="设置（AI / ACP / 运行时）">
+        <span class="ic" data-ic="settings" data-s="15"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="view-host" id="mainView">
+    <!-- ================= VIEW 1: CALM HOME (Instant Clarity) ================= -->
+    <section class="view is-active" id="viewWelcome" aria-label="课程主页">
+      <div class="welcome-scroll">
+        <div class="welcome-inner">
+          <!-- Single Clear Hero Entry -->
+          <section class="hero-panel">
+            <div class="hero-eyebrow">
+              <span class="dot dot--ok"></span>
+              <span id="heroEyebrowText">上次进度 · Go 与 GoFrame 实践（4 / 10）</span>
+            </div>
+            <h1>开始今天的本地实战。</h1>
+            <p class="hero-sub">
+              打开本地手册或练习包，在同一窗口里读文档、写代码、跑终端与验收。
+            </p>
+            <div class="hero-actions">
+              <button class="btn btn--primary btn--lg" onclick="openCourse('go')">
+                <span class="ic" data-ic="play" data-s="14"></span>
+                <span>继续练习 1：让请求完成往返</span>
+              </button>
+              <button class="btn btn--secondary btn--lg" id="openImportBtn">
+                <span class="ic" data-ic="folderDown" data-s="14"></span>
+                <span>导入 / 创作课程包</span>
+              </button>
+            </div>
+            <div class="hero-foot">
+              <span>开源本地桌面端</span>
+              <span>·</span>
+              <span>支持 Go / JS·TS / Python / Java</span>
+              <span>·</span>
+              <span>已接入 BYOK &amp; ACP 助教</span>
+            </div>
+          </section>
+
+          <!-- Clean 2x2 Course Grid -->
+          <section style="display:flex;flex-direction:column;gap:16px">
+            <div class="section-head">
+              <h2>选择一门课程开始</h2>
+              <div class="seg seg--pill" id="langFilterSeg" role="group" aria-label="按语言筛选">
+                <button data-lang="all" aria-pressed="true">全部</button>
+                <button data-lang="Go" aria-pressed="false">Go</button>
+                <button data-lang="JS/TS" aria-pressed="false">JS/TS</button>
+                <button data-lang="Python" aria-pressed="false">Python</button>
+                <button data-lang="Java" aria-pressed="false">Java</button>
+              </div>
+            </div>
+            <div class="course-grid" id="welcomeCourseGrid"></div>
+          </section>
+
+          <!-- Quiet Recent Workspaces -->
+          <section style="display:flex;flex-direction:column;gap:12px">
+            <div class="section-head">
+              <h2>最近打开的工作区</h2>
+              <button class="btn btn--ghost btn--xs" id="openAuthorBtn">+ 创作新课程包</button>
+            </div>
+            <div class="recent-list" id="recentList"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= VIEW 2: CALM WORKBENCH (2-Pane Default) ================= -->
+    <section class="view" id="viewWorkbench" aria-label="学习工作台">
+      <div class="wb" id="wb">
+        <!-- LEFT PANE: Guided 3-Step Manual -->
+        <aside class="pane-left" id="paneLeft" aria-label="练习步骤手册">
+          <div class="focus-rail">
+            <button class="btn btn--ghost btn--icon btn--sm" id="exitFocusBtn" title="展开手册（⌘B）"><span class="ic" data-ic="panelLeftOpen" data-s="16"></span></button>
+            <span class="vtext" id="focusRailTitle">练习手册</span>
+          </div>
+          <div class="manual-head manual-head-full">
+            <button class="btn btn--ghost btn--icon btn--xs" id="outlineToggleBtn" aria-expanded="false" title="章节目录"><span class="ic" data-ic="menu" data-s="15"></span></button>
+            <span class="title" id="manualChTitle">练习 1 / 10</span>
+            <button class="btn btn--ghost btn--icon btn--xs" id="prevChBtn" title="上一练习"><span class="ic" data-ic="chevronLeft" data-s="14"></span></button>
+            <button class="btn btn--ghost btn--icon btn--xs" id="nextChBtn" title="下一练习"><span class="ic" data-ic="chevronRight" data-s="14"></span></button>
+          </div>
+          <div class="outline-drawer" id="outlineDrawer" aria-label="章节目录">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border-subtle)">
+              <strong style="font-family:var(--font-display);font-size:13px;font-weight:500">全部练习</strong>
+              <button class="btn btn--ghost btn--icon btn--xs" id="outlineCloseBtn" aria-label="关闭目录"><span class="ic" data-ic="x" data-s="14"></span></button>
+            </div>
+            <div class="outline-list" id="outlineList"></div>
+          </div>
+          <div class="manual-scroll" id="manualScroll" data-sel-origin="manual">
+            <div class="manual-inner" id="manualBody"></div>
+          </div>
+        </aside>
+
+        <div class="split-x" id="splitLeft" role="separator" aria-orientation="vertical" title="拖拽调整宽度，双击复原"></div>
+
+        <!-- CENTER PANE: Collapsible Tree + Spacious Editor + Compact Terminal -->
+        <section class="pane-center" id="paneCenter" aria-label="代码与终端">
+          <div class="center-top">
+            <!-- File Tree (Collapsed by default for calmness — 1 click to open) -->
+            <div class="tree-pane is-collapsed" id="treePane">
+              <div class="tree-head">
+                <span>项目文件</span>
+                <div style="display:flex;gap:2px">
+                  <button class="btn btn--ghost btn--icon btn--xs" id="newFileBtn" title="新建文件"><span class="ic" data-ic="filePlus" data-s="13"></span></button>
+                  <button class="btn btn--ghost btn--icon btn--xs" id="compareDiffBtn" title="双文件对照"><span class="ic" data-ic="gitCompare" data-s="13"></span></button>
+                  <button class="btn btn--ghost btn--icon btn--xs" id="collapseTreeBtn" title="收起文件树"><span class="ic" data-ic="panelLeftClose" data-s="13"></span></button>
+                </div>
+              </div>
+              <div class="tree-list" id="fileTree" role="tree" aria-label="工作区文件"></div>
+              <div class="tree-foot">
+                <button class="btn btn--secondary btn--xs" style="width:100%" id="openExtIdeBtn"><span class="ic" data-ic="externalLink" data-s="12"></span><span id="extIdeLabel">在 VS Code 打开</span></button>
+                <button class="btn btn--ghost btn--xs" style="width:100%" id="simConflictBtn"><span class="ic" data-ic="alertTriangle" data-s="12"></span>模拟外部修改</button>
+              </div>
+            </div>
+
+            <!-- Spacious Code Editor -->
+            <div class="editor-wrap">
+              <div class="etabs" id="editorTabsBar">
+                <button class="btn btn--ghost btn--icon btn--xs" id="toggleTreeBtn" title="展开 / 收起项目文件树" style="margin-right:2px"><span class="ic" data-ic="folder" data-s="14"></span></button>
+                <div id="editorTabs" style="display:flex;align-items:center;gap:4px;overflow-x:auto;flex:1" role="tablist" aria-label="已打开文件"></div>
+                <button class="btn btn--ghost btn--xs" id="saveFileBtn" title="保存 (⌘S)"><span class="ic" data-ic="save" data-s="12"></span>保存</button>
+              </div>
+              <div class="conflict-banner" id="conflictBanner" role="alert">
+                <span class="ic" data-ic="alertTriangle" data-s="15"></span>
+                <span style="flex:1">当前文件已在外部 IDE 被修改</span>
+                <button class="btn btn--secondary btn--xs" id="conflictLoadDisk">加载磁盘版</button>
+                <button class="btn btn--ghost btn--xs" id="conflictKeep">保留草稿</button>
+              </div>
+              <div class="editor-body" id="editorBody" data-sel-origin="editor">
+                <div class="gutter" id="edGutter" aria-hidden="true"></div>
+                <div class="code-stage">
+                  <div class="line-hl" id="edLineHl"></div>
+                  <pre class="code-hl" id="edCodeHl" aria-hidden="true"></pre>
+                  <textarea class="code-ta" id="edTextarea" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" aria-label="代码编辑器"></textarea>
+                </div>
+              </div>
+              <div class="editor-foot">
+                <button class="lsp-pill" id="lspStatusBtn" title="语言服务状态">
+                  <span class="dot dot--ok" id="lspDot"></span>
+                  <span id="lspLabel">gopls 就绪</span>
+                </button>
+                <span class="muted" style="margin-left:auto" id="edCursor">行 1, 列 1</span>
+                <span class="muted mono" id="edLangLabel">Go</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="split-y" id="splitBottom" role="separator" aria-orientation="horizontal" title="拖拽调整终端高度"></div>
+
+          <!-- Compact Bottom Terminal + Grading -->
+          <div class="center-bottom" id="centerBottom">
+            <div class="btabs" id="bottomTabs">
+              <div id="termTabsWrap" style="display:flex;align-items:center;gap:4px"></div>
+              <button class="btn btn--ghost btn--icon btn--xs" id="newTermBtn" title="新建终端"><span class="ic" data-ic="plus" data-s="13"></span></button>
+              <span style="width:1px;height:14px;background:var(--border);margin:0 4px"></span>
+              <button class="btab" id="gradeTabBtn" data-btab="grade">
+                <span class="ic" data-ic="checkCircle" data-s="13" style="color:var(--success)"></span>
+                <span>验收结果</span>
+                <span class="badge" style="height:18px;font-size:10.5px;padding:0 6px" id="gradeCountBadge">待运行</span>
+              </button>
+
+              <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                <button class="btn btn--ai-soft btn--xs btn--pill" id="diagLastErrBtn" style="display:none"><span class="ic" data-ic="stethoscope" data-s="12"></span>问 AI 诊断</button>
+                <button class="btn btn--ghost btn--icon btn--xs" id="clearTermBtn" title="清空终端"><span class="ic" data-ic="trash" data-s="13"></span></button>
+                <button class="btn btn--ghost btn--icon btn--xs" id="maxTermBtn" title="放大 / 还原"><span class="ic" data-ic="maximize" data-s="13"></span></button>
+              </div>
+            </div>
+
+            <div class="term-viewport" id="termViewport" data-sel-origin="terminal" aria-live="polite"></div>
+            <div class="port-banner" id="portBanner">
+              <span class="ic" data-ic="alertTriangle" data-s="14"></span>
+              <span style="flex:1"><code class="mono">127.0.0.1:8080</code> 端口已被占用</span>
+              <button class="btn btn--secondary btn--xs" id="focusDaemonBtn">切到服务终端</button>
+              <button class="btn btn--ai-soft btn--xs" id="askPortAiBtn">问 AI</button>
+            </div>
+            <div class="term-prompt" id="termPromptBar">
+              <span class="muted" id="termPromptCwd">task-api $</span>
+              <input id="termCmdInput" placeholder="输入命令回车运行…" autocomplete="off" aria-label="终端命令输入">
+            </div>
+            <div class="grade-view" id="gradeView" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <!-- RIGHT PANE: AI Tutor Drawer (On-Demand) -->
+        <aside class="pane-ai" id="paneAi" aria-label="AI 助教">
+          <div class="ai-inner">
+            <div class="ai-head">
+              <span class="ic" data-ic="sparkles" data-s="15" style="color:var(--ai)"></span>
+              <strong style="font-family:var(--font-display);font-size:14px;font-weight:500">AI 助教</strong>
+              <button class="badge badge--ai" id="aiBackendBadge" title="切换 BYOK 或 ACP Agent" style="cursor:pointer">ACP · Claude Code</button>
+              <button class="btn btn--ghost btn--icon btn--xs" style="margin-left:auto" id="closeAiBtn" aria-label="关闭"><span class="ic" data-ic="x" data-s="14"></span></button>
+            </div>
+            <div class="ai-mode-bar">
+              <div class="seg" id="aiStyleSeg" role="group" aria-label="教学风格">
+                <button data-style="socratic" aria-pressed="true">引导思考</button>
+                <button data-style="direct" aria-pressed="false">直接解答</button>
+              </div>
+              <span class="muted mono" style="font-size:11px" id="aiTokenEst">~980 tok</span>
+            </div>
+            <div class="ai-msgs" id="aiMsgs"></div>
+            <div class="ai-chips" id="aiChips" aria-label="已附加上下文"></div>
+            <div class="ai-compose">
+              <textarea id="aiInput" rows="2" placeholder="划选任意代码或报错提问，或直接输入…" aria-label="向 AI 提问"></textarea>
+              <div class="ai-compose-foot">
+                <span>Enter 发送</span>
+                <div style="display:flex;gap:4px">
+                  <button class="btn btn--danger-soft btn--xs btn--pill" id="aiStopBtn" style="display:none"><span class="ic" data-ic="square" data-s="10"></span>停止</button>
+                  <button class="btn btn--primary btn--xs btn--pill" id="aiSendBtn"><span class="ic" data-ic="send" data-s="11"></span>发送</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Floating Selection Ask-AI Pill -->
+<div class="sel-bar" id="selBar" role="toolbar" aria-label="划选提问"></div>
+
+<!-- Arc Appearance Slide-Over Drawer -->
+<div class="drawer-scrim" id="appearanceDrawer" role="dialog" aria-modal="true" aria-label="外观定制">
+  <div class="appearance-drawer">
+    <div class="drawer-head">
+      <h3>外观定制</h3>
+      <button class="btn btn--secondary btn--icon btn--xs btn--pill" id="closeAppearanceBtn" aria-label="关闭"><span class="ic" data-ic="x" data-s="14"></span></button>
+    </div>
+    <div class="drawer-body">
+      <div>
+        <span class="drawer-label">强调色</span>
+        <div class="swatch-row" id="accentSwatches" role="group" aria-label="选择强调色">
+          <button class="swatch" data-accent="neutral" aria-pressed="true" title="Neutral" style="background:#525252"></button>
+          <button class="swatch" data-accent="violet" aria-pressed="false" title="Violet" style="background:#7747ff"></button>
+          <button class="swatch" data-accent="blue" aria-pressed="false" title="Blue" style="background:#0562ef"></button>
+          <button class="swatch" data-accent="green" aria-pressed="false" title="Green" style="background:#0db879"></button>
+          <button class="swatch" data-accent="amber" aria-pressed="false" title="Amber" style="background:#f3ad20"></button>
+          <button class="swatch" data-accent="orange" aria-pressed="false" title="Orange" style="background:#f48120"></button>
+          <button class="swatch" data-accent="coral" aria-pressed="false" title="Coral" style="background:#f15f55"></button>
+          <button class="swatch" data-accent="rose" aria-pressed="false" title="Rose" style="background:#ed4e9d"></button>
+        </div>
+        <button class="btn btn--secondary btn--sm btn--pill" id="copyThemeCssBtn" style="margin-top:14px">
+          <span class="ic" data-ic="copy" data-s="13"></span><span>复制主题 CSS</span>
+        </button>
+      </div>
+      <div>
+        <span class="drawer-label">主题模式</span>
+        <div class="seg" id="appearanceThemeSeg" style="display:flex;width:100%" role="group">
+          <button data-theme-pick="light" aria-pressed="true" style="flex:1;justify-content:center;height:30px">浅色 Light</button>
+          <button data-theme-pick="dark" aria-pressed="false" style="flex:1;justify-content:center;height:30px">深色 Dark</button>
+        </div>
+      </div>
+      <div>
+        <span class="drawer-label">代码字号</span>
+        <div class="seg" id="appearanceFontSeg" style="display:flex;width:100%" role="group">
+          <button data-fsize="12.5" aria-pressed="false" style="flex:1;justify-content:center;height:28px">紧凑</button>
+          <button data-fsize="13.5" aria-pressed="true" style="flex:1;justify-content:center;height:28px">标准</button>
+          <button data-fsize="15" aria-pressed="false" style="flex:1;justify-content:center;height:28px">大字</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL 1: Settings -->
+<div class="overlay" id="settingsModal" role="dialog" aria-modal="true" aria-label="设置">
+  <div class="modal modal--lg">
+    <div class="modal-head">
+      <h3><span class="ic" data-ic="settings" data-s="16"></span>设置</h3>
+      <button class="btn btn--ghost btn--icon btn--xs" data-close="settingsModal" aria-label="关闭"><span class="ic" data-ic="x" data-s="15"></span></button>
+    </div>
+    <div class="settings-grid">
+      <nav class="s-nav" id="settingsNav">
+        <button class="is-active" data-stab="ai"><span class="ic" data-ic="sparkles" data-s="14"></span>AI 与 ACP</button>
+        <button data-stab="runtimes"><span class="ic" data-ic="cpu" data-s="14"></span>四语言运行时</button>
+        <button data-stab="editor"><span class="ic" data-ic="sliders" data-s="14"></span>编辑器与桌面</button>
+        <button data-stab="privacy"><span class="ic" data-ic="shieldCheck" data-s="14"></span>隐私与数据</button>
+      </nav>
+      <div>
+        <div class="s-pane is-active" data-spane="ai">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div>
+              <strong style="font-family:var(--font-display);font-size:14.5px;font-weight:500">AI 助教通道</strong>
+              <p class="muted" style="font-size:12px;margin-top:2px">自定义 LLM Provider（BYOK）或通过 ACP 连接外部 Agent</p>
+            </div>
+            <div class="seg" id="aiProtoSeg">
+              <button data-proto="byok" aria-pressed="false">自定义 Provider</button>
+              <button data-proto="acp" aria-pressed="true">ACP Agent</button>
+            </div>
+          </div>
+
+          <div id="protoByokBox" style="display:none;flex-direction:column;gap:12px;padding:15px;border-radius:14px;background:var(--surface-muted);border:1px solid var(--border)">
+            <div class="field">
+              <label>服务商预设</label>
+              <select class="select" id="byokPreset">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="ollama">本地 Ollama（完全离线）</option>
+                <option value="custom">自定义 OpenAI 兼容端点</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:10px">
+              <div class="field"><label>Base URL</label><input class="input mono" id="byokUrl" value="https://api.deepseek.com/v1"></div>
+              <div class="field"><label>Model</label><input class="input mono" id="byokModel" value="deepseek-chat"></div>
+            </div>
+            <div class="field"><label>API Key（存入系统钥匙串）</label><input class="input mono" type="password" id="byokKey" value="sk-demo-codelab-keychain"></div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button class="btn btn--secondary btn--sm" id="testByokBtn">测试连通性</button>
+              <span class="muted" style="font-size:12px" id="byokTestRes"></span>
+            </div>
+          </div>
+
+          <div id="protoAcpBox" style="display:flex;flex-direction:column;gap:12px;padding:15px;border-radius:14px;background:var(--arc-gradient-soft);border:1px solid var(--arc-gradient-line)">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="badge badge--ai">ACP · JSON-RPC 2.0 / stdio</span>
+              <span class="muted" style="font-size:12px">工具调用由工作台审批管控</span>
+            </div>
+            <div class="field">
+              <label>本机 ACP Agent</label>
+              <select class="select" id="acpPreset">
+                <option value="claude">Claude Code（claude --acp）</option>
+                <option value="gemini">Gemini CLI（gemini --acp）</option>
+                <option value="codex">Codex CLI（codex --acp）</option>
+                <option value="opencode">OpenCode（opencode acp）</option>
+                <option value="custom">自定义命令</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:12px;align-items:end">
+              <div class="field"><label>启动命令</label><input class="input mono" id="acpCmd" value="claude --acp"></div>
+              <div class="field">
+                <label>工具权限策略</label>
+                <select class="select" id="acpPermPolicy">
+                  <option value="readonly">引导只读（写/执行需审批）</option>
+                  <option value="ask">每次询问</option>
+                  <option value="rw">工作区读写放行</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button class="btn btn--secondary btn--sm" id="testAcpBtn">测试 ACP 握手</button>
+              <span class="muted" style="font-size:12px" id="acpTestRes"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-pane" data-spane="runtimes">
+          <div>
+            <strong style="font-family:var(--font-display);font-size:14.5px;font-weight:500">四语言运行时与 LSP</strong>
+            <p class="muted" style="font-size:12px;margin-top:2px">优先复用系统环境；缺失时隔离安装至 <code class="mono">~/.codelab/runtimes/</code></p>
+          </div>
+          <div id="settingsRtList" style="display:flex;flex-direction:column;gap:10px"></div>
+        </div>
+
+        <div class="s-pane" data-spane="editor">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field">
+              <label>界面主题</label>
+              <select class="select" id="setThemeSel">
+                <option value="light">浅色 Light</option>
+                <option value="dark">深色 Dark</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>代码字号（<span class="mono" id="fontSizeVal">13.5px</span>）</label>
+              <input type="range" min="12" max="18" step="0.5" value="13.5" id="setFontRange" style="margin-top:8px">
+            </div>
+          </div>
+          <div class="field">
+            <label>外部 IDE</label>
+            <select class="select" id="setExtIde">
+              <option value="VS Code">VS Code</option>
+              <option value="Cursor">Cursor</option>
+              <option value="GoLand">GoLand</option>
+              <option value="IntelliJ IDEA">IntelliJ IDEA</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="s-pane" data-spane="privacy">
+          <div class="rt-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+            <strong style="font-size:13px;font-weight:500">100% 本地优先存储</strong>
+            <p class="muted" style="font-size:12.5px;line-height:1.6">进度存放在 <code class="mono">.codelab/progress.json</code>，自动屏蔽 <code class="mono">.env</code> 等敏感文件进入 AI 上下文。</p>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn btn--secondary btn--sm" id="clearAiHistBtn">清空当前对话</button>
+            <button class="btn btn--danger-soft btn--sm" id="resetProgressBtn">重置本节验收</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn--primary btn--pill" id="saveSettingsBtn">保存并应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL 2: Import / Author Course Pack -->
+<div class="overlay" id="packModal" role="dialog" aria-modal="true" aria-label="导入或创作课程包">
+  <div class="modal">
+    <div class="modal-head">
+      <h3><span class="ic" data-ic="package" data-s="16"></span>课程包</h3>
+      <div class="seg" id="packTabSeg">
+        <button data-ptab="import" aria-pressed="true">导入本地 / Git</button>
+        <button data-ptab="author" aria-pressed="false">创作课程包</button>
+      </div>
+      <button class="btn btn--ghost btn--icon btn--xs" data-close="packModal" aria-label="关闭"><span class="ic" data-ic="x" data-s="15"></span></button>
+    </div>
+    <div class="modal-body">
+      <div id="packImportPane" style="display:flex;flex-direction:column;gap:14px">
+        <div class="field"><label>本地 .md 手册路径或 Git 仓库 URL</label><input class="input mono" id="impSource" value="https://github.com/codelab-community/go-concurrency-handbook.git"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field"><label>主要语言</label><select class="select" id="impLang"><option>Go</option><option>Python</option><option>JS/TS</option><option>Java</option></select></div>
+          <div class="field"><label>工作区目录</label><input class="input mono" id="impWorkspace" value="~/codelab-workspaces/custom-pack"></div>
+        </div>
+        <div class="rt-row"><span style="color:var(--success)">✓</span><span class="muted" style="font-size:12.5px">已自动识别 6 个练习章节与 <code class="mono">.codelab-checks.json</code></span></div>
+      </div>
+      <div id="packAuthorPane" style="display:none;flex-direction:column;gap:12px">
+        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:10px">
+          <div class="field"><label>课程名称</label><input class="input" id="authTitle" value="Go 并发限流器实战"></div>
+          <div class="field"><label>语言</label><select class="select" id="authLang"><option>Go</option><option>Python</option><option>JS/TS</option><option>Java</option></select></div>
+        </div>
+        <div class="field"><label>Markdown 手册</label><textarea class="input mono" rows="4" id="authMd">## 练习 1：实现令牌桶限流器
+完成 `Allow() bool` 方法，并通过竞态测试。
+
+```bash cwd="limiter" mode="oneshot"
+go test -race ./...
+```</textarea></div>
+        <div class="field"><label>验收配置（.codelab-checks.json）</label><textarea class="input mono" rows="3" id="authChecks">{"schemaVersion":"1.0","checks":[{"id":"c1","title":"竞态测试通过","type":"command_test","command":"go test -race ./..."}]}</textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn--secondary btn--pill" data-close="packModal">取消</button>
+      <button class="btn btn--primary btn--pill" id="packSubmitBtn">导入并开始</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL 3: Dangerous Command Guardrail -->
+<div class="overlay" id="riskModal" role="alertdialog" aria-modal="true" aria-labelledby="riskTitle">
+  <div class="modal modal--sm">
+    <div class="modal-head" style="background:color-mix(in oklab, var(--danger) 9%, var(--surface))">
+      <h3 id="riskTitle" style="color:var(--danger)"><span class="ic" data-ic="alertTriangle" data-s="16"></span>高危命令安全确认</h3>
+      <button class="btn btn--ghost btn--icon btn--xs" data-close="riskModal" aria-label="取消"><span class="ic" data-ic="x" data-s="15"></span></button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+      <p style="font-size:13.5px;line-height:1.6">命中高危规则（<strong id="riskReason" style="color:var(--danger)">rm -rf</strong>），请核对目录与命令：</p>
+      <div style="font-size:12px;color:var(--text-muted)">目录：<code class="mono" id="riskCwd"></code></div>
+      <pre class="cmd-code" style="border:1px solid color-mix(in oklab, var(--danger) 30%, var(--border));border-radius:12px;background:var(--surface-muted)" id="riskCmdPreview"></pre>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn--secondary btn--pill" id="riskCancelBtn" data-close="riskModal">取消</button>
+      <button class="btn btn--danger btn--pill" id="riskConfirmBtn">继续执行</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL 4: Diff / Safe Write -->
+<div class="overlay" id="diffModal" role="dialog" aria-modal="true" aria-label="差异对比">
+  <div class="modal modal--lg">
+    <div class="modal-head">
+      <h3 id="diffTitle"><span class="ic" data-ic="gitCompare" data-s="16"></span>差异对比</h3>
+      <button class="btn btn--ghost btn--icon btn--xs" data-close="diffModal" aria-label="关闭"><span class="ic" data-ic="x" data-s="15"></span></button>
+    </div>
+    <div class="modal-body"><div class="diff-grid" id="diffGrid"></div></div>
+    <div class="modal-foot" id="diffFoot">
+      <button class="btn btn--secondary btn--pill" data-close="diffModal">保留本地</button>
+      <button class="btn btn--primary btn--pill" id="diffApplyBtn">应用参考修改</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+const ICONS = {
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  cpu: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  folderDown: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6m3-3-3 3-3-3"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  square: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  shieldCheck: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  menu: '<line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  panelLeftOpen: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18m5-12 3 3-3 3"/>',
+  panelLeftClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18m7-6-3-3 3-3"/>',
+  filePlus: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M9 15h6M12 12v6"/>',
+  fileCode: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4m-10 4-2 2 2 2m4 0 2-2-2-2"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  gitCompare: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M11 18H8a2 2 0 0 1-2-2V9"/>',
+  externalLink: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  alertTriangle: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
+  save: '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"/>',
+  checkCircle: '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  stethoscope: '<path d="M11 2v2M5 2v2M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/>',
+  trash: '<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  maximize: '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  package: '<path d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  messageSquare: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  thumbsUp: '<path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>',
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+};
+const svg = (name, size = 15, cls = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" class="${cls}">${ICONS[name] || ''}</svg>`;
+function hydrateIcons(root = document) { root.querySelectorAll('[data-ic]').forEach(el => { el.innerHTML = svg(el.dataset.ic, +(el.dataset.s || 15)); }); }
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function toast(msg, tone = 'info') {
+  const colors = { ok: 'var(--success)', warn: 'var(--warning)', err: 'var(--danger)', ai: 'var(--ai)', info: 'var(--foreground)' };
+  const ic = { ok: 'checkCircle', warn: 'alertTriangle', err: 'alertTriangle', ai: 'sparkles', info: 'terminal' }[tone] || 'terminal';
+  const wrap = $('#toasts');
+  while (wrap.children.length >= 2) wrap.firstElementChild.remove();
+  const el = document.createElement('div'); el.className = 'toast';
+  el.innerHTML = `<span style="color:${colors[tone]}">${svg(ic, 15)}</span><span>${msg}</span>`;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 180ms'; setTimeout(() => el.remove(), 200); }, 2600);
+}
+
+/* ==========================================================================
+   Courses & State (Concise, Scannable Copy)
+   ========================================================================== */
+const RUNTIMES = [
+  { id: 'go', lang: 'Go', version: 'go1.23.4 (系统)', lsp: 'gopls 就绪', status: 'ok', extra: 'goproxy.cn' },
+  { id: 'js', lang: 'JS/TS', version: 'Bun 1.1.38 (托管)', lsp: 'tsserver 就绪', status: 'ok', extra: '~/.codelab/runtimes/bun' },
+  { id: 'py', lang: 'Python', version: 'Python 3.12 via uv', lsp: 'pyright 就绪', status: 'ok', extra: 'pytest 内置' },
+  { id: 'java', lang: 'Java', version: '未检测到 JDK 21', lsp: 'jdtls 未安装', status: 'warn', extra: '支持一键隔离安装' },
+];
+
+const COURSES = {
+  go: {
+    id: 'go', lang: 'Go',
+    title: 'Go 与 GoFrame 开发实践',
+    shortDesc: '从标准库 net/http 到并发测试与 GoFrame 迁移。',
+    workspace: '~/codelab-workspaces/go-goframe-learning',
+    lspLabel: 'gopls 就绪',
+    totalEx: 10, doneEx: 4, activeCh: 1,
+    chapters: [
+      { id: 'ex-0', title: '练习 0：第一性原理与接口合同', done: true },
+      { id: 'ex-1', title: '练习 1：让一个请求完成往返', done: false },
+      { id: 'ex-2', title: '练习 2：内存任务 CRUD 与校验', done: true },
+      { id: 'ex-3', title: '练习 3：拆包与并发竞态测试', done: true },
+      { id: 'ex-4', title: '练习 4：接入 SQLite 事务', done: true },
+      { id: 'ex-7', title: '练习 7：迁移至 GoFrame 对照', done: false },
+    ],
+    files: [
+      { path: 'task-api/go.mod', lang: 'go', content: `module example.com/task-api\n\ngo 1.23\n` },
+      { path: 'task-api/main.go', lang: 'go', content: `package main\n\nimport (\n\t"log"\n\t"net/http"\n)\n\nfunc main() {\n\tmux := http.NewServeMux()\n\n\t// 练习 1：补全方法前缀 "GET /healthz" 以自动返回 405\n\tmux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {\n\t\tw.Header().Set("Content-Type", "application/json")\n\t\tw.WriteHeader(http.StatusOK)\n\t\tw.Write([]byte(\`{"status":"ok"}\`))\n\t})\n\n\tlog.Println("listening on http://127.0.0.1:8080")\n\tlog.Fatal(http.ListenAndServe("127.0.0.1:8080", mux))\n}\n` },
+      { path: 'task-api/internal/task/memory.go', lang: 'go', content: `package task\n\nimport "sync"\n\ntype Store struct {\n\tmu     sync.RWMutex\n\tnextID int64\n\titems  map[int64]string\n}\n` },
+      { path: 'task-api-gf/main.go', lang: 'go', content: `package main\n\nimport (\n\t"github.com/gogf/gf/v2/frame/g"\n\t"github.com/gogf/gf/v2/net/ghttp"\n)\n\nfunc main() {\n\ts := g.Server()\n\ts.BindHandler("GET:/healthz", func(r *ghttp.Request) {\n\t\tr.Response.WriteJson(g.Map{"status": "ok"})\n\t})\n\ts.SetPort(8080)\n\ts.Run()\n}\n` },
+    ],
+    refPatch: {
+      file: 'task-api/main.go',
+      oldLine: '\tmux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {',
+      newLine: '\tmux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {',
+    },
+    manual: {
+      goal: '给 <code>/healthz</code> 路由加上 <code>GET</code> 方法前缀，使 <code>POST</code> 请求自动返回 <code>405</code>。',
+      step2Tip: '在右侧 <code>main.go</code> 第 12 行补全路由模式，按 <code>⌘S</code> 保存。',
+      primaryCmd: { id: 'c1', cwd: 'task-api', mode: 'daemon', cmd: 'go run .' },
+      moreCommands: [
+        { id: 'c2', cwd: 'task-api', mode: 'oneshot', cmd: 'curl -i http://127.0.0.1:8080/healthz' },
+        { id: 'c3', cwd: 'task-api', mode: 'oneshot', cmd: 'go test -race ./...' },
+        { id: 'c4', cwd: 'task-api', mode: 'oneshot', cmd: 'rm -rf /tmp/task-api-cache' },
+      ],
+      checks: [
+        { id: 'v1', auto: true, title: 'GET /healthz 返回 200 {"status":"ok"}', status: 'idle' },
+        { id: 'v2', auto: true, title: 'POST /healthz 返回 405 Method Not Allowed', status: 'idle' },
+        { id: 'v3', auto: true, title: 'GET /missing 返回 404 Not Found', status: 'idle' },
+      ],
+      reflection: '任务不存在（404）与数据库不可用（503），为什么不能合并成同一种错误？对调用方重试有什么影响？',
+    },
+    runChecks(files, daemonOn) {
+      if (!daemonOn) return { blocked: '请先在「步骤 1」点击运行 go run . 启动本地服务' };
+      const src = files.find(f => f.path === 'task-api/main.go').content.replace(/\/\/[^\n]*/g, '');
+      const hasMethod = /"GET\s+\/healthz"/.test(src);
+      return {
+        items: [
+          { id: 'v1', pass: true, ms: 4, exp: '200 OK · {"status":"ok"}', act: '200 OK · {"status":"ok"}' },
+          { id: 'v2', pass: hasMethod, ms: 3, exp: '405 Method Not Allowed', act: hasMethod ? '405 Method Not Allowed' : '200 OK（未限定 GET 前缀）' },
+          { id: 'v3', pass: true, ms: 2, exp: '404 Not Found', act: '404 Not Found' },
+        ]
+      };
+    }
+  },
+  js: {
+    id: 'js', lang: 'JS/TS',
+    title: 'TypeScript 数据流水线实战',
+    shortDesc: '多文件函数判题：筛选过滤、去重聚合与并发限流。',
+    workspace: '~/codelab-workspaces/ts-data-pipeline',
+    lspLabel: 'tsserver 就绪',
+    totalEx: 8, doneEx: 3, activeCh: 0,
+    chapters: [
+      { id: 'js-1', title: '练习 1：用户筛选与字段映射', done: false },
+      { id: 'js-2', title: '练习 2：Promise.allSettled 聚合', done: true },
+      { id: 'js-3', title: '练习 3：手写并发限流器', done: true },
+    ],
+    files: [
+      { path: 'src/pipeline.ts', lang: 'js', content: `import { User } from './types';\n\n// 练习 1：筛出 age >= 18 的成年用户，仅返回 name 数组（不修改原数组）\nexport function getAdultNames(users) {\n  // TODO: 使用 filter 与 map 替换下方返回语句\n  return users;\n}\n` },
+      { path: 'src/types.ts', lang: 'js', content: `export interface User {\n  name: string;\n  age: number;\n}\n` },
+    ],
+    refPatch: {
+      file: 'src/pipeline.ts',
+      oldLine: '  return users;',
+      newLine: '  return users.filter(u => u.age >= 18).map(u => u.name);',
+    },
+    manual: {
+      goal: '补全 <code>getAdultNames</code>，返回所有 <code>age &gt;= 18</code> 用户的姓名数组且不修改原数组。',
+      step2Tip: '编辑右侧 <code>src/pipeline.ts</code> 后，直接点击下方验收（实时运行真实 JS 断言）。',
+      primaryCmd: { id: 'j1', cwd: 'ts-data-pipeline', mode: 'oneshot', cmd: 'bun test tests/pipeline.test.ts' },
+      moreCommands: [],
+      checks: [
+        { id: 'jv1', auto: true, title: '过滤未成年人并只返回 name 数组', status: 'idle' },
+        { id: 'jv2', auto: true, title: '边界：正好 18 岁计为成年用户', status: 'idle' },
+        { id: 'jv3', auto: true, title: '空数组返回 [] 且不修改原数组', status: 'idle' },
+      ],
+      reflection: 'filter + map 链式写法和单次 for 循环在可读性与中间数组开销上如何取舍？',
+    },
+    runChecks(files) {
+      const raw = files.find(f => f.path === 'src/pipeline.ts').content.replace(/^import .*$/gm, '').replace(/export\s+function/g, 'function');
+      try {
+        const fn = new Function('"use strict";\n' + raw + '\nreturn getAdultNames;')();
+        const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        const r1 = fn([{ name: '小林', age: 26 }, { name: '阿杰', age: 16 }, { name: '美玲', age: 19 }]);
+        const r2 = fn([{ name: '阿明', age: 18 }, { name: '小雨', age: 17 }]);
+        const arr = [{ name: 'A', age: 20 }, { name: 'B', age: 10 }];
+        const snap = JSON.stringify(arr);
+        const r3 = fn([]), r4 = fn(arr);
+        const immut = r4 !== arr && JSON.stringify(arr) === snap && eq(r3, []);
+        return {
+          items: [
+            { id: 'jv1', pass: eq(r1, ['小林', '美玲']), ms: 1.2, exp: "['小林','美玲']", act: JSON.stringify(r1) },
+            { id: 'jv2', pass: eq(r2, ['阿明']), ms: 0.6, exp: "['阿明']", act: JSON.stringify(r2) },
+            { id: 'jv3', pass: immut, ms: 0.5, exp: '返回新数组 []', act: immut ? '通过' : '原数组被直接返回' },
+          ]
+        };
+      } catch (e) { return { error: `${e.name}: ${e.message}` }; }
+    }
+  },
+  py: {
+    id: 'py', lang: 'Python',
+    title: 'Python 数据清洗与订单统计',
+    shortDesc: '通过 uv 隔离环境运行多模块 pytest 函数判题。',
+    workspace: '~/codelab-workspaces/python-data-clean',
+    lspLabel: 'pyright 就绪',
+    totalEx: 6, doneEx: 2, activeCh: 0,
+    chapters: [
+      { id: 'py-1', title: '练习 1：清洗无效订单并汇总金额', done: false },
+      { id: 'py-2', title: '练习 2：使用 dataclass 校验 CSV', done: true },
+    ],
+    files: [
+      { path: 'src/cleaner.py', lang: 'py', content: `from models import Order\n\ndef sum_valid_by_category(orders: list[Order]) -> dict[str, float]:\n    totals: dict[str, float] = {}\n    for o in orders:\n        # TODO: 过滤 amount <= 0 的脏数据\n        totals[o.category] = round(totals.get(o.category, 0.0) + o.amount, 2)\n    return totals\n` },
+      { path: 'src/models.py', lang: 'py', content: `from dataclasses import dataclass\n\n@dataclass\nclass Order:\n    category: str\n    amount: float\n` },
+    ],
+    refPatch: { file: 'src/cleaner.py', oldLine: '        # TODO: 过滤 amount <= 0 的脏数据', newLine: '        if o.amount <= 0:\n            continue' },
+    manual: {
+      goal: '在 <code>src/cleaner.py</code> 中忽略 <code>amount &lt;= 0</code> 的脏订单，按类目汇总金额。',
+      step2Tip: '补全过滤条件后点击运行测试。',
+      primaryCmd: { id: 'p1', cwd: 'python-data-clean', mode: 'oneshot', cmd: 'uv run pytest -q' },
+      moreCommands: [],
+      checks: [
+        { id: 'pv1', auto: true, title: '正常订单按类目累加并保留两位小数', status: 'idle' },
+        { id: 'pv2', auto: true, title: '负金额与 0 元脏数据被过滤', status: 'idle' },
+      ],
+      reflection: '金融金额计算为什么推荐 Decimal 而不是 float？',
+    },
+    runChecks(files) {
+      const src = files.find(f => f.path === 'src/cleaner.py').content;
+      const ok = /if\s+o\.amount\s*<=\s*0|if\s+o\.amount\s*>\s*0/.test(src);
+      return {
+        items: [
+          { id: 'pv1', pass: true, ms: 14, exp: "{'books': 128.5}", act: "{'books': 128.5}" },
+          { id: 'pv2', pass: ok, ms: 11, exp: "{'books': 99.0}", act: ok ? "{'books': 99.0}" : "{'books': 79.0}（含 -20.0）" },
+        ]
+      };
+    }
+  },
+  java: {
+    id: 'java', lang: 'Java',
+    title: 'Java 21 并发限流器实战',
+    shortDesc: 'Temurin JDK 21 与 JUnit 5 多线程安全判题。',
+    workspace: '~/codelab-workspaces/java-rate-limiter',
+    lspLabel: 'jdtls 未安装',
+    totalEx: 7, doneEx: 2, activeCh: 0,
+    chapters: [
+      { id: 'ja-1', title: '练习 1：线程安全的 tryAcquire 扣减', done: false },
+      { id: 'ja-2', title: '练习 2：虚拟线程并发压测', done: true },
+    ],
+    files: [
+      { path: 'src/TokenBucket.java', lang: 'java', content: `public class TokenBucket {\n    private int tokens;\n    public TokenBucket(int capacity) { this.tokens = capacity; }\n\n    // TODO: 补充 synchronized 保证多线程不超发\n    public boolean tryAcquire() {\n        if (tokens > 0) { tokens--; return true; }\n        return false;\n    }\n}\n` },
+    ],
+    refPatch: { file: 'src/TokenBucket.java', oldLine: '    public boolean tryAcquire() {', newLine: '    public synchronized boolean tryAcquire() {' },
+    manual: {
+      goal: '修复 <code>TokenBucket.tryAcquire()</code> 的并发竞态，保证 100 线程争抢无超发。',
+      step2Tip: '为 <code>tryAcquire()</code> 添加同步控制后点击运行验收。',
+      primaryCmd: { id: 'ja1', cwd: 'java-rate-limiter', mode: 'oneshot', cmd: 'javac -d out src/*.java && junit' },
+      moreCommands: [],
+      checks: [
+        { id: 'jav1', auto: true, title: '单线程连续获取边界正确', status: 'idle' },
+        { id: 'jav2', auto: true, title: '100 线程并发无超发（通过数 == 10）', status: 'idle' },
+      ],
+      reflection: 'synchronized 与 AtomicInteger CAS 循环各适合什么并发场景？',
+    },
+    runChecks(files) {
+      const src = files.find(f => f.path === 'src/TokenBucket.java').content;
+      const ok = /synchronized|AtomicInteger|ReentrantLock/.test(src);
+      return {
+        items: [
+          { id: 'jav1', pass: true, ms: 38, exp: 'acquired = 3', act: 'acquired = 3' },
+          { id: 'jav2', pass: ok, ms: 92, exp: 'concurrent == 10', act: ok ? 'concurrent == 10' : 'concurrent == 13（超发）' },
+        ]
+      };
+    }
+  }
+};
+
+const STATE = {
+  view: 'welcome', courseId: 'go', openTabs: [], activeFile: '', dirtyFiles: new Set(),
+  terms: [], activeBtab: 't1', aiOpen: false, aiProto: 'acp', aiAgentName: 'Claude Code',
+  aiProviderName: 'DeepSeek', aiStyle: 'socratic', acpPolicy: 'readonly', aiChips: [],
+  lastErrText: '', extIde: 'VS Code', streamingTimer: null, pendingRiskCmd: null,
+  pendingDiffPatch: null, langFilter: 'all', theme: 'light', accent: 'neutral',
+  recents: [
+    { id: 'go', path: '~/codelab-workspaces/go-goframe-learning', prog: '4/10', time: '10 分钟前' },
+    { id: 'py', path: '~/codelab-workspaces/python-data-clean', prog: '2/6', time: '昨天' },
+    { id: 'js', path: '~/codelab-workspaces/ts-data-pipeline', prog: '3/8', time: '3 天前' },
+  ],
+};
+
+const KWS = new Set('package import func return var const type struct interface defer go select chan range if else for switch case default true false nil null undefined let export from async await try catch finally throw new class public private protected synchronized boolean int void float def as in continue break'.split(' '));
+function hl(src) {
+  const re = /(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)|(`[^`]*`|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$\u4e00-\u9fa5][\w$\u4e00-\u9fa5]*)/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    const t = esc(m[0]);
+    if (m[1]) out += `<span class="tk-c">${t}</span>`;
+    else if (m[2]) out += `<span class="tk-s">${t}</span>`;
+    else if (m[3]) out += `<span class="tk-n">${t}</span>`;
+    else if (m[4]) {
+      const next = src.slice(re.lastIndex).match(/^\s*(.)/);
+      if (KWS.has(m[0])) out += `<span class="tk-k">${t}</span>`;
+      else if (next && next[1] === '(') out += `<span class="tk-f">${t}</span>`;
+      else if (/^[A-Z]/.test(m[0])) out += `<span class="tk-t">${t}</span>`;
+      else out += t;
+    }
+    last = re.lastIndex;
+  }
+  return out + esc(src.slice(last));
+}
+
+function setView(v) {
+  STATE.view = v;
+  $('#viewWelcome').classList.toggle('is-active', v === 'welcome');
+  $('#viewWorkbench').classList.toggle('is-active', v === 'workbench');
+  const isWb = v === 'workbench';
+  $('#wbTopControls').style.display = isWb ? 'flex' : 'none';
+  $('#focusToggleBtn').style.display = isWb ? 'inline-flex' : 'none';
+  $('#aiDrawerBtn').style.display = isWb ? 'inline-flex' : 'none';
+  if (v === 'welcome') renderWelcome();
+  hideSelBar();
+}
+$('#goWelcomeBtn').onclick = () => setView('welcome');
+
+function renderWelcome() {
+  const list = Object.values(COURSES).filter(c => STATE.langFilter === 'all' || c.lang === STATE.langFilter);
+  $('#welcomeCourseGrid').innerHTML = list.map(c => {
+    const pct = Math.round((c.doneEx / c.totalEx) * 100);
+    return `<article class="c-card" tabindex="0" onclick="openCourse('${c.id}')">
+      <div class="c-card-top">
+        <span class="lang-tag" data-lang="${c.lang}">${c.lang}</span>
+        <span class="mono muted" style="font-size:12px">${c.doneEx} / ${c.totalEx}</span>
+      </div>
+      <div>
+        <h3>${c.title}</h3>
+        <p style="margin-top:6px">${c.shortDesc}</p>
+      </div>
+      <div class="c-card-foot">
+        <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:${pct}%"></div></div>
+      </div>
+    </article>`;
+  }).join('');
+  $('#recentList').innerHTML = STATE.recents.map(r => {
+    const c = COURSES[r.id]; if (!c) return '';
+    return `<div class="recent-row" onclick="openCourse('${c.id}')">
+      <span class="ic muted">${svg('folder', 15)}</span>
+      <span style="font-size:13.5px;font-weight:500">${c.title}</span>
+      <span class="mono muted" style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.path}</span>
+      <span class="mono muted" style="font-size:12px">${r.prog}</span>
+      <span class="muted" style="font-size:12px;min-width:60px;text-align:right">${r.time}</span>
+    </div>`;
+  }).join('');
+  const go = COURSES.go;
+  $('#heroEyebrowText').textContent = `上次进度 · ${go.title}（${go.doneEx} / ${go.totalEx}）`;
+}
+$('#langFilterSeg').onclick = e => {
+  const b = e.target.closest('[data-lang]'); if (!b) return;
+  STATE.langFilter = b.dataset.lang;
+  $$('#langFilterSeg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  renderWelcome();
+};
+
+function allCmdsOf(c) { return [c.manual.primaryCmd, ...c.manual.moreCommands]; }
+
+function openCourse(id) {
+  STATE.courseId = id;
+  const c = COURSES[id];
+  STATE.openTabs = c.files.slice(0, 2).map(f => f.path);
+  STATE.activeFile = c.files[0].path === 'task-api/go.mod' ? 'task-api/main.go' : c.files[0].path;
+  if (!STATE.openTabs.includes(STATE.activeFile)) STATE.openTabs.unshift(STATE.activeFile);
+  STATE.dirtyFiles.clear();
+  STATE.lastErrText = '';
+  STATE.aiOpen = false;
+  $('#wb').classList.remove('has-ai', 'is-focus');
+  $('#treePane').classList.add('is-collapsed');
+  $('#aiDrawerBtn').setAttribute('aria-pressed', 'false');
+  $('#diagLastErrBtn').style.display = 'none';
+  STATE.terms = [{
+    id: 't1', title: '终端 1', cwd: c.manual.primaryCmd.cwd, mode: 'oneshot', running: false,
+    lines: [{ cls: 'dim', text: `# 本地终端已就绪 · ${c.workspace}` }]
+  }];
+  STATE.activeBtab = 't1';
+  STATE.aiChips = [
+    { id: 'ch', icon: '📖', label: c.chapters[c.activeCh].title.slice(0, 12), preview: c.manual.goal.replace(/<[^>]+>/g, '') },
+    { id: 'file', icon: '📄', label: STATE.activeFile.split('/').pop(), preview: c.files.find(f => f.path === STATE.activeFile).content.slice(0, 220) },
+  ];
+  $('#portBanner').classList.remove('is-open');
+  $('#conflictBanner').classList.remove('is-open');
+  setView('workbench');
+  renderTopCourse(); renderOutline(); renderManual(); renderFileTree();
+  renderEditorTabs(); renderEditor(); renderBottomPanel(); renderGradePanel(null);
+  resetAiWelcome(); renderAiChips(); updateLspBar();
+}
+
+function renderTopCourse() {
+  const c = COURSES[STATE.courseId];
+  $('#topLangTag').textContent = c.lang;
+  $('#topLangTag').dataset.lang = c.lang;
+  $('#topCourseName').textContent = c.title;
+  $('#topProgText').textContent = `${c.doneEx}/${c.totalEx}`;
+  $('#courseDdMenu').innerHTML = Object.values(COURSES).map(x => `
+    <button class="dd-item ${x.id === c.id ? 'is-active' : ''}" onclick="openCourse('${x.id}');$('#courseDdMenu').classList.remove('is-open')">
+      <span class="lang-tag" data-lang="${x.lang}">${x.lang}</span>
+      <span style="font-size:13px;font-weight:500;flex:1">${x.title}</span>
+      <span class="mono muted" style="font-size:11.5px">${x.doneEx}/${x.totalEx}</span>
+    </button>`).join('') +
+    `<div style="border-top:1px solid var(--border-subtle);margin:6px 0"></div>
+     <button class="dd-item" onclick="$('#courseDdMenu').classList.remove('is-open');openPackModal('import')"><span class="ic muted">${svg('folderDown', 14)}</span><span style="font-size:12.5px">导入本地 / Git 课程包…</span></button>`;
+}
+$('#courseDdBtn').onclick = e => { e.stopPropagation(); $('#courseDdMenu').classList.toggle('is-open'); };
+
+function renderOutline() {
+  const c = COURSES[STATE.courseId];
+  $('#manualChTitle').textContent = `${c.chapters[c.activeCh].title}`;
+  $('#focusRailTitle').textContent = c.chapters[c.activeCh].title;
+  $('#outlineList').innerHTML = c.chapters.map((ch, i) => `
+    <button class="ch-item ${i === c.activeCh ? 'is-active' : ''}" onclick="selectChapter(${i})">
+      <span class="dot ${ch.done ? 'dot--ok' : i === c.activeCh ? 'dot--warn' : 'dot--muted'}"></span>
+      <span style="flex:1">${ch.title}</span>
+      ${ch.done ? `<span style="color:var(--success)">${svg('check', 13)}</span>` : ''}
+    </button>`).join('');
+}
+function selectChapter(i) {
+  const c = COURSES[STATE.courseId];
+  c.activeCh = Math.max(0, Math.min(c.chapters.length - 1, i));
+  $('#outlineDrawer').classList.remove('is-open');
+  renderOutline(); renderManual();
+}
+$('#outlineToggleBtn').onclick = () => $('#outlineDrawer').classList.toggle('is-open');
+$('#outlineCloseBtn').onclick = () => $('#outlineDrawer').classList.remove('is-open');
+$('#prevChBtn').onclick = () => selectChapter(COURSES[STATE.courseId].activeCh - 1);
+$('#nextChBtn').onclick = () => selectChapter(COURSES[STATE.courseId].activeCh + 1);
+
+function cmdCardHtml(cmd, primary = false) {
+  const isDaemon = cmd.mode === 'daemon';
+  const isRisk = /rm\s+-rf|sudo\s+/.test(cmd.cmd);
+  return `<div class="cmd-card" id="cmd-${cmd.id}">
+    <div class="cmd-head">
+      <button class="cwd-pill" title="修改工作目录" onclick="editCwd('${cmd.id}')">${cmd.cwd}</button>
+      ${isDaemon ? '<span class="badge badge--success" style="height:20px;font-size:10.5px">常驻服务</span>' : isRisk ? '<span class="badge badge--danger" style="height:20px;font-size:10.5px">高危演练</span>' : ''}
+      <span class="cmd-status" id="cmdSt-${cmd.id}"></span>
+      <div class="cmd-actions">
+        <button class="btn ${primary ? 'btn--primary' : 'btn--secondary'} btn--xs btn--pill" onclick="dispatchCmd('${cmd.id}',false)">${svg('play', 10)} 运行</button>
+        <button class="btn btn--ghost btn--icon btn--xs" title="复制" onclick="navigator.clipboard&&navigator.clipboard.writeText(${JSON.stringify(cmd.cmd).replace(/"/g, '&quot;')});toast('已复制','ok')">${svg('copy', 12)}</button>
+      </div>
+    </div>
+    <pre class="cmd-code">$ ${esc(cmd.cmd)}</pre>
+  </div>`;
+}
+
+function renderManual() {
+  const c = COURSES[STATE.courseId], m = c.manual;
+  const doneCnt = m.checks.filter(x => x.status === 'pass').length;
+  const checksHtml = m.checks.map(v => `
+    <div class="v-item ${v.status === 'pass' ? 'is-pass' : v.status === 'fail' ? 'is-fail' : ''}" id="chk-${v.id}">
+      <div class="v-row">
+        <button class="v-check" onclick="toggleManualCheck('${v.id}')" aria-label="切换状态">${v.status === 'pass' ? svg('check', 11) : v.status === 'fail' ? svg('x', 11) : ''}</button>
+        <span class="v-text" style="flex:1">${v.title}</span>
+        ${v.status === 'fail' ? `<button class="btn btn--ai-soft btn--xs btn--pill" onclick="askAiFromContext('diagnose','验收项失败：预期 ${v.exp}，实际 ${v.act}','验收运行器')">问 AI</button>` : ''}
+      </div>
+      ${v.status === 'fail' ? `<div class="v-diff"><div><div class="muted" style="font-size:10.5px">预期</div><div style="color:var(--success)">${esc(v.exp)}</div></div><div><div class="muted" style="font-size:10.5px">实际</div><div style="color:var(--danger)">${esc(v.act)}</div></div></div>` : ''}
+    </div>`).join('');
+
+  const isDaemonCourse = m.primaryCmd.mode === 'daemon';
+
+  $('#manualBody').innerHTML = `
+    <div class="manual-hero">
+      <h2>${c.chapters[c.activeCh].title}</h2>
+      <p>${m.goal}</p>
+    </div>
+
+    <div class="step-section">
+      <div class="step-head">
+        <span class="step-num">1</span>
+        <h3>${isDaemonCourse ? '启动本地服务' : '修改并运行测试'}</h3>
+      </div>
+      ${cmdCardHtml(m.primaryCmd, true)}
+    </div>
+
+    <div class="step-section">
+      <div class="step-head">
+        <span class="step-num">2</span>
+        <h3>修改代码</h3>
+      </div>
+      <p class="step-desc">${m.step2Tip}</p>
+      <div>
+        <button class="btn btn--secondary btn--sm btn--pill" onclick="openSafeWriteDiff()">${svg('gitCompare', 13)} 查看参考提示与 Diff</button>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div class="step-head">
+        <span class="step-num">3</span>
+        <h3>运行自动验收</h3>
+      </div>
+      <div class="verify-card">
+        <div class="verify-head">
+          <span style="font-size:13px;font-weight:500">验收清单 <span class="mono muted" style="margin-left:4px">${doneCnt}/${m.checks.length}</span></span>
+          <button class="btn btn--primary btn--sm btn--pill" id="runVerifyBtn" onclick="runVerification()">${svg('play', 11)} 运行验收</button>
+        </div>
+        ${checksHtml}
+      </div>
+    </div>
+
+    ${m.moreCommands.length ? `
+    <details class="disclosure">
+      <summary><span>更多调试命令（${m.moreCommands.length}）</span><span class="ic muted">${svg('chevronDown', 14)}</span></summary>
+      <div class="disclosure-body">
+        ${m.moreCommands.map(cmd => cmdCardHtml(cmd, false)).join('')}
+      </div>
+    </details>` : ''}
+
+    <details class="disclosure">
+      <summary><span>课后思考题</span><span class="ic muted">${svg('chevronDown', 14)}</span></summary>
+      <div class="disclosure-body">
+        <div class="reflect-box">
+          <p style="font-size:13.5px;line-height:1.6;color:var(--foreground)">${m.reflection}</p>
+          <div>
+            <button class="btn btn--secondary btn--xs btn--pill" onclick="askAiFromContext('reflect', ${JSON.stringify(m.reflection).replace(/"/g, '&quot;')}, '课后思考题')">${svg('sparkles', 12)} 和 AI 助教聊聊 →</button>
+          </div>
+        </div>
+      </div>
+    </details>`;
+}
+
+function editCwd(cmdId) {
+  const cmd = allCmdsOf(COURSES[STATE.courseId]).find(x => x.id === cmdId); if (!cmd) return;
+  const v = prompt('修改工作目录：', cmd.cwd);
+  if (v && v.trim()) { cmd.cwd = v.trim(); renderManual(); toast(`目录已更新为 ${cmd.cwd}`, 'ok'); }
+}
+function toggleManualCheck(chkId) {
+  const chk = COURSES[STATE.courseId].manual.checks.find(x => x.id === chkId);
+  chk.status = chk.status === 'pass' ? 'idle' : 'pass';
+  renderManual(); checkChapterComplete();
+}
+
+/* File Tree & Editor */
+function renderFileTree() {
+  const c = COURSES[STATE.courseId], dirs = new Set(), rows = [];
+  c.files.forEach(f => {
+    const parts = f.path.split('/');
+    if (parts.length > 1 && !dirs.has(parts[0])) {
+      dirs.add(parts[0]);
+      rows.push(`<div class="t-row is-dir">${svg('folder', 14, 'muted')}<span class="fname">${parts[0]}/</span></div>`);
+    }
+    const indent = (parts.length - 1) * 14 + 8;
+    const active = f.path === STATE.activeFile, dirty = STATE.dirtyFiles.has(f.path);
+    rows.push(`<button class="t-row ${active ? 'is-active' : ''}" style="padding-left:${indent}px" onclick="openFile('${f.path}')">
+      ${svg('fileCode', 14)}<span class="fname mono">${parts.slice(1).join('/') || f.path}</span>
+      ${dirty ? '<span class="dot" style="width:6px;height:6px;background:var(--accent)"></span>' : ''}
+    </button>`);
+  });
+  $('#fileTree').innerHTML = rows.join('');
+}
+function openFile(path) {
+  if (!STATE.openTabs.includes(path)) STATE.openTabs.push(path);
+  STATE.activeFile = path;
+  renderFileTree(); renderEditorTabs(); renderEditor(); updateFileChip();
+}
+function closeTab(path, ev) {
+  ev.stopPropagation(); if (STATE.openTabs.length <= 1) return;
+  STATE.openTabs = STATE.openTabs.filter(p => p !== path);
+  if (STATE.activeFile === path) STATE.activeFile = STATE.openTabs[0];
+  renderFileTree(); renderEditorTabs(); renderEditor();
+}
+function renderEditorTabs() {
+  $('#editorTabs').innerHTML = STATE.openTabs.map(p => `
+    <button class="etab ${p === STATE.activeFile ? 'is-active' : ''} ${STATE.dirtyFiles.has(p) ? 'is-dirty' : ''}" role="tab" aria-selected="${p === STATE.activeFile}" onclick="openFile('${p}')">
+      <span>${p.split('/').pop()}</span>
+      <span class="dirty"></span>
+      <span onclick="closeTab('${p}',event)" style="opacity:.55;display:inline-flex;padding:2px">${svg('x', 11)}</span>
+    </button>`).join('');
+}
+function getActiveFileObj() { return COURSES[STATE.courseId].files.find(f => f.path === STATE.activeFile); }
+const ta = $('#edTextarea');
+function renderEditor() {
+  const f = getActiveFileObj(); if (!f) return;
+  if (ta.value !== f.content) ta.value = f.content;
+  $('#edCodeHl').innerHTML = hl(f.content) + '\n ';
+  const lines = f.content.split('\n').length;
+  const curLine = f.content.slice(0, ta.selectionStart).split('\n').length;
+  $('#edGutter').innerHTML = Array.from({ length: lines }, (_, i) => `<div class="${i + 1 === curLine ? 'is-active' : ''}">${i + 1}</div>`).join('');
+  $('#edLangLabel').textContent = f.lang.toUpperCase();
+  updateEdCursor();
+}
+function updateEdCursor() {
+  const before = ta.value.slice(0, ta.selectionStart).split('\n');
+  const ln = before.length, col = before[before.length - 1].length + 1;
+  const lh = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--code-lh')) || 22;
+  $('#edLineHl').style.top = (18 + (ln - 1) * lh) + 'px';
+  $('#edCursor').textContent = `行 ${ln}, 列 ${col}`;
+  $$('#edGutter div').forEach((d, i) => d.classList.toggle('is-active', i + 1 === ln));
+}
+ta.addEventListener('input', () => {
+  const f = getActiveFileObj(); if (!f) return;
+  f.content = ta.value; STATE.dirtyFiles.add(f.path);
+  renderEditor(); renderEditorTabs(); renderFileTree();
+});
+['click', 'keyup'].forEach(ev => ta.addEventListener(ev, updateEdCursor));
+ta.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('  ', s, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); } });
+function saveActiveFile() { if (!STATE.activeFile) return; STATE.dirtyFiles.delete(STATE.activeFile); renderEditorTabs(); renderFileTree(); toast(`已保存 ${STATE.activeFile}`, 'ok'); }
+$('#saveFileBtn').onclick = saveActiveFile;
+$('#newFileBtn').onclick = () => {
+  const c = COURSES[STATE.courseId];
+  const name = prompt('新建文件（相对路径）：', c.id === 'go' ? 'task-api/handler_test.go' : 'src/helper.ts');
+  if (!name) return;
+  if (name.includes('..') || name.startsWith('/')) { toast('禁止越界创建文件', 'err'); return; }
+  c.files.push({ path: name, lang: c.files[0].lang, content: `// ${name}\n` }); openFile(name); toast(`已创建 ${name}`, 'ok');
+};
+$('#collapseTreeBtn').onclick = () => $('#treePane').classList.add('is-collapsed');
+$('#toggleTreeBtn').onclick = () => $('#treePane').classList.toggle('is-collapsed');
+$('#openExtIdeBtn').onclick = () => toast(`正在用 ${STATE.extIde} 打开当前文件`, 'info');
+$('#simConflictBtn').onclick = () => { $('#conflictBanner').classList.add('is-open'); };
+$('#conflictLoadDisk').onclick = () => { $('#conflictBanner').classList.remove('is-open'); STATE.dirtyFiles.delete(STATE.activeFile); renderEditorTabs(); toast('已加载磁盘版本', 'ok'); };
+$('#conflictKeep').onclick = () => { $('#conflictBanner').classList.remove('is-open'); };
+function updateLspBar() {
+  const c = COURSES[STATE.courseId], rt = RUNTIMES.find(r => r.id === c.id), ok = rt && rt.status === 'ok';
+  $('#lspDot').className = 'dot ' + (ok ? 'dot--ok' : 'dot--warn');
+  $('#lspLabel').textContent = ok ? c.lspLabel : `${c.lang} LSP 未安装`;
+}
+$('#lspStatusBtn').onclick = () => openSettings('runtimes');
+
+/* Multi-Terminal Router + Grading */
+function dispatchCmd(cmdId, forceNewTab = false) {
+  const c = COURSES[STATE.courseId];
+  const cmd = allCmdsOf(c).find(x => x.id === cmdId); if (!cmd) return;
+  if (/rm\s+-rf|sudo\s+|mkfs|dd\s+if=|curl\s+.*\|\s*sh/.test(cmd.cmd)) {
+    STATE.pendingRiskCmd = { cmd, forceNewTab };
+    $('#riskReason').textContent = /rm\s+-rf/.test(cmd.cmd) ? '递归强制删除 (rm -rf)' : '高危指令';
+    $('#riskCwd').textContent = `${c.workspace}/${cmd.cwd}`;
+    $('#riskCmdPreview').textContent = '$ ' + cmd.cmd;
+    openModal('riskModal'); setTimeout(() => $('#riskCancelBtn').focus(), 40); return;
+  }
+  executeCommand(cmd, forceNewTab);
+}
+$('#riskConfirmBtn').onclick = () => { closeModal('riskModal'); if (STATE.pendingRiskCmd) { executeCommand(STATE.pendingRiskCmd.cmd, STATE.pendingRiskCmd.forceNewTab); STATE.pendingRiskCmd = null; } };
+
+function executeCommand(cmd, forceNewTab) {
+  const c = COURSES[STATE.courseId];
+  const card = $('#cmd-' + cmd.id), st = $('#cmdSt-' + cmd.id);
+  if (card) card.className = 'cmd-card is-running';
+  if (st) st.innerHTML = `<span class="badge badge--accent">运行中…</span>`;
+
+  if (cmd.mode === 'daemon') {
+    const existing = STATE.terms.find(t => t.mode === 'daemon' && t.running);
+    if (existing) {
+      $('#portBanner').classList.add('is-open');
+      if (card) card.className = 'cmd-card is-error';
+      if (st) st.innerHTML = `<span class="badge badge--danger">端口占用</span>`;
+      STATE.activeBtab = existing.id; renderBottomPanel(); return;
+    }
+    const id = 'daemon-' + Date.now();
+    const t = { id, title: `服务: ${cmd.cmd}`, cwd: cmd.cwd, mode: 'daemon', running: true, lines: [{ cls: 'cmd', text: `${cmd.cwd} $ ${cmd.cmd}` }, { cls: 'dim', text: '正在启动本地服务…' }] };
+    STATE.terms.push(t); STATE.activeBtab = id; renderBottomPanel();
+    setTimeout(() => {
+      t.lines.push({ cls: 'ok', text: 'listening on http://127.0.0.1:8080' });
+      if (card) card.className = 'cmd-card is-ok';
+      if (st) st.innerHTML = `<span class="badge badge--success"><span class="dot dot--pulse"></span>运行中</span>`;
+      renderBottomPanel(); toast('服务已启动在 8080 端口', 'ok');
+    }, 320);
+    return;
+  }
+
+  let target = !forceNewTab ? (STATE.terms.find(t => t.id === STATE.activeBtab && !t.running && t.mode === 'oneshot') || STATE.terms.find(t => !t.running && t.mode === 'oneshot')) : null;
+  if (!target) {
+    const num = STATE.terms.filter(t => t.mode === 'oneshot').length + 1;
+    target = { id: 't-' + Date.now(), title: `终端 ${num}`, cwd: cmd.cwd, mode: 'oneshot', running: false, lines: [] };
+    STATE.terms.push(target);
+  }
+  target.cwd = cmd.cwd; STATE.activeBtab = target.id;
+  target.lines.push({ cls: 'cmd', text: `${cmd.cwd} $ ${cmd.cmd}` }); renderBottomPanel();
+
+  setTimeout(() => {
+    const daemonOn = STATE.terms.some(t => t.mode === 'daemon' && t.running);
+    let ok = true, dur = '0.2s';
+    if (/curl/.test(cmd.cmd)) {
+      if (!daemonOn) { ok = false; const err = 'curl: (7) Connection refused: 127.0.0.1:8080'; target.lines.push({ cls: 'err', text: err }); STATE.lastErrText = err; }
+      else target.lines.push({ cls: 'ok', text: 'HTTP/1.1 200 OK · {"status":"ok"}' });
+    } else if (/go test|bun test|pytest|junit/.test(cmd.cmd)) {
+      const res = c.runChecks(c.files, true);
+      if (res.error) { ok = false; target.lines.push({ cls: 'err', text: res.error }); STATE.lastErrText = res.error; }
+      else {
+        const passed = res.items.filter(x => x.pass).length; ok = passed === res.items.length; dur = '0.3s';
+        res.items.forEach(it => target.lines.push({ cls: it.pass ? 'ok' : 'err', text: `${it.pass ? 'PASS' : 'FAIL'} ${it.id} (${it.ms}ms)` }));
+        if (!ok) { const f = res.items.find(x => !x.pass); STATE.lastErrText = `FAIL ${f.id}: 期望 ${f.exp}，实际 ${f.act}`; }
+        renderGradePanel(res.items); STATE.activeBtab = 'grade';
+      }
+    } else target.lines.push({ cls: 'ok', text: 'Exit 0' });
+    if (card) card.className = 'cmd-card ' + (ok ? 'is-ok' : 'is-error');
+    if (st) st.innerHTML = ok ? `<span class="badge badge--success">✓ ${dur}</span>` : `<span class="badge badge--danger">✕ 失败</span>`;
+    if (!ok) { addTerminalErrChip(STATE.lastErrText); $('#diagLastErrBtn').style.display = 'inline-flex'; }
+    renderBottomPanel();
+  }, 360);
+}
+function stopDaemon(id, ev) { ev.stopPropagation(); const t = STATE.terms.find(x => x.id === id); if (!t) return; t.running = false; t.lines.push({ cls: 'warn', text: '^C 服务已停止' }); $('#portBanner').classList.remove('is-open'); renderBottomPanel(); }
+function restartDaemon(id, ev) { ev.stopPropagation(); const t = STATE.terms.find(x => x.id === id); if (!t) return; t.running = true; t.lines.push({ cls: 'ok', text: '↻ listening on http://127.0.0.1:8080' }); renderBottomPanel(); }
+
+function renderBottomPanel() {
+  $('#termTabsWrap').innerHTML = STATE.terms.map(t => `
+    <button class="btab ${STATE.activeBtab === t.id ? 'is-active' : ''}" onclick="STATE.activeBtab='${t.id}';renderBottomPanel()">
+      <span class="dot ${t.running ? 'dot--pulse' : t.mode === 'daemon' ? 'dot--muted' : 'dot--ok'}"></span>
+      <span>${t.title}</span>
+      ${t.mode === 'daemon' && t.running ? `<span title="停止" onclick="stopDaemon('${t.id}',event)" style="color:var(--danger);display:inline-flex;padding:2px">${svg('square', 10)}</span>` : ''}
+      ${t.mode === 'daemon' ? `<span title="重启" onclick="restartDaemon('${t.id}',event)" style="display:inline-flex;padding:2px">${svg('refresh', 11)}</span>` : ''}
+    </button>`).join('');
+  const isGrade = STATE.activeBtab === 'grade';
+  $('#gradeTabBtn').classList.toggle('is-active', isGrade);
+  $('#termViewport').style.display = isGrade ? 'none' : 'block';
+  $('#termPromptBar').style.display = isGrade ? 'none' : 'flex';
+  $('#gradeView').classList.toggle('is-active', isGrade);
+  if (!isGrade) {
+    const t = STATE.terms.find(x => x.id === STATE.activeBtab) || STATE.terms[0];
+    $('#termPromptCwd').textContent = `${t.cwd} $`;
+    $('#termViewport').innerHTML = t.lines.map(l => `<div class="t-line ${l.cls || ''}">${esc(l.text)}</div>`).join('');
+    $('#termViewport').scrollTop = 1e6;
+  }
+}
+$('#gradeTabBtn').onclick = () => { STATE.activeBtab = 'grade'; renderBottomPanel(); };
+$('#newTermBtn').onclick = () => {
+  const n = STATE.terms.filter(t => t.mode === 'oneshot').length + 1, id = 't-' + Date.now();
+  STATE.terms.push({ id, title: `终端 ${n}`, cwd: COURSES[STATE.courseId].manual.primaryCmd.cwd, mode: 'oneshot', running: false, lines: [] });
+  STATE.activeBtab = id; renderBottomPanel();
+};
+$('#clearTermBtn').onclick = () => { const t = STATE.terms.find(x => x.id === STATE.activeBtab); if (t) { t.lines = []; renderBottomPanel(); } };
+$('#maxTermBtn').onclick = () => $('#centerBottom').classList.toggle('is-max');
+$('#focusDaemonBtn').onclick = () => { const d = STATE.terms.find(t => t.mode === 'daemon' && t.running); if (d) { STATE.activeBtab = d.id; $('#portBanner').classList.remove('is-open'); renderBottomPanel(); } };
+$('#askPortAiBtn').onclick = () => askAiFromContext('diagnose', 'listen tcp 127.0.0.1:8080: address already in use', '端口冲突');
+$('#termCmdInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim(); if (!val) return; e.target.value = '';
+  executeCommand({ id: 'ad-hoc', cwd: COURSES[STATE.courseId].manual.primaryCmd.cwd, mode: /go run|npm run dev/.test(val) ? 'daemon' : 'oneshot', cmd: val }, false);
+});
+
+function renderGradePanel(items) {
+  if (!items) {
+    $('#gradeCountBadge').textContent = '待运行'; $('#gradeCountBadge').className = 'badge';
+    $('#gradeView').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:8px;height:100%;color:var(--text-muted);font-size:13px">${svg('checkCircle', 18)}<span>点击左侧「运行验收」查看结果</span></div>`;
+    return;
+  }
+  const pass = items.filter(x => x.pass).length, all = pass === items.length;
+  $('#gradeCountBadge').textContent = `${pass}/${items.length}`;
+  $('#gradeCountBadge').className = 'badge ' + (all ? 'badge--success' : 'badge--danger');
+  $('#gradeView').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-radius:10px;background:color-mix(in oklab, var(${all ? '--success' : '--danger'}) var(--badge-tint), var(--surface));color:var(${all ? '--success' : '--danger'});font-size:13px;font-weight:500">
+      <span>${all ? '✓ 全部用例通过' : `✕ ${pass}/${items.length} 通过 · 已展开差异`}</span>
+      ${all ? '' : `<button class="btn btn--ai-soft btn--xs btn--pill" onclick="askAiFromContext('diagnose', STATE.lastErrText, '验收结果')">${svg('stethoscope', 12)} 问 AI</button>`}
+    </div>` +
+    items.map(it => `<div class="v-item ${it.pass ? 'is-pass' : 'is-fail'}"><div class="v-row"><span class="v-check">${it.pass ? svg('check', 11) : svg('x', 11)}</span><span class="mono" style="font-size:12px;font-weight:500">${it.id}</span><span style="flex:1">${it.pass ? '通过' : '未通过'}</span><span class="mono muted" style="font-size:11.5px">${it.ms}ms</span></div>${it.pass ? '' : `<div class="v-diff"><div><div class="muted" style="font-size:10.5px">预期</div><div style="color:var(--success)">${esc(it.exp)}</div></div><div><div class="muted" style="font-size:10.5px">实际</div><div style="color:var(--danger)">${esc(it.act)}</div></div></div>`}</div>`).join('');
+}
+
+function runVerification() {
+  const c = COURSES[STATE.courseId];
+  const daemonOn = STATE.terms.some(t => t.mode === 'daemon' && t.running);
+  const res = c.runChecks(c.files, daemonOn);
+  if (res.blocked) { toast(res.blocked, 'warn'); return; }
+  if (res.error) { STATE.lastErrText = res.error; addTerminalErrChip(res.error); $('#diagLastErrBtn').style.display = 'inline-flex'; toast(res.error, 'err'); return; }
+  res.items.forEach(it => { const chk = c.manual.checks.find(x => x.id === it.id); if (chk) { chk.status = it.pass ? 'pass' : 'fail'; chk.exp = it.exp; chk.act = it.act; } });
+  const fail = res.items.find(x => !x.pass);
+  if (fail) { STATE.lastErrText = `验收失败 (${fail.id}): 预期 ${fail.exp}，实际 ${fail.act}`; addTerminalErrChip(STATE.lastErrText); $('#diagLastErrBtn').style.display = 'inline-flex'; }
+  else { $('#diagLastErrBtn').style.display = 'none'; }
+  renderManual(); renderGradePanel(res.items); STATE.activeBtab = 'grade'; renderBottomPanel();
+  if (!fail) { toast('全部验收通过！', 'ok'); checkChapterComplete(); } else toast('有 1 项未通过，可查看差异或问 AI', 'warn');
+}
+function checkChapterComplete() {
+  const c = COURSES[STATE.courseId];
+  if (c.manual.checks.every(x => x.status === 'pass') && !c.chapters[c.activeCh].done) {
+    c.chapters[c.activeCh].done = true; c.doneEx = Math.min(c.totalEx, c.doneEx + 1);
+    renderTopCourse(); renderOutline();
+  }
+}
+
+/* Selection Floating Bar */
+const selBar = $('#selBar'); let curSel = { text: '', origin: '' };
+function hideSelBar() { selBar.classList.remove('is-open'); }
+function showSelBar(text, origin, x, y) {
+  curSel = { text: text.slice(0, 400), origin };
+  const actions = origin === 'manual' ? [['explain', 'sparkles', '解释概念'], ['custom', 'messageSquare', '提问']]
+    : origin === 'editor' ? [['explain', 'sparkles', '解释代码'], ['review', 'search', '查问题'], ['custom', 'messageSquare', '提问']]
+      : [['diagnose', 'stethoscope', '诊断报错'], ['custom', 'messageSquare', '提问']];
+  selBar.innerHTML = actions.map(([act, ic, lbl], i) => `${i ? '<span class="sep"></span>' : ''}<button data-selact="${act}">${svg(ic, 13)} ${lbl}</button>`).join('');
+  selBar.classList.add('is-open');
+  const w = selBar.offsetWidth || 200;
+  selBar.style.left = Math.max(12, Math.min(innerWidth - w - 12, x - w / 2)) + 'px';
+  selBar.style.top = (y > 96 ? y - 44 : y + 18) + 'px';
+}
+document.addEventListener('mouseup', e => {
+  if (e.target.closest('#selBar') || STATE.view !== 'workbench') { if (!e.target.closest('#selBar')) hideSelBar(); return; }
+  if (e.target === ta) { const t = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim(); if (t.length >= 2) setTimeout(() => showSelBar(t, 'editor', e.clientX, e.clientY), 60); else hideSelBar(); return; }
+  const zone = e.target.closest('[data-sel-origin]'); if (!zone) { hideSelBar(); return; }
+  const sel = getSelection(), txt = sel ? sel.toString().trim() : '';
+  if (txt.length >= 2 && sel.rangeCount) { const r = sel.getRangeAt(0).getBoundingClientRect(); setTimeout(() => showSelBar(txt, zone.dataset.selOrigin, r.left + r.width / 2, r.top), 60); } else hideSelBar();
+});
+selBar.addEventListener('mousedown', e => e.preventDefault());
+selBar.addEventListener('click', e => { const b = e.target.closest('[data-selact]'); if (!b) return; const o = { manual: '手册选区', editor: STATE.activeFile, terminal: '终端输出' }[curSel.origin]; hideSelBar(); askAiFromContext(b.dataset.selact, curSel.text, o); });
+$('#manualScroll').addEventListener('scroll', hideSelBar); $('#editorBody').addEventListener('scroll', hideSelBar); $('#termViewport').addEventListener('scroll', hideSelBar);
+
+/* AI Drawer */
+function setAiOpen(on) { STATE.aiOpen = on; $('#wb').classList.toggle('has-ai', on); $('#aiDrawerBtn').setAttribute('aria-pressed', on); }
+$('#aiDrawerBtn').onclick = () => setAiOpen(!STATE.aiOpen);
+$('#closeAiBtn').onclick = () => setAiOpen(false);
+$('#aiBackendBadge').onclick = () => openSettings('ai');
+function syncAiBadges() { $('#aiBackendBadge').textContent = STATE.aiProto === 'acp' ? `ACP · ${STATE.aiAgentName}` : `BYOK · ${STATE.aiProviderName}`; }
+function updateFileChip() {
+  const f = getActiveFileObj(); if (!f) return;
+  const ex = STATE.aiChips.find(x => x.id === 'file');
+  if (ex) { ex.label = f.path.split('/').pop(); ex.preview = f.content.slice(0, 220); } else STATE.aiChips.push({ id: 'file', icon: '📄', label: f.path.split('/').pop(), preview: f.content.slice(0, 220) });
+  renderAiChips();
+}
+function addTerminalErrChip(errText) {
+  const ex = STATE.aiChips.find(x => x.id === 'term');
+  if (ex) ex.preview = errText; else STATE.aiChips.push({ id: 'term', icon: '💻', label: '终端报错', preview: errText });
+  renderAiChips();
+}
+function renderAiChips() {
+  const tokens = 280 + STATE.aiChips.reduce((s, c) => s + Math.max(110, Math.round(c.preview.length * 1.3)), 0);
+  $('#aiTokenEst').textContent = `~${tokens} tok`;
+  $('#aiChips').innerHTML = STATE.aiChips.map(ch => `<span class="ctx-chip" onclick="toast(${JSON.stringify(ch.label + '：' + ch.preview.slice(0, 70)).replace(/"/g, '&quot;')},'ai')"><span>${ch.icon} ${esc(ch.label)}</span><span class="rm" onclick="event.stopPropagation();removeChip('${ch.id}')">×</span></span>`).join('');
+}
+function removeChip(id) { STATE.aiChips = STATE.aiChips.filter(x => x.id !== id); renderAiChips(); }
+function resetAiWelcome() { $('#aiMsgs').innerHTML = `<div class="msg ai"><p>划选任意代码或报错，或直接在这里向我提问。</p></div>`; }
+$('#aiStyleSeg').onclick = e => { const b = e.target.closest('[data-style]'); if (!b) return; STATE.aiStyle = b.dataset.style; $$('#aiStyleSeg button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
+$('#diagLastErrBtn').onclick = () => askAiFromContext('diagnose', STATE.lastErrText || '暂无报错', '终端诊断');
+
+function askAiFromContext(act, snippet, sourceLabel) {
+  setAiOpen(true);
+  const actionMap = { explain: '请解释这段内容', review: '帮我检查潜在问题', diagnose: '请诊断这个报错', reflect: '聊聊这道思考题', custom: '我有个疑问' };
+  const box = $('#aiMsgs'), uEl = document.createElement('div'); uEl.className = 'msg user';
+  uEl.innerHTML = `<div class="quote-card"><div class="muted">${esc(sourceLabel)}</div><pre>${esc(snippet)}</pre></div><div style="margin-top:6px;color:var(--foreground)">${actionMap[act] || act}</div>`;
+  box.appendChild(uEl); box.scrollTop = 1e6;
+  if (STATE.aiProto === 'acp' && (act === 'diagnose' || act === 'review')) {
+    const pEl = document.createElement('div'); pEl.className = 'msg ai';
+    pEl.innerHTML = `<div class="acp-perm">
+      <div style="display:flex;align-items:center;gap:6px;font-weight:500;color:var(--warning)">${svg('lock', 14)} ACP 权限确认</div>
+      <div><strong>${STATE.aiAgentName}</strong> 请求只读查看 <code class="mono">${COURSES[STATE.courseId].refPatch.file}</code></div>
+      <div style="display:flex;gap:6px"><button class="btn btn--primary btn--xs btn--pill" onclick="resolveAcpPerm(this,true,'${act}')">允许读取</button><button class="btn btn--secondary btn--xs btn--pill" onclick="resolveAcpPerm(this,false,'${act}')">拒绝</button></div>
+    </div>`;
+    box.appendChild(pEl); box.scrollTop = 1e6; return;
+  }
+  streamAiAnswer(act);
+}
+function resolveAcpPerm(btn, allowed, act) {
+  const card = btn.closest('.acp-perm'); card.classList.add('is-done');
+  card.innerHTML = allowed ? `<span style="color:var(--success)">✓ 已允许只读查看（写入仍受保护）</span>` : `<span>✕ 已拒绝读取</span>`;
+  streamAiAnswer(act);
+}
+function streamAiAnswer(act) {
+  const c = COURSES[STATE.courseId], isDirect = STATE.aiStyle === 'direct';
+  const html = act === 'diagnose'
+    ? (isDirect ? `<p>在 <code class="mono">${c.refPatch.file}</code> 中改为：</p><pre>${esc(c.refPatch.newLine.trim())}</pre>` : `<p>对比预期与实际返回，检查 <code class="mono">${c.refPatch.file}</code> 是否漏掉了方法或边界判断？</p>`)
+    : act === 'reflect'
+      ? `<p>想一想：客户端收到 <strong>503</strong> 时应该重试，但收到 <strong>404</strong> 时重试有意义吗？</p>`
+      : `<p>结合 <strong>${c.chapters[c.activeCh].title}</strong>，可以先检查这段代码的输入前提和边界路径。</p>`;
+  const box = $('#aiMsgs'), el = document.createElement('div'); el.className = 'msg ai'; el.innerHTML = '<div class="ai-stream"></div>';
+  box.appendChild(el); const target = el.querySelector('.ai-stream'); $('#aiStopBtn').style.display = 'inline-flex';
+  let i = 0; clearTimeout(STATE.streamingTimer);
+  (function tick() {
+    for (let k = 0; k < 4 && i < html.length; k++) { if (html[i] === '<') i = html.indexOf('>', i) + 1; else i++; }
+    target.innerHTML = html.slice(0, i); box.scrollTop = 1e6;
+    if (i < html.length) STATE.streamingTimer = setTimeout(tick, 14);
+    else $('#aiStopBtn').style.display = 'none';
+  })();
+}
+$('#aiStopBtn').onclick = () => { clearTimeout(STATE.streamingTimer); $('#aiStopBtn').style.display = 'none'; };
+function sendAiText() { const v = $('#aiInput').value.trim(); if (!v) return; $('#aiInput').value = ''; const u = document.createElement('div'); u.className = 'msg user'; u.textContent = v; $('#aiMsgs').appendChild(u); streamAiAnswer(/错|失败|405/i.test(v) ? 'diagnose' : 'explain'); }
+$('#aiSendBtn').onclick = sendAiText;
+$('#aiInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendAiText(); } });
+
+/* Appearance, Layout, Modals */
+function setTheme(t) {
+  STATE.theme = t; document.documentElement.dataset.theme = t; $('#setThemeSel').value = t;
+  $$('#appearanceThemeSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.themePick === t));
+}
+function setAccent(a) {
+  STATE.accent = a; document.documentElement.dataset.accent = a;
+  $$('#accentSwatches .swatch').forEach(s => { const on = s.dataset.accent === a; s.setAttribute('aria-pressed', on); s.innerHTML = on ? svg('check', 14) : ''; });
+}
+function setCodeSize(sz) {
+  document.documentElement.style.setProperty('--code-size', sz + 'px');
+  document.documentElement.style.setProperty('--code-lh', Math.round(+sz + 8.5) + 'px');
+  $('#setFontRange').value = sz; $('#fontSizeVal').textContent = sz + 'px';
+  $$('#appearanceFontSeg button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.fsize === +sz));
+  updateEdCursor();
+}
+$('#appearanceBtn').onclick = () => $('#appearanceDrawer').classList.add('is-open');
+$('#closeAppearanceBtn').onclick = () => $('#appearanceDrawer').classList.remove('is-open');
+$('#appearanceDrawer').addEventListener('click', e => { if (e.target === $('#appearanceDrawer')) $('#appearanceDrawer').classList.remove('is-open'); });
+$('#accentSwatches').onclick = e => { const b = e.target.closest('[data-accent]'); if (b) setAccent(b.dataset.accent); };
+$('#appearanceThemeSeg').onclick = e => { const b = e.target.closest('[data-theme-pick]'); if (b) setTheme(b.dataset.themePick); };
+$('#appearanceFontSeg').onclick = e => { const b = e.target.closest('[data-fsize]'); if (b) setCodeSize(+b.dataset.fsize); };
+$('#copyThemeCssBtn').onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(`<html data-theme="${STATE.theme}" data-accent="${STATE.accent}">`); toast(`已复制主题（${STATE.theme} · ${STATE.accent}）`, 'ok'); };
+
+$('#focusToggleBtn').onclick = () => $('#wb').classList.toggle('is-focus');
+$('#exitFocusBtn').onclick = () => $('#wb').classList.remove('is-focus');
+
+(function initSplits() {
+  const sl = $('#splitLeft'), pl = $('#paneLeft'), sb = $('#splitBottom'), cb = $('#centerBottom');
+  sl.addEventListener('dblclick', () => { pl.style.width = ''; });
+  sl.addEventListener('pointerdown', e => { e.preventDefault(); sl.setPointerCapture(e.pointerId); sl.classList.add('is-drag'); const m = ev => { pl.style.width = Math.max(320, Math.min(innerWidth * 0.54, ev.clientX)) + 'px'; }; const u = () => { sl.classList.remove('is-drag'); sl.removeEventListener('pointermove', m); sl.removeEventListener('pointerup', u); }; sl.addEventListener('pointermove', m); sl.addEventListener('pointerup', u); });
+  sb.addEventListener('pointerdown', e => { e.preventDefault(); sb.setPointerCapture(e.pointerId); sb.classList.add('is-drag'); cb.classList.remove('is-max'); const m = ev => { cb.style.height = Math.max(115, Math.min(innerHeight - 220, innerHeight - ev.clientY)) + 'px'; }; const u = () => { sb.classList.remove('is-drag'); sb.removeEventListener('pointermove', m); sb.removeEventListener('pointerup', u); }; sb.addEventListener('pointermove', m); sb.addEventListener('pointerup', u); });
+})();
+
+function openModal(id) { $('#' + id).classList.add('is-open'); }
+function closeModal(id) { $('#' + id).classList.remove('is-open'); }
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-close]'); if (c) closeModal(c.dataset.close);
+  if (e.target.classList.contains('overlay')) e.target.classList.remove('is-open');
+  if (!e.target.closest('.preflight-wrap')) $('#preflightPop').classList.remove('is-open');
+  if (!e.target.closest('.course-dd')) $('#courseDdMenu').classList.remove('is-open');
+});
+
+function renderRuntimes() {
+  const okCnt = RUNTIMES.filter(r => r.status === 'ok').length;
+  $('#pfDot').className = 'dot ' + (okCnt === RUNTIMES.length ? 'dot--ok' : 'dot--warn');
+  $('#pfText').textContent = okCnt === RUNTIMES.length ? '环境就绪' : `环境 ${okCnt}/${RUNTIMES.length}`;
+  const rowHtml = r => `<div class="rt-row"><span class="dot ${r.status === 'ok' ? 'dot--ok' : 'dot--warn'}"></span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500">${r.lang} <span class="mono muted" style="font-weight:400;font-size:11.5px;margin-left:6px">${r.version}</span></div><div class="muted" style="font-size:11.5px;margin-top:2px">${r.lsp} · ${r.extra}</div></div>${r.status === 'ok' ? '<span class="badge badge--success">就绪</span>' : `<button class="btn btn--primary btn--xs btn--pill" onclick="installManagedRuntime('${r.id}',this)">一键安装</button>`}</div>`;
+  $('#pfList').innerHTML = RUNTIMES.map(rowHtml).join('');
+  $('#settingsRtList').innerHTML = RUNTIMES.map(rowHtml).join('');
+}
+function installManagedRuntime(id, btn) {
+  btn.disabled = true; btn.textContent = '安装中…';
+  setTimeout(() => { const r = RUNTIMES.find(x => x.id === id); r.status = 'ok'; r.version = 'Temurin JDK 21 (托管)'; r.lsp = 'jdtls 就绪'; renderRuntimes(); updateLspBar(); toast('已隔离安装 JDK 21 与 jdtls', 'ok'); }, 550);
+}
+$('#preflightBtn').onclick = e => { e.stopPropagation(); $('#preflightPop').classList.toggle('is-open'); };
+$('#pfRefresh').onclick = () => toast('环境重新探测完成', 'ok');
+$('#openRtSettings').onclick = () => { $('#preflightPop').classList.remove('is-open'); openSettings('runtimes'); };
+
+function openSettings(tab = 'ai') { openModal('settingsModal'); $$('#settingsNav button').forEach(b => b.classList.toggle('is-active', b.dataset.stab === tab)); $$('.s-pane').forEach(p => p.classList.toggle('is-active', p.dataset.spane === tab)); }
+$('#settingsBtn').onclick = () => openSettings('ai');
+$('#settingsNav').onclick = e => { const b = e.target.closest('[data-stab]'); if (b) openSettings(b.dataset.stab); };
+$('#aiProtoSeg').onclick = e => { const b = e.target.closest('[data-proto]'); if (!b) return; STATE.aiProto = b.dataset.proto; $$('#aiProtoSeg button').forEach(x => x.setAttribute('aria-pressed', x === b)); $('#protoByokBox').style.display = STATE.aiProto === 'byok' ? 'flex' : 'none'; $('#protoAcpBox').style.display = STATE.aiProto === 'acp' ? 'flex' : 'none'; };
+const BYOK_MAP = { deepseek: ['DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat'], openai: ['OpenAI', 'https://api.openai.com/v1', 'gpt-4.1-mini'], anthropic: ['Anthropic', 'https://api.anthropic.com', 'claude-sonnet-4'], ollama: ['Ollama', 'http://127.0.0.1:11434/v1', 'qwen2.5-coder:14b'], custom: ['自定义', 'https://endpoint.example/v1', 'model'] };
+$('#byokPreset').onchange = e => { const [n, u, m] = BYOK_MAP[e.target.value]; STATE.aiProviderName = n; $('#byokUrl').value = u; $('#byokModel').value = m; };
+const ACP_MAP = { claude: ['Claude Code', 'claude --acp'], gemini: ['Gemini CLI', 'gemini --acp'], codex: ['Codex CLI', 'codex --acp'], opencode: ['OpenCode', 'opencode acp'], custom: ['自定义 Agent', 'my-agent --acp'] };
+$('#acpPreset').onchange = e => { const [n, cmd] = ACP_MAP[e.target.value]; STATE.aiAgentName = n; $('#acpCmd').value = cmd; };
+$('#acpPermPolicy').onchange = e => { STATE.acpPolicy = e.target.value; };
+$('#testByokBtn').onclick = () => { $('#byokTestRes').textContent = '✓ 连通成功 (184ms)'; $('#byokTestRes').style.color = 'var(--success)'; };
+$('#testAcpBtn').onclick = () => { $('#acpTestRes').textContent = `✓ ACP 握手成功 · ${STATE.aiAgentName}`; $('#acpTestRes').style.color = 'var(--success)'; };
+$('#setFontRange').oninput = e => setCodeSize(e.target.value);
+$('#setThemeSel').onchange = e => setTheme(e.target.value);
+$('#setExtIde').onchange = e => { STATE.extIde = e.target.value; $('#extIdeLabel').textContent = `在 ${STATE.extIde} 打开`; };
+$('#saveSettingsBtn').onclick = () => { syncAiBadges(); closeModal('settingsModal'); toast('设置已生效', 'ok'); };
+$('#clearAiHistBtn').onclick = () => { resetAiWelcome(); toast('已清空对话', 'info'); };
+$('#resetProgressBtn').onclick = () => { COURSES[STATE.courseId].manual.checks.forEach(x => x.status = 'idle'); renderManual(); renderGradePanel(null); toast('已重置验收', 'info'); };
+
+function openPackModal(tab) {
+  openModal('packModal');
+  $$('#packTabSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.ptab === tab));
+  $('#packImportPane').style.display = tab === 'import' ? 'flex' : 'none';
+  $('#packAuthorPane').style.display = tab === 'author' ? 'flex' : 'none';
+  $('#packSubmitBtn').textContent = tab === 'import' ? '导入并开始' : '创建并试跑';
+}
+$('#openImportBtn').onclick = () => openPackModal('import');
+$('#openAuthorBtn').onclick = () => openPackModal('author');
+$('#packTabSeg').onclick = e => { const b = e.target.closest('[data-ptab]'); if (b) openPackModal(b.dataset.ptab); };
+$('#packSubmitBtn').onclick = () => {
+  const isAuth = $('#packTabSeg [data-ptab="author"]').getAttribute('aria-pressed') === 'true';
+  const title = isAuth ? $('#authTitle').value.trim() : ($('#impSource').value.split('/').pop() || '自定义课程包').replace(/\.git$/, '');
+  const lang = isAuth ? $('#authLang').value : $('#impLang').value;
+  const id = 'custom-' + Date.now(), base = COURSES[lang === 'Python' ? 'py' : lang === 'Java' ? 'java' : lang === 'JS/TS' ? 'js' : 'go'];
+  COURSES[id] = JSON.parse(JSON.stringify(base)); COURSES[id].id = id; COURSES[id].title = title; COURSES[id].lang = lang; COURSES[id].runChecks = base.runChecks;
+  STATE.recents.unshift({ id, path: '~/codelab-workspaces/' + title.slice(0, 16), prog: '0/' + base.totalEx, time: '刚刚' });
+  closeModal('packModal'); openCourse(id); toast(`已加载「${title}」`, 'ok');
+};
+
+function openSafeWriteDiff() {
+  const c = COURSES[STATE.courseId], p = c.refPatch, f = c.files.find(x => x.path === p.file);
+  STATE.pendingDiffPatch = p;
+  $('#diffTitle').innerHTML = `${svg('gitCompare', 16)} 参考修改对比 · ${p.file}`;
+  $('#diffGrid').innerHTML = `
+    <div class="diff-box"><header>当前代码</header><pre>${esc(f.content).replace(esc(p.oldLine), `<span class="d-del">- ${esc(p.oldLine)}</span>`)}</pre></div>
+    <div class="diff-box"><header>参考修改</header><pre>${esc(f.content).replace(esc(p.oldLine), `<span class="d-add">+ ${esc(p.newLine)}</span>`)}</pre></div>`;
+  $('#diffFoot').style.display = 'flex'; openModal('diffModal');
+}
+$('#diffApplyBtn').onclick = () => {
+  const c = COURSES[STATE.courseId], p = STATE.pendingDiffPatch, f = c.files.find(x => x.path === p.file);
+  if (f && f.content.includes(p.oldLine)) { f.content = f.content.replace(p.oldLine, p.newLine); openFile(p.file); toast('已应用参考修改，现在运行验收看看！', 'ok'); }
+  closeModal('diffModal');
+};
+$('#compareDiffBtn').onclick = () => {
+  const c = COURSES[STATE.courseId], f1 = c.files[1] || c.files[0], f2 = c.files[c.files.length - 1];
+  $('#diffTitle').innerHTML = `${svg('gitCompare', 16)} 双文件对照`;
+  $('#diffGrid').innerHTML = `<div class="diff-box"><header>${f1.path}</header><pre>${hl(f1.content)}</pre></div><div class="diff-box"><header>${f2.path}</header><pre>${hl(f2.content)}</pre></div>`;
+  $('#diffFoot').style.display = 'none'; openModal('diffModal');
+};
+
+document.addEventListener('keydown', e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (e.key === 'Escape') { hideSelBar(); $$('.overlay.is-open').forEach(m => m.classList.remove('is-open')); $('#appearanceDrawer').classList.remove('is-open'); $('#preflightPop').classList.remove('is-open'); $('#courseDdMenu').classList.remove('is-open'); }
+  if (mod && e.key.toLowerCase() === 'b' && STATE.view === 'workbench') { e.preventDefault(); $('#wb').classList.toggle('is-focus'); }
+  if (mod && e.key.toLowerCase() === 's' && STATE.view === 'workbench') { e.preventDefault(); saveActiveFile(); }
+});
+
+hydrateIcons(); setTheme('light'); setAccent('neutral'); renderRuntimes(); syncAiBadges(); renderWelcome();
+</script>
+</body>
+</html>

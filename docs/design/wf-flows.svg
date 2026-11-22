@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 560" width="1280" height="560" font-family="Geist, 'PingFang SC', sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker>
+  </defs>
+  <style>
+    .box{fill:#FFFFFF;stroke:#64748B;stroke-width:1.2}
+    .pri{fill:#DBEAFE;stroke:#2563EB;stroke-width:1.4}
+    .ai{fill:#F3E8FF;stroke:#7C3AED;stroke-width:1.3;stroke-dasharray:5 3}
+    .ok{fill:#DCFCE7;stroke:#15803D;stroke-width:1.3}
+    .warn{fill:#FEF3C7;stroke:#D97706;stroke-width:1.3}
+    .l{stroke:#475569;stroke-width:1.4;fill:none;marker-end:url(#arr)}
+    .t{font-size:13px;font-weight:600;fill:#0F172A;text-anchor:middle}
+    .s{font-size:11px;fill:#475569;text-anchor:middle}
+    .e{font-size:11px;fill:#334155}
+  </style>
+  <rect width="1280" height="560" fill="#F8FAFC"/>
+  <text x="24" y="34" font-size="16" font-weight="700" fill="#0F172A">CodeLab Studio v2.0 · 端到端学习闭环与协议路由图</text>
+  <text x="24" y="54" font-size="12" fill="#64748B">蓝色 = 主工作台 · 紫色虚线 = AI 助教（BYOK / ACP） · 黄色 = 安全/环境校验 · 绿色 = 验收完成</text>
+
+  <!-- Row 1: Onboarding & Course Pack -->
+  <rect class="box" x="24" y="94" width="172" height="62" rx="10"/>
+  <text class="t" x="110" y="121">欢迎页 / 课程库</text>
+  <text class="s" x="110" y="140">内置4语言 · 导入/创作包</text>
+
+  <rect class="warn" x="256" y="94" width="186" height="62" rx="10"/>
+  <text class="t" x="349" y="121">环境体检 &amp; 托管运行时</text>
+  <text class="s" x="349" y="140">探测 Go/Py/Java/Bun · 一键装</text>
+
+  <rect class="pri" x="510" y="88" width="210" height="74" rx="12"/>
+  <text class="t" x="615" y="119">三栏主学习工作台</text>
+  <text class="s" x="615" y="139">手册 · 产物树+Monaco+LSP · 终端</text>
+
+  <!-- Row 2: Execution Branches -->
+  <rect class="warn" x="256" y="246" width="186" height="58" rx="10"/>
+  <text class="t" x="349" y="272">高危命令安全拦截</text>
+  <text class="s" x="349" y="290">rm -rf / sudo 明文确认</text>
+
+  <rect class="box" x="510" y="242" width="210" height="66" rx="10"/>
+  <text class="t" x="615" y="270">双模执行与判题层</text>
+  <text class="s" x="615" y="290">⚡常驻服务 / ⌘终端 / ✓函数判题</text>
+
+  <!-- Row 2 Right: Selection AI & ACP -->
+  <rect class="ai" x="816" y="88" width="204" height="74" rx="10"/>
+  <text class="t" x="918" y="118">划词「问 AI」浮层</text>
+  <text class="s" x="918" y="138">手册 / 编辑器 / 终端三区触发</text>
+
+  <rect class="ai" x="1064" y="88" width="192" height="74" rx="10"/>
+  <text class="t" x="1160" y="116">AI 助教抽屉</text>
+  <text class="s" x="1160" y="136">四维上下文 Chip · 引导/直接</text>
+
+  <rect class="ai" x="1064" y="242" width="192" height="66" rx="10"/>
+  <text class="t" x="1160" y="269">双协议后端</text>
+  <text class="s" x="1160" y="289">BYOK(钥匙串) | ACP Agent</text>
+
+  <rect class="warn" x="816" y="246" width="204" height="58" rx="10"/>
+  <text class="t" x="918" y="272">ACP 工具权限审批</text>
+  <text class="s" x="918" y="290">默认引导只读 · 写/跑需确认</text>
+
+  <!-- Row 3: Verification & Persistence -->
+  <rect class="ok" x="510" y="406" width="210" height="64" rx="10"/>
+  <text class="t" x="615" y="434">自动化验收 &amp; 自查卡</text>
+  <text class="s" x="615" y="454">HTTP合同 / 单测Diff / 思考题</text>
+
+  <rect class="box" x="256" y="406" width="186" height="64" rx="10"/>
+  <text class="t" x="349" y="434">本地持久化 .codelab/</text>
+  <text class="s" x="349" y="454">progress.json · 零登录离线</text>
+
+  <!-- Arrows -->
+  <path class="l" d="M196 125 L254 125"/><text class="e" x="204" y="117">绑定目录</text>
+  <path class="l" d="M442 125 L508 125"/><text class="e" x="454" y="117">不阻断</text>
+
+  <path class="l" d="M615 162 L615 240"/><text class="e" x="624" y="206">点击运行 / ⌘↵</text>
+  <path class="l" d="M510 275 L444 275"/><text class="e" x="456" y="267">命中高危</text>
+  <path class="l" d="M349 246 C 349 200, 480 200, 510 250" stroke-dasharray="3 3"/><text class="e" x="378" y="206">确认继续</text>
+
+  <path class="l" d="M720 125 L814 125"/><text class="e" x="734" y="117">鼠标拖选</text>
+  <path class="l" d="M1020 125 L1062 125"/>
+  <path class="l" d="M1160 162 L1160 240"/>
+  <path class="l" d="M1064 275 L1022 275"/><text class="e" x="1026" y="266">ACP</text>
+  <path class="l" d="M918 246 L918 164" stroke-dasharray="4 3"/><text class="e" x="926" y="210">允许/拒绝</text>
+
+  <path class="l" d="M615 308 L615 404"/><text class="e" x="624" y="362">运行本节验收</text>
+  <path class="l" d="M720 438 C 860 438, 910 380, 918 306"/><text class="e" x="790" y="454">验收失败 → 问 AI 诊断</text>
+  <path class="l" d="M510 438 L444 438"/><text class="e" x="458" y="428">全部通过</text>
+  <path class="l" d="M349 470 C 349 528, 615 528, 615 472" stroke-dasharray="4 3"/>
+  <text class="e" x="444" y="528">更新顶部进度条 → 进入下一练习</text>
+</svg>

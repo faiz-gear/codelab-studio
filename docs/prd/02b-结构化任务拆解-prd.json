@@ -1,0 +1,248 @@
+{
+  "project": "CodeLab Studio",
+  "branchName": "ralph/codelab-studio-mvp",
+  "description": "Local interactive programming practice workbench turning Markdown tutorials into a split-pane learning environment with workspace explorer, Monaco+LSP editor, smart multi-terminal execution, selection-based context-aware AI tutor, and automated verification.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Initialize local workspace store and metadata schema",
+      "description": "As a learner, I want each tutorial workspace to persist progress, notes, and settings in a local .codelab/ directory so that my learning state survives app restarts without polluting source files.",
+      "acceptanceCriteria": [
+        "Define TypeScript/JSON schema for workspace.json, progress.json, and learning-log.json under <workspace>/.codelab/",
+        "Create workspace initializer that creates target directory and .codelab/ folder safely without overwriting existing user source files",
+        "Add atomic file read/write utilities with schema version migration guard",
+        "Unit tests cover new workspace creation, existing directory binding, and corrupted JSON recovery",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation layer; no UI dependencies."
+    },
+    {
+      "id": "US-002",
+      "title": "Build Markdown tutorial semantic parser",
+      "description": "As a learner, I want any standard Markdown tutorial (starting with the Go/GoFrame handbook) parsed into structured chapters, runnable command blocks, code snippets, acceptance checklists, and reflection questions.",
+      "acceptanceCriteria": [
+        "Parse H2 headings into ordered Chapter/Exercise nodes with stable IDs",
+        "Identify bash/sh fenced blocks as runnable CommandBlocks and infer default cwd and daemon/oneshot mode from optional fence metadata or surrounding cd/go run heuristics",
+        "Extract bullet lists under 验收 headings as structured ChecklistItems and 思考 sections as ReflectionPrompts",
+        "Parse the 644-line Go/GoFrame README.md fixture cleanly into Exercises 0-9 with zero data loss",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Pure parser module; supports both plain Markdown and optional fence attributes (cwd, mode, verify)."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement local PTY multi-terminal manager backend",
+      "description": "As a learner, I want the backend to spawn, track, and stream multiple real local shell sessions so that I can run long-lived servers and one-shot curl/test commands concurrently.",
+      "acceptanceCriteria": [
+        "Implement TerminalManager supporting create, write, resize, interrupt (SIGINT), kill, and dispose operations via PTY",
+        "Track terminal metadata: id, title, cwd, status (idle | running | exited), lastExitCode, and ring-buffer of recent stdout/stderr (last 200 lines)",
+        "Detect active foreground child process so one-shot command dispatch routes to an idle terminal or spawns a new tab instead of writing into a busy daemon terminal",
+        "Cleanly terminate all child PTY process groups when workspace closes or app exits",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Must support macOS zsh/bash, Linux bash, and Windows PowerShell."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement dangerous command guardrail and preflight environment checker",
+      "description": "As a local developer, I want dangerous shell commands intercepted for confirmation and required toolchains checked before starting exercises so that local execution is safe and predictable.",
+      "acceptanceCriteria": [
+        "Implement regex/AST-based risk classifier flagging destructive patterns (rm -rf, sudo, mkfs, dd, pipe-to-shell) with risk level and reason",
+        "Implement PreflightChecker probing tool versions (go >= 1.22, curl, git, gopls, gf) and GOPROXY reachability with 5s timeout per check",
+        "Return structured check status (pass | warn | fail) with actionable fix command hints",
+        "Unit tests verify risk rule matches and safe commands pass without false positives",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Safety and onboarding reliability layer."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement real-time workspace file watcher and file CRUD service",
+      "description": "As a learner, I want workspace files created by me or terminal commands to appear immediately in the file tree and support safe reading, editing, and saving.",
+      "acceptanceCriteria": [
+        "Implement workspace filesystem service restricted strictly to the bound workspace root (reject path traversal outside root)",
+        "Watch workspace directory excluding .git, node_modules, and .codelab internals, emitting debounced change events within 500ms",
+        "Support listTree, readFile (with binary/size > 2MB guard), writeFile, createFile, renameFile, and revealInSystemExplorer",
+        "Unit tests confirm path traversal attempts (../) are blocked",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Required before code editor and artifact explorer UI."
+    },
+    {
+      "id": "US-006",
+      "title": "Implement secure BYOK AI provider client and keychain credential store",
+      "description": "As a privacy-conscious learner, I want to configure my own OpenAI-compatible, Anthropic, or local Ollama endpoint with API keys stored in the OS keychain.",
+      "acceptanceCriteria": [
+        "Store and retrieve API keys via OS credential vault (Keychain/Credential Manager); never write raw keys into .codelab/ JSON or logs",
+        "Implement unified streaming chat completion adapter supporting OpenAI-compatible and Anthropic APIs with AbortController cancellation",
+        "Provide testConnection() returning latencyMs and normalized error messages (401 invalid key, 429 rate limit, timeout, network unreachable)",
+        "Mask secrets in all error traces and telemetry payloads",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Offline mode must remain fully functional when no AI key is configured."
+    },
+    {
+      "id": "US-007",
+      "title": "Implement AI four-dimensional context assembler and teaching prompt modes",
+      "description": "As a learner, I want AI questions to automatically include my current exercise, selected code/error, and recent terminal output, with toggleable Socratic vs Direct teaching styles.",
+      "acceptanceCriteria": [
+        "Assemble context payload from: (1) current chapter summary & rules, (2) user-selected snippet + file path + surrounding lines, (3) optional recent terminal output tail, (4) current checklist progress",
+        "Enforce deterministic token budget truncation (default max 6,000 input tokens) while prioritizing user selection and error tail",
+        "Support two system prompt modes: socratic (default guided coaching) and direct (full explanation with concise runnable examples)",
+        "Expose structured ContextChips metadata so UI lets users inspect and remove individual context items before sending",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Depends on US-002, US-003, US-005, US-006."
+    },
+    {
+      "id": "US-008",
+      "title": "Build main workbench shell, welcome view, and built-in Go/GoFrame starter",
+      "description": "As a first-time learner, I want a clean onboarding screen to import any Markdown handbook or launch the built-in Go/GoFrame tutorial into a resizable three-pane workbench.",
+      "acceptanceCriteria": [
+        "Render Welcome screen with Open Local Markdown button, Built-in Go/GoFrame Course card, and Recent Workspaces list",
+        "Implement resizable split-pane workbench layout: Left (Interactive Manual + Outline), Center-Top (Workspace Explorer + Code Editor), Center-Bottom (Multi-Terminal Panel), Right Drawer (AI Tutor)",
+        "Persist pane sizes and collapse states across restarts",
+        "Display Preflight Check badge in top toolbar with popover details",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Core desktop/web UI shell."
+    },
+    {
+      "id": "US-009",
+      "title": "Build interactive manual viewer with runnable command blocks",
+      "description": "As a learner, I want to read chapters cleanly and click Run directly on bash blocks to execute commands in the right directory with live status feedback.",
+      "acceptanceCriteria": [
+        "Render chapter sidebar with completion indicators and smooth section navigation",
+        "Render bash/sh code blocks with target cwd pill, Run button, Run in New Terminal action, and Copy button",
+        "Trigger confirmation modal before executing commands flagged by US-004 risk classifier",
+        "Show inline execution state badge (Running / Exit 0 / Exit N) linked to the target terminal tab",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Connects US-002 parser output with US-003 terminal backend."
+    },
+    {
+      "id": "US-010",
+      "title": "Build integrated xterm.js multi-terminal panel UI",
+      "description": "As a learner, I want an embedded interactive terminal panel supporting multiple tabs, daemon stop/restart controls, and error selection.",
+      "acceptanceCriteria": [
+        "Render xterm.js terminal instances bound to PTY streams with automatic ResizeObserver fit",
+        "Display tab bar with terminal title, cwd tooltip, running/idle/error indicator dot, and + New Terminal button",
+        "Show Stop (SIGINT) and Restart buttons on daemon tabs (e.g., go run .)",
+        "Provide Clear Output and Ask AI about Last Error quick actions in terminal header",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Depends on US-003 and US-008."
+    },
+    {
+      "id": "US-011",
+      "title": "Build workspace artifact file tree and Monaco code editor",
+      "description": "As a learner, I want to browse my generated code artifacts and edit files with syntax highlighting and tabs inside the workbench.",
+      "acceptanceCriteria": [
+        "Render collapsible file tree synced live with US-005 file watcher, highlighting recently modified files",
+        "Open files in Monaco Editor with multi-tab switching, dirty indicator dot, Cmd/Ctrl+S save, and syntax highlighting for Go, SQL, JSON, YAML, and Markdown",
+        "Support creating new files/folders from tree context menu and opening current file in configured external IDE",
+        "Show friendly placeholder state for binary or oversized (> 2MB) files",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Depends on US-005 and US-008."
+    },
+    {
+      "id": "US-012",
+      "title": "Integrate optional Go LSP (gopls) bridge into Monaco editor",
+      "description": "As a Go learner, I want code completion, hover docs, and inline diagnostics when gopls is available on my machine, with graceful fallback when absent.",
+      "acceptanceCriteria": [
+        "Spawn local gopls stdio process scoped to active Go module root (e.g., task-api/ or task-api-gf/) and bridge JSON-RPC to Monaco",
+        "Support textDocument/completion, textDocument/hover, and publishDiagnostics squiggles within 300ms on local files",
+        "Gracefully degrade to plain syntax highlighting with a non-blocking Install gopls hint when gopls binary is missing",
+        "Restart or shut down LSP child process cleanly when switching workspace or closing app",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "MVP targets gopls first; interface remains language-agnostic for v1.1 expansion."
+    },
+    {
+      "id": "US-013",
+      "title": "Build selection-based Ask AI floating toolbar across manual, editor, and terminal",
+      "description": "As a learner, I want to highlight any confusing code, manual concept, or terminal error with my mouse and click Ask AI to get immediate contextual help.",
+      "acceptanceCriteria": [
+        "Detect non-empty mouse text selection in Manual Viewer, Monaco Editor, and xterm.js Terminal",
+        "Show a compact floating action pill near the selection within 150ms without obscuring selected text, offering Explain, Diagnose Error (terminal/diagnostic context), and Custom Question",
+        "Clicking an action opens the right-side AI Tutor drawer with the selected snippet pinned as a quote card and auto-populated ContextChips",
+        "Dismiss floating toolbar cleanly on Escape, scroll, or outside click",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Core differentiator from user requirements."
+    },
+    {
+      "id": "US-014",
+      "title": "Build AI Tutor chat drawer with streaming responses and mode toggle",
+      "description": "As a learner, I want a dedicated AI Tutor panel that streams formatted answers, supports switching between Socratic and Direct modes, and lets me discuss reflection questions.",
+      "acceptanceCriteria": [
+        "Render AI Tutor drawer with message history scoped per workspace/chapter, Markdown + code syntax rendering, and Copy Code buttons",
+        "Display removable ContextChips above input box showing attached chapter, file snippet, and terminal tail",
+        "Provide Socratic / Direct mode toggle persisted per workspace and Stop Generating button during streaming",
+        "Clicking Ask AI on a manual Reflection Question card pre-fills the question and evaluates the learner's reasoning",
+        "Show clear setup prompt linking to Settings when no AI provider is configured",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Depends on US-006, US-007, US-013."
+    },
+    {
+      "id": "US-015",
+      "title": "Build chapter verification checklist and one-click automated check runner",
+      "description": "As a learner, I want to check off acceptance criteria per exercise and run automated verification commands (like curl status checks or go test -race) with instant pass/fail feedback.",
+      "acceptanceCriteria": [
+        "Render Acceptance Criteria card at the end of each chapter with manual checkboxes persisted to progress.json",
+        "Support automated verification specs (exit code check, stdout/HTTP status assertion) runnable via a single Verify Exercise button",
+        "Display per-check pass/fail status, actual vs expected diff on failure, and a one-click Ask AI to Diagnose button",
+        "Update top progress bar and chapter outline completion badge automatically",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Ships built-in verification rules for Go/GoFrame Exercises 1-9."
+    },
+    {
+      "id": "US-016",
+      "title": "Build Settings modal and local privacy controls",
+      "description": "As a learner, I want a settings dialog to configure AI providers, default workspace directory, external IDE command, and clear local data.",
+      "acceptanceCriteria": [
+        "Provide AI Provider tab with preset templates (OpenAI, Anthropic, DeepSeek, Ollama), masked API Key input, and Test Connection button",
+        "Provide Workspace & Editor tab for default folder, font size, theme (Dark/Light), and external IDE binary path",
+        "Provide Privacy & Data tab showing local storage path and Reset Progress / Clear AI History actions with confirmation",
+        "Persist non-secret settings locally and apply theme/editor preferences immediately without restart",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Completes MVP v1.0 feature set."
+    }
+  ]
+}

@@ -1,0 +1,280 @@
+/* ==========================================================================
+   CodeLab Studio — Design Tokens v3.0 (Arc UI Design Language)
+   参考来源：https://uiarc.dev/docs/introduction · /docs/theming · /docs/motion
+   三层架构：Primitives (oklch 纯中性灰 + 冷却粉彩色系) → Semantic → Component
+   支持：Light（默认）/ Dark 双主题 × 8 组内建强调色（data-accent）× 弹簧物理动效
+   所有前景色与表面色组合均经 WCAG 2.1 AA（≥ 4.5:1）数值对比度校验
+   ========================================================================== */
+
+/* ---------- Layer 1 · Primitives (Arc UI Foundation) ---------- */
+:root {
+  color-scheme: light;
+
+  /* Pure Achromatic Neutral Scale (zero hue tint, oklch L% 0 0) */
+  --neutral-0: oklch(100% 0 0);     /* #FFFFFF */
+  --neutral-1: oklch(99% 0 0);      /* #FCFCFC */
+  --neutral-2: oklch(97.8% 0 0);    /* #F8F8F8 */
+  --neutral-3: oklch(95.8% 0 0);    /* #F1F1F1 */
+  --neutral-4: oklch(91.5% 0 0);    /* #E2E2E2 */
+  --neutral-5: oklch(84% 0 0);      /* #CACACA */
+  --neutral-6: oklch(72% 0 0);      /* #A4A4A4 */
+  --neutral-7: oklch(52% 0 0);      /* #696969 · WCAG AA calibrated (5.42:1 on white) */
+  --neutral-8: oklch(46% 0 0);      /* #585858 · 7.13:1 on white */
+  --neutral-9: oklch(34% 0 0);      /* #383838 */
+  --neutral-10: oklch(23% 0 0);     /* #1D1D1D */
+  --neutral-11: oklch(15% 0 0);     /* #0B0B0B · 19.67:1 on white */
+
+  /* Typography — Arc UI Display (Geist) + Body (Inter) + Mono (JetBrains Mono) */
+  --font-display: "Geist", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type Scale (Arc compact ramp) */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.8125rem;  /* 13px */
+  --text-field: 0.875rem;/* 14px */
+  --text-base: 0.9375rem;/* 15px */
+  --text-lg: 1.0625rem;  /* 17px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
+  --text-3xl: 2.125rem;  /* 34px */
+
+  --tracking-display: -0.03em;
+  --tracking-body: -0.01em;
+  --leading-display: 1.12;
+  --leading-body: 1.48;
+  --leading-read: 1.68;
+  --leading-code: 20px;
+
+  /* Spacing · 4px base */
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.125rem; /* 18px */
+  --space-6: 1.25rem;  /* 20px */
+  --space-8: 1.5rem;   /* 24px */
+  --space-10: 2rem;    /* 32px */
+  --space-12: 2.5rem;  /* 40px */
+
+  /* Radii — Sculptural Arc Geometry */
+  --radius-xs: 6px;
+  --radius-control: 10px;   /* Workbench inputs / dense buttons */
+  --radius-control-lg: 14px;/* Standard Arc controls */
+  --radius-panel: 18px;     /* Cards, dialogs, popovers, code blocks */
+  --radius-surface: 24px;   /* Hero panels & large containers */
+  --radius-pill: 9999px;
+
+  /* Motion — Arc Critically Damped Spring & Easing Curves */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: linear(0, 0.0213, 0.0739, 0.1443, 0.2235, 0.305, 0.3849, 0.4606, 0.5305, 0.594, 0.6508, 0.7011, 0.7452, 0.7836, 0.8168, 0.8454, 0.8699, 0.8907, 0.9084, 0.9234, 0.9361, 0.9467, 0.9557, 0.9632, 0.9694, 0.9747, 0.979, 0.9826, 0.9857, 0.9882, 0.9902, 0.992, 0.9934, 0.9946, 0.9955, 0.9963, 1);
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-standard: 220ms;
+  --duration-considered: 360ms;
+  --duration-spring: 440ms;
+
+  /* Workbench Geometry */
+  --topbar-h: 48px;
+  --tabbar-h: 36px;
+  --cmdhead-h: 34px;
+  --tree-w: 204px;
+  --manual-w: 36%;
+  --ai-w: 376px;
+  --term-h: 256px;
+}
+
+/* ---------- Layer 2 · Semantic — Light Mode (Default, matching uiarc.dev) ---------- */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: var(--neutral-0);
+  --surface: var(--neutral-0);
+  --surface-raised: var(--neutral-0);
+  --surface-muted: var(--neutral-2);
+  --surface-subtle: var(--neutral-3);
+  --sidebar-fill: color-mix(in oklab, var(--foreground) 2.2%, var(--background));
+  --hover-fill: color-mix(in oklab, var(--foreground) 4.2%, transparent);
+  --active-fill: color-mix(in oklab, var(--foreground) 7%, transparent);
+
+  --foreground: var(--neutral-11);
+  --text-secondary: var(--neutral-8);
+  --text-muted: var(--neutral-7);
+
+  --border: oklch(92.5% 0 0);
+  --border-subtle: oklch(96% 0 0);
+  --border-strong: oklch(81% 0 0);
+
+  /* Default Neutral Monochrome Accent */
+  --accent: oklch(33% 0 0);
+  --accent-strong: oklch(20% 0 0);
+  --accent-subtle: oklch(33% 0 0 / 0.08);
+  --accent-foreground: var(--neutral-0);
+  --control-on: oklch(18% 0 0);
+  --control-glyph: oklch(100% 0 0);
+  --control-track: oklch(89.5% 0 0);
+
+  /* Cool Pastel Categorical & Status Tones (AA calibrated on light) */
+  --tone-teal: oklch(50% 0.095 182);    /* #007467 · 5.66:1 */
+  --tone-sky: oklch(51% 0.11 240);      /* #136D9E · 5.67:1 */
+  --tone-orchid: oklch(52% 0.17 322);   /* #A7399A */
+  --tone-violet: oklch(51% 0.16 290);   /* #6850B9 · 6.13:1 */
+  --tone-rose: oklch(53% 0.18 10);      /* #BB2C54 · 5.83:1 */
+  --tone-amber: oklch(50% 0.12 68);     /* #8F5300 · 6.16:1 (AA+ calibrated) */
+  --tone-green: oklch(50% 0.12 162);    /* #00774D · 5.57:1 */
+
+  --success: var(--tone-green);
+  --warning: var(--tone-amber);
+  --danger: var(--tone-rose);
+  --info: var(--tone-sky);
+  --ai: var(--tone-violet);
+
+  --badge-tint: 10%;
+  --badge-ink: 86%;
+
+  /* Arc Brand Gradient & Atmospheric Hero Mesh */
+  --arc-gradient-from: oklch(91% 0.042 300);
+  --arc-gradient-to: oklch(93% 0.042 65);
+  --arc-gradient: linear-gradient(100deg, var(--arc-gradient-from), var(--arc-gradient-to));
+  --arc-gradient-foreground: oklch(22% 0.01 300);
+  --arc-gradient-soft: linear-gradient(135deg, oklch(97.5% 0.016 300), oklch(98% 0.015 65));
+  --arc-gradient-line: linear-gradient(100deg, oklch(84% 0.055 300), oklch(87% 0.055 65));
+  --arc-hero-bg:
+    radial-gradient(ellipse 36% 48% at 4% 96%, #e9babb 0%, transparent 100%),
+    radial-gradient(ellipse 38% 54% at 96% 4%, #afc7f6 0%, transparent 100%),
+    radial-gradient(ellipse 46% 46% at 50% 112%, #e8d9ad 0%, transparent 100%),
+    #f8f7f5;
+
+  /* Shadows — Quiet resting, floating only on overlays */
+  --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.035);
+  --shadow-raised: 0 6px 18px oklch(0% 0 0 / 0.065), 0 1px 3px oklch(0% 0 0 / 0.035);
+  --shadow-floating: 0 20px 48px oklch(0% 0 0 / 0.105), 0 3px 10px oklch(0% 0 0 / 0.045);
+  --focus-outline: 0 0 0 2px var(--background), 0 0 0 4px var(--accent);
+
+  /* Syntax Highlighting (Arc Light Neutral Balance) */
+  --syn-kw: oklch(50% 0.17 12);
+  --syn-fn: oklch(49% 0.16 290);
+  --syn-str: oklch(46% 0.11 162);
+  --syn-num: oklch(49% 0.12 242);
+  --syn-type: oklch(50% 0.12 58);
+  --syn-com: oklch(54% 0 0);
+  --syn-op: oklch(34% 0 0);
+  --editor-active-line: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+
+/* ---------- Layer 2 · Semantic — Dark Mode (Arc Obsidian Neutral) ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: oklch(19% 0 0);       /* #141414 */
+  --surface: oklch(21.5% 0 0);        /* #191919 */
+  --surface-raised: oklch(24% 0 0);   /* #202020 */
+  --surface-muted: oklch(26% 0 0);    /* #242424 */
+  --surface-subtle: oklch(29% 0 0);
+  --sidebar-fill: oklch(17.8% 0 0);
+  --hover-fill: color-mix(in oklab, var(--foreground) 5.5%, transparent);
+  --active-fill: color-mix(in oklab, var(--foreground) 9%, transparent);
+
+  --foreground: oklch(96% 0 0);       /* #F2F2F2 · 15.59:1 on surface */
+  --text-secondary: oklch(77% 0 0);   /* #B4B4B4 · 8.45:1 on surface */
+  --text-muted: oklch(66% 0 0);       /* #929292 · 5.60:1 on surface / 4.95:1 on muted */
+
+  --border: oklch(29% 0 0);
+  --border-subtle: oklch(24.5% 0 0);
+  --border-strong: oklch(40% 0 0);
+
+  --accent: oklch(80% 0 0);
+  --accent-strong: oklch(93% 0 0);
+  --accent-subtle: oklch(80% 0 0 / 0.13);
+  --accent-foreground: oklch(18% 0 0);
+  --control-on: oklch(94% 0 0);
+  --control-glyph: oklch(18% 0 0);
+  --control-track: oklch(33% 0 0);
+
+  /* Luminous Pastel Categorical & Status Tones (AA/AAA on dark) */
+  --tone-teal: oklch(79% 0.13 182);   /* #37D5C1 · 9.58:1 */
+  --tone-sky: oklch(79% 0.095 236);   /* #7CC4F0 · 9.21:1 */
+  --tone-orchid: oklch(76% 0.15 322);
+  --tone-violet: oklch(74% 0.125 290);/* #AA9DF4 · 7.34:1 */
+  --tone-rose: oklch(71% 0.155 8);    /* #F0738F · 6.32:1 */
+  --tone-amber: oklch(83% 0.12 78);   /* #F2BD68 · 10.25:1 */
+  --tone-green: oklch(79% 0.14 162);  /* #55D69F · 9.60:1 */
+
+  --success: var(--tone-green);
+  --warning: var(--tone-amber);
+  --danger: var(--tone-rose);
+  --info: var(--tone-sky);
+  --ai: var(--tone-violet);
+
+  --badge-tint: 14%;
+  --badge-ink: 94%;
+
+  --arc-gradient-from: oklch(38% 0.05 300);
+  --arc-gradient-to: oklch(40% 0.045 60);
+  --arc-gradient: linear-gradient(100deg, var(--arc-gradient-from), var(--arc-gradient-to));
+  --arc-gradient-foreground: oklch(96% 0.005 300);
+  --arc-gradient-soft: linear-gradient(135deg, oklch(24.5% 0.018 300), oklch(25% 0.015 65));
+  --arc-gradient-line: linear-gradient(100deg, oklch(48% 0.06 300), oklch(52% 0.055 65));
+  --arc-hero-bg:
+    radial-gradient(ellipse 36% 48% at 4% 96%, #5b3438 0%, transparent 100%),
+    radial-gradient(ellipse 38% 54% at 96% 4%, #28395b 0%, transparent 100%),
+    radial-gradient(ellipse 46% 46% at 50% 112%, #4a4230 0%, transparent 100%),
+    #1d1e22;
+
+  --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.22);
+  --shadow-raised: 0 8px 22px oklch(0% 0 0 / 0.28);
+  --shadow-floating: 0 22px 55px oklch(0% 0 0 / 0.42);
+  --focus-outline: 0 0 0 2px var(--background), 0 0 0 4px var(--accent);
+
+  --syn-kw: oklch(74% 0.14 14);
+  --syn-fn: oklch(78% 0.12 290);
+  --syn-str: oklch(80% 0.11 162);
+  --syn-num: oklch(80% 0.10 236);
+  --syn-type: oklch(83% 0.11 72);
+  --syn-com: oklch(64% 0 0);
+  --syn-op: oklch(82% 0 0);
+  --editor-active-line: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+/* ---------- Arc 8 Built-in Accents (Light & Dark tuned separately) ---------- */
+:root[data-accent="neutral"] { --accent: oklch(33% 0 0); --accent-strong: oklch(20% 0 0); --accent-subtle: oklch(33% 0 0 / 0.08); --control-on: oklch(18% 0 0); --control-glyph: #ffffff; }
+:root[data-accent="violet"]  { --accent: #7747ff; --accent-strong: #5528ce; --accent-subtle: rgb(119 71 255 / 0.12); --control-on: #7747ff; --control-glyph: #ffffff; }
+:root[data-accent="blue"]    { --accent: #0562ef; --accent-strong: #074db7; --accent-subtle: rgb(5 98 239 / 0.11);  --control-on: #0562ef; --control-glyph: #ffffff; }
+:root[data-accent="green"]   { --accent: #0a8f5f; --accent-strong: #087c54; --accent-subtle: rgb(13 184 121 / 0.13); --control-on: #0a8f5f; --control-glyph: #ffffff; }
+:root[data-accent="amber"]   { --accent: #b86e00; --accent-strong: #945700; --accent-subtle: rgb(243 173 32 / 0.16); --control-on: #b86e00; --control-glyph: #ffffff; }
+:root[data-accent="orange"]  { --accent: #c85200; --accent-strong: #a04100; --accent-subtle: rgb(244 129 32 / 0.14); --control-on: #c85200; --control-glyph: #ffffff; }
+:root[data-accent="coral"]   { --accent: #cf3d34; --accent-strong: #a82c24; --accent-subtle: rgb(241 95 85 / 0.13);  --control-on: #cf3d34; --control-glyph: #ffffff; }
+:root[data-accent="rose"]    { --accent: #c52a78; --accent-strong: #9f1e5f; --accent-subtle: rgb(237 78 157 / 0.13); --control-on: #c52a78; --control-glyph: #ffffff; }
+
+:root[data-theme="dark"][data-accent="neutral"] { --accent: oklch(80% 0 0); --accent-strong: oklch(93% 0 0); --accent-subtle: oklch(80% 0 0 / 0.13); --control-on: oklch(94% 0 0); --control-glyph: oklch(18% 0 0); }
+:root[data-theme="dark"][data-accent="violet"]  { --accent: #a78bff; --accent-strong: #c7b7ff; --accent-subtle: rgb(119 71 255 / 0.22); --control-on: #8a66ff; --control-glyph: #ffffff; }
+:root[data-theme="dark"][data-accent="blue"]    { --accent: #6ba3ff; --accent-strong: #a4c7ff; --accent-subtle: rgb(5 98 239 / 0.22);  --control-on: #3b82f6; --control-glyph: #ffffff; }
+:root[data-theme="dark"][data-accent="green"]   { --accent: #53dca6; --accent-strong: #93efd0; --accent-subtle: rgb(13 184 121 / 0.20); --control-on: #1fae78; --control-glyph: #0d1d15; }
+:root[data-theme="dark"][data-accent="amber"]   { --accent: #ffcb62; --accent-strong: #ffe0a1; --accent-subtle: rgb(243 173 32 / 0.20); --control-on: #e8a52a; --control-glyph: #1f1402; }
+:root[data-theme="dark"][data-accent="orange"]  { --accent: #ffad5e; --accent-strong: #ffd0a0; --accent-subtle: rgb(244 129 32 / 0.20); --control-on: #ef873a; --control-glyph: #1b1006; }
+:root[data-theme="dark"][data-accent="coral"]   { --accent: #ff9386; --accent-strong: #ffc1ba; --accent-subtle: rgb(241 95 85 / 0.20);  --control-on: #ec6a60; --control-glyph: #1e0b0a; }
+:root[data-theme="dark"][data-accent="rose"]    { --accent: #ff8bc5; --accent-strong: #ffc0df; --accent-subtle: rgb(237 78 157 / 0.20); --control-on: #e457a0; --control-glyph: #1f0815; }
+
+/* ---------- Layer 3 · Component ---------- */
+:root {
+  --btn-h-xs: 26px;
+  --btn-h-sm: 30px;
+  --btn-h-md: 34px;
+  --btn-h-lg: 40px;
+  --input-h: 36px;
+  --tree-row-h: 28px;
+  --float-bar-h: 34px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-standard: 0ms;
+    --duration-considered: 0ms;
+    --duration-spring: 0ms;
+  }
+}
