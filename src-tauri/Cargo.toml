@@ -2,16 +2,31 @@
 name = "codelab-studio"
 version = "0.1.0"
 edition = "2021"
-description = "CodeLab Studio pure Rust domain contracts"
-license = "MIT"
+description = "CodeLab Studio desktop application"
 
 [lib]
 name = "codelab_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 path = "src/lib.rs"
+
+[[bin]]
+name = "codelab-studio"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 schemars = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sys-locale = "0.3"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-window-state = "2"
 thiserror = "2"
 ts-rs = { version = "10", features = ["serde-json-impl"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"

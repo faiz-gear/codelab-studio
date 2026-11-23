@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { LOCALES, type Locale, resolveInitialLocale, t } from "./i18n";
+import { LOCALES, type Locale, type MessageKey, resolveInitialLocale, t } from "./i18n";
+import { appBootstrap, isTauriRuntime } from "./lib/ipc/client";
+import type { SessionEpoch } from "./lib/ipc/generated";
 
 const THEMES = ["light", "dark"] as const;
 type ThemeMode = (typeof THEMES)[number];
@@ -15,6 +17,12 @@ const ACCENTS = [
   "rose",
 ] as const;
 type AccentPreset = (typeof ACCENTS)[number];
+
+type BootstrapViewState =
+  | { kind: "browser" }
+  | { kind: "loading" }
+  | { kind: "ready"; epoch: SessionEpoch }
+  | { kind: "error" };
 
 const THEME_STORAGE_KEY = "codelab.theme";
 const ACCENT_STORAGE_KEY = "codelab.accent";
@@ -54,6 +62,23 @@ function persistPreference(key: string, value: string): void {
   }
 }
 
+function ipcStatusMessageKey(state: BootstrapViewState): MessageKey {
+  switch (state.kind) {
+    case "browser":
+      return "shell.ipc.browser";
+    case "loading":
+      return "shell.ipc.connecting";
+    case "ready":
+      return "shell.ipc.ready";
+    case "error":
+      return "shell.ipc.error";
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
 export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveInitialLocale(navigator.language));
   const [theme, setTheme] = useState<ThemeMode>(readInitialTheme);
@@ -62,6 +87,9 @@ export function App() {
     width: window.innerWidth,
     height: window.innerHeight,
   }));
+  const [bootstrap, setBootstrap] = useState<BootstrapViewState>(() =>
+    isTauriRuntime() ? { kind: "loading" } : { kind: "browser" },
+  );
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -88,6 +116,32 @@ export function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let cancelled = false;
+    void appBootstrap()
+      .then((state) => {
+        if (cancelled) {
+          return;
+        }
+        setLocale(state.config.locale);
+        setBootstrap({ kind: "ready", epoch: state.epoch });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setBootstrap({ kind: "error" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <section className="w-full max-w-xl rounded-panel border border-border bg-surface p-6 shadow-resting space-y-5">
@@ -109,6 +163,18 @@ export function App() {
             <div className="text-xs text-text-muted">{t(locale, "shell.viewport.label")}</div>
             <div className="font-mono text-foreground" data-testid="shell-viewport">
               {viewport.width} x {viewport.height}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-text-muted">{t(locale, "shell.epoch.label")}</div>
+            <div className="font-mono text-foreground" data-testid="shell-epoch">
+              {bootstrap.kind === "ready" ? String(bootstrap.epoch) : "-"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-text-muted">{t(locale, "shell.ipc.label")}</div>
+            <div className="font-mono text-foreground" data-testid="shell-ipc-status">
+              {t(locale, ipcStatusMessageKey(bootstrap))}
             </div>
           </div>
         </div>

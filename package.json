@@ -7,15 +7,18 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "tauri": "tauri",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:tokens": "node scripts/check-tokens-sync.mjs"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
