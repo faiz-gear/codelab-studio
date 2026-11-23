@@ -1,12 +1,13 @@
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+use crate::course::LoadedCoursePack;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::events::{SessionEventEnvelope, StorageCorruptedEvent};
 use crate::domain::ids::SessionEpoch;
@@ -30,6 +31,7 @@ pub struct SessionOpenParams {
     pub course_title: String,
     pub language: Language,
     pub total_chapters: u32,
+    pub loaded_course: Option<LoadedCoursePack>,
     pub metrics_config: MetricsWriterConfig,
     pub shutdown_timeout: Duration,
 }
@@ -50,6 +52,7 @@ impl SessionOpenParams {
             course_title: course_title.into(),
             language,
             total_chapters,
+            loaded_course: None,
             metrics_config: MetricsWriterConfig::default(),
             shutdown_timeout: DEFAULT_SHUTDOWN_BARRIER_TIMEOUT,
         }
@@ -74,6 +77,7 @@ pub struct WorkspaceSession {
     shutdown_timeout: Duration,
     open_report: WorkspaceOpenReport,
     corruption_events: Mutex<Vec<SessionEventEnvelope<StorageCorruptedEvent>>>,
+    loaded_course: RwLock<Option<LoadedCoursePack>>,
 }
 
 impl std::fmt::Debug for WorkspaceSession {
@@ -136,6 +140,7 @@ impl WorkspaceSession {
             shutdown_timeout: params.shutdown_timeout,
             open_report,
             corruption_events: Mutex::new(envelopes),
+            loaded_course: RwLock::new(params.loaded_course),
         })
     }
 
@@ -161,6 +166,21 @@ impl WorkspaceSession {
 
     pub fn open_report(&self) -> &WorkspaceOpenReport {
         &self.open_report
+    }
+
+    pub fn loaded_course(&self) -> Option<LoadedCoursePack> {
+        self.loaded_course
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn update_loaded_course(&self, pack: LoadedCoursePack) {
+        let mut guard = self
+            .loaded_course
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        *guard = Some(pack);
     }
 
     pub fn take_corruption_events(&self) -> Vec<SessionEventEnvelope<StorageCorruptedEvent>> {

@@ -93,6 +93,10 @@ impl CodelabHomePaths {
     pub fn cache_dir(&self) -> PathBuf {
         self.root.join("cache")
     }
+
+    pub fn git_packs_cache_dir(&self) -> PathBuf {
+        self.cache_dir().join("git-packs")
+    }
 }
 
 #[derive(Debug)]
@@ -400,6 +404,10 @@ mod tests {
         assert_eq!(
             home.cache_dir(),
             PathBuf::from("/tmp/codelab-test-home/cache")
+        );
+        assert_eq!(
+            home.git_packs_cache_dir(),
+            PathBuf::from("/tmp/codelab-test-home/cache/git-packs")
         );
     }
 

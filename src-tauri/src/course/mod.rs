@@ -1,9 +1,17 @@
 mod ast;
 mod ast_text;
+mod authoring;
+mod git_cache;
+pub mod git_importer;
+mod git_url;
 mod html_sanitize;
 mod markdown_parser;
+mod pack_fs;
+pub mod pack_loader;
+mod pack_overlay;
 mod section_extractor;
 mod shell_analyzer;
+mod starter_hydrator;
 mod step_extractor;
 
 use std::fs::File;
@@ -13,6 +21,19 @@ use std::path::Path;
 use crate::domain::course::ParsedCourse;
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::runtime::Language;
+
+pub use authoring::{preview_author_draft, save_author_pack};
+pub use git_importer::{
+    fetch_git_pack, validate_git_ref, validate_git_url, GitCacheResult, GitImportConfig,
+    DEFAULT_GIT_CLONE_TIMEOUT, DEFAULT_MAX_CACHE_PACKS, DEFAULT_MAX_CACHE_TOTAL_BYTES,
+    DEFAULT_MAX_GIT_METADATA_BYTES, DEFAULT_MAX_PACK_BYTES,
+};
+pub use pack_loader::{
+    build_inspect_result, hydrate_starter_into_workspace, list_builtin_courses, load_builtin_pack,
+    load_git_pack_dir, load_local_markdown, load_local_pack_dir,
+    resolve_default_builtin_courses_dir, HydrationReport, LoadedCoursePack,
+    MAX_PACK_METADATA_BYTES,
+};
 
 pub const MAX_MARKDOWN_BYTES: usize = 5 * 1024 * 1024;
 
@@ -39,6 +60,17 @@ pub fn parse_markdown_file(
     path: &Path,
     options: &ParseMarkdownOptions,
 ) -> Result<ParsedCourse, AppError> {
+    let source = read_markdown_file_utf8(path)?;
+
+    let mut effective_options = options.clone();
+    if effective_options.default_title.is_none() {
+        effective_options.default_title = derive_fallback_title(path);
+    }
+
+    parse_markdown(&source, &effective_options)
+}
+
+pub(crate) fn read_markdown_file_utf8(path: &Path) -> Result<String, AppError> {
     let file = File::open(path).map_err(|err| map_io_error(path, err))?;
     let metadata = file.metadata().map_err(|err| map_io_error(path, err))?;
 
@@ -66,24 +98,17 @@ pub fn parse_markdown_file(
         return Err(markdown_limit_error(bytes.len() as u64));
     }
 
-    let source = String::from_utf8(bytes).map_err(|err| {
+    String::from_utf8(bytes).map_err(|err| {
         AppError::new(
             ErrorCode::FileTooLargeOrBinary,
             "error.fileTooLargeOrBinary",
         )
         .with_param("path", path.display().to_string())
         .with_detail(format!("markdown file is not valid UTF-8: {err}"))
-    })?;
-
-    let mut effective_options = options.clone();
-    if effective_options.default_title.is_none() {
-        effective_options.default_title = derive_fallback_title(path);
-    }
-
-    parse_markdown(&source, &effective_options)
+    })
 }
 
-fn derive_fallback_title(path: &Path) -> Option<String> {
+pub(crate) fn derive_fallback_title(path: &Path) -> Option<String> {
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -107,7 +132,7 @@ fn derive_fallback_title(path: &Path) -> Option<String> {
         .or_else(|| stem.map(str::to_owned))
 }
 
-fn markdown_limit_error(actual_bytes: u64) -> AppError {
+pub(crate) fn markdown_limit_error(actual_bytes: u64) -> AppError {
     AppError::new(
         ErrorCode::MarkdownLimitExceeded,
         "error.markdownLimitExceeded",
@@ -119,7 +144,7 @@ fn markdown_limit_error(actual_bytes: u64) -> AppError {
     ))
 }
 
-fn map_io_error(path: &Path, err: io::Error) -> AppError {
+pub(crate) fn map_io_error(path: &Path, err: io::Error) -> AppError {
     let (code, message_key, param_key, param_val) = match err.kind() {
         io::ErrorKind::PermissionDenied => (
             ErrorCode::PathOutsideSandbox,

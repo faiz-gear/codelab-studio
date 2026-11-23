@@ -4,6 +4,7 @@ use std::fs;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::events::StorageCorruptedEvent;
 use crate::domain::ids::ChapterId;
 use crate::domain::workspace::{
@@ -92,14 +93,6 @@ impl WorkspaceStore {
             &mut corruption_events,
         );
 
-        if !created_new && meta_outcome.value().workspace_root != canonical_root {
-            meta_file.update(|meta| {
-                meta.workspace_root = canonical_root.clone();
-                meta.updated_at = now_rfc3339();
-                Ok(())
-            })?;
-        }
-
         let progress_outcome = progress_file.load_or_init(|| ProgressState {
             schema_version: StorageSchemaVersion::V1,
             course_id: spec.course_id.clone(),
@@ -112,6 +105,19 @@ impl WorkspaceStore {
             &mut corruption_events,
         );
 
+        if progress_outcome.value().course_id != spec.course_id {
+            return Err(StorageError::Domain(
+                AppError::new(ErrorCode::SchemaValidationFailed, "error.invalidInput")
+                    .with_param("field", "workspaceRoot")
+                    .with_detail("this workspace belongs to another course"),
+            ));
+        }
+        let source_changed =
+            !created_new && meta_outcome.value().course_source != spec.course_source;
+        let fingerprint_changed =
+            !created_new && meta_outcome.value().pack_fingerprint != spec.pack_fingerprint;
+        let root_changed = !created_new && meta_outcome.value().workspace_root != canonical_root;
+
         let chat_outcome = chat_file.load_or_init(|| ChatHistory {
             schema_version: StorageSchemaVersion::V1,
             chapters: BTreeMap::new(),
@@ -122,6 +128,16 @@ impl WorkspaceStore {
             &mut recovered_from_backup,
             &mut corruption_events,
         );
+
+        if root_changed || source_changed || fingerprint_changed {
+            meta_file.update(|meta| {
+                meta.workspace_root = canonical_root.clone();
+                meta.course_source = spec.course_source.clone();
+                meta.pack_fingerprint = spec.pack_fingerprint.clone();
+                meta.updated_at = now_rfc3339();
+                Ok(())
+            })?;
+        }
 
         let store = Self {
             paths,
@@ -363,6 +379,75 @@ mod tests {
             fs::read_to_string(&learner_file).expect("learner file preserved"),
             "package main\nfunc main() {}\n"
         );
+    }
+
+    #[test]
+    fn binding_another_course_preserves_existing_workspace_state() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = WorkspacePaths::from_root(dir.path(), false).expect("paths");
+        let (store, _) =
+            WorkspaceStore::open_or_create(paths.clone(), sample_spec()).expect("create store");
+        let chapter_id = ChapterId("ex-1-healthz".to_owned());
+
+        store
+            .update_meta(|meta| {
+                meta.active_chapter_id = Some(chapter_id.clone());
+                meta.open_tabs = vec![RelWorkspacePath::new("main.go").unwrap()];
+                meta.active_tab = Some(RelWorkspacePath::new("main.go").unwrap());
+                meta.hydrated_files = vec![RelWorkspacePath::new("main.go").unwrap()];
+                Ok(())
+            })
+            .expect("write old course state");
+        store
+            .update_progress(|progress| {
+                progress.chapters.insert(
+                    chapter_id.clone(),
+                    ChapterProgress {
+                        status: ChapterStatus::Completed,
+                        completed_at: Some("2026-11-23T00:00:00Z".to_owned()),
+                        last_run_id: None,
+                        auto_checks: BTreeMap::new(),
+                        self_checks: BTreeMap::new(),
+                    },
+                );
+                Ok(())
+            })
+            .expect("write old course progress");
+        store
+            .append_chat_message(
+                chapter_id.clone(),
+                ChatMessage {
+                    id: "old-message".to_owned(),
+                    role: ChatRole::User,
+                    content: "old course question".to_owned(),
+                    teaching_mode: Some(TeachingMode::Direct),
+                    created_at: "2026-11-23T00:00:00Z".to_owned(),
+                },
+            )
+            .expect("write old course chat");
+        let original_meta = fs::read(paths.workspace_json()).unwrap();
+        let original_progress = fs::read(paths.progress_json()).unwrap();
+        let original_chat = fs::read(paths.chat_json()).unwrap();
+        drop(store);
+
+        let mut next_spec = sample_spec();
+        next_spec.course_id = "another-course".to_owned();
+        next_spec.course_source = CourseSourceRef::GitRepo {
+            url: "https://example.com/another-course.git".to_owned(),
+            git_ref: Some("main".to_owned()),
+            entry_file: RelWorkspacePath::new("README.md").unwrap(),
+        };
+        next_spec.pack_fingerprint = "sha256:another-course".to_owned();
+
+        let error = WorkspaceStore::open_or_create(paths.clone(), next_spec)
+            .expect_err("a different course must use another workspace");
+        assert_eq!(
+            AppError::from(error).code,
+            ErrorCode::SchemaValidationFailed
+        );
+        assert_eq!(fs::read(paths.workspace_json()).unwrap(), original_meta);
+        assert_eq!(fs::read(paths.progress_json()).unwrap(), original_progress);
+        assert_eq!(fs::read(paths.chat_json()).unwrap(), original_chat);
     }
 
     #[test]

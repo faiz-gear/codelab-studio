@@ -29,6 +29,12 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(AppState::try_new().expect("failed to initialize CodeLab Studio AppState"))
         .setup(|app| {
+            let resource_dir = app.path().resource_dir().ok();
+            app.state::<AppState>()
+                .set_builtin_courses_dir(course::resolve_default_builtin_courses_dir(
+                    resource_dir.as_deref(),
+                ));
+
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(tauri::LogicalSize::new(1024.0, 720.0)));
                 if std::env::var("CODELAB_STARTUP_PROBE").as_deref() == Ok("1") {
@@ -47,6 +53,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::bootstrap_cmd::app_bootstrap,
+            ipc::course_cmd::course_inspect_source,
+            ipc::course_cmd::course_trust_and_open,
+            ipc::course_cmd::course_reload_manual,
+            ipc::course_cmd::course_author_preview,
+            ipc::course_cmd::course_author_save,
             ipc::settings_cmd::settings_update,
             ipc::settings_cmd::metrics_record,
             ipc::workspace_cmd::workspace_close,

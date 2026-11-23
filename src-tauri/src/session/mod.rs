@@ -1,4 +1,5 @@
 pub mod app_state;
+mod course_service;
 pub mod workspace_session;
 
 pub use app_state::{AppState, SessionLifecycleKind, PENDING_METRICS_CAPACITY};

@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use chrono::Utc;
 
+use crate::course::{list_builtin_courses, resolve_default_builtin_courses_dir};
 use crate::domain::error::{AppError, ErrorCode};
 use crate::domain::ids::SessionEpoch;
 use crate::domain::metrics::MetricEvent;
@@ -58,6 +59,7 @@ enum SessionSlot {
 pub struct AppState {
     started_at: Instant,
     global_store: GlobalStore,
+    builtin_courses_dir: RwLock<Option<PathBuf>>,
     fallback_locale: RwLock<Locale>,
     current_epoch: AtomicU64,
     app_launched_recorded: AtomicBool,
@@ -83,13 +85,16 @@ impl AppState {
                 .with_param("detail", err.to_string())
                 .with_detail(err.to_string())
         })?;
-        Ok(Self::with_home_paths(home_paths))
+        let state = Self::with_home_paths(home_paths);
+        state.set_builtin_courses_dir(resolve_default_builtin_courses_dir(None));
+        Ok(state)
     }
 
     pub fn with_home_paths(home_paths: CodelabHomePaths) -> Self {
         Self {
             started_at: Instant::now(),
             global_store: GlobalStore::new(home_paths),
+            builtin_courses_dir: RwLock::new(None),
             fallback_locale: RwLock::new(Locale::EnUs),
             current_epoch: AtomicU64::new(0),
             app_launched_recorded: AtomicBool::new(false),
@@ -102,6 +107,21 @@ impl AppState {
 
     pub fn global_store(&self) -> &GlobalStore {
         &self.global_store
+    }
+
+    pub fn set_builtin_courses_dir(&self, dir: Option<PathBuf>) {
+        let mut guard = self
+            .builtin_courses_dir
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        *guard = dir;
+    }
+
+    pub fn builtin_courses_dir(&self) -> Option<PathBuf> {
+        self.builtin_courses_dir
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub fn elapsed_startup_ms(&self) -> u128 {
@@ -178,11 +198,13 @@ impl AppState {
         }
 
         let config = config_file.to_view();
+        let builtin_dir = self.builtin_courses_dir();
+        let builtin_courses = list_builtin_courses(builtin_dir.as_deref());
         Ok(BootstrapState {
             epoch: self.current_epoch(),
             config,
             recent_workspaces: config_file.recent_workspaces,
-            builtin_courses: Vec::new(),
+            builtin_courses,
         })
     }
 

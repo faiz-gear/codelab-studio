@@ -1,6 +1,10 @@
 use crate::course::ast_text::normalize_rel_workspace_path;
 use crate::domain::ids::RelWorkspacePath;
 
+mod startup;
+
+pub(crate) use startup::{block_starts_with_root_reset_cd, block_starts_with_root_reset_or_init};
+
 const SHELL_LANGUAGES: &[&str] = &["bash", "sh", "zsh", "shell"];
 
 pub(crate) struct DaemonRule {
@@ -183,36 +187,6 @@ pub(crate) fn is_shell_language(language: Option<&str>) -> bool {
             .iter()
             .any(|shell| lang.eq_ignore_ascii_case(shell))
     })
-}
-
-pub(crate) fn block_starts_with_root_reset_cd(script: &str) -> bool {
-    let raw_segments = extract_shell_segments(script);
-    let Some(first_raw) = raw_segments.first() else {
-        return false;
-    };
-    let words = tokenize_shell_words(first_raw);
-    let effective_start = count_leading_env_assignments(&words);
-    let effective = &words[effective_start..];
-    if !effective
-        .first()
-        .is_some_and(|w| w.eq_ignore_ascii_case("cd"))
-    {
-        return false;
-    }
-
-    match extract_cd_target_arg(&effective[1..]) {
-        None => true,
-        Some(raw_arg) => {
-            let trimmed = raw_arg.trim();
-            trimmed.starts_with('/')
-                || trimmed.starts_with('~')
-                || trimmed.starts_with('$')
-                || trimmed.starts_with('\\')
-                || (trimmed.len() >= 2
-                    && trimmed.as_bytes()[0].is_ascii_alphabetic()
-                    && trimmed.as_bytes()[1] == b':')
-        }
-    }
 }
 
 pub(crate) fn analyze_shell_block(
@@ -980,20 +954,5 @@ mod tests {
         let analysis = analyze_shell_block("go run . --addr=:8080/ 2>&1", None);
         assert!(analysis.matched_daemon.is_some());
         assert_eq!(analysis.command_port, Some(8080));
-    }
-
-    #[test]
-    fn root_reset_cd_detects_abs_tilde_bare_without_breaking_relative_parent_cd() {
-        assert!(block_starts_with_root_reset_cd(
-            "cd /abs/path && gf init task-api-gf && cd task-api-gf && go run main.go",
-        ));
-        assert!(block_starts_with_root_reset_cd("cd ~/work && go run ."));
-        assert!(block_starts_with_root_reset_cd("cd"));
-        assert!(block_starts_with_root_reset_cd("cd C:\\work && go run ."));
-        assert!(!block_starts_with_root_reset_cd(
-            "cd .. && gf init task-api-gf"
-        ));
-        assert!(!block_starts_with_root_reset_cd("cd sub && go run ."));
-        assert!(!block_starts_with_root_reset_cd("go test ./..."));
     }
 }

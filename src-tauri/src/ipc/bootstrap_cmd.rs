@@ -35,8 +35,9 @@ pub fn app_bootstrap(state: tauri::State<'_, AppState>) -> Result<BootstrapState
         let startup_ms = state.elapsed_startup_ms();
         let locale_str = locale_tag(bootstrap.config.locale);
         let epoch = bootstrap.epoch.0;
+        let builtin_courses = serde_json::json!(bootstrap.builtin_courses);
         println!(
-            r#"CODELAB_BOOTSTRAP_READY {{"startupMs":{startup_ms},"locale":"{locale_str}","epoch":{epoch}}}"#
+            r#"CODELAB_BOOTSTRAP_READY {{"startupMs":{startup_ms},"locale":"{locale_str}","epoch":{epoch},"builtinCourses":{builtin_courses}}}"#
         );
         let _ = std::io::stdout().flush();
     }

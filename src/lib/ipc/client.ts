@@ -1,9 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AuthorPreviewResult,
   BootstrapState,
+  CourseInspectResult,
+  CourseSourceInput,
   GlobalConfigPatch,
   GlobalConfigView,
   MetricEvent,
+  OpenWorkspaceReq,
+  OpenedWorkspaceView,
+  ParsedCourse,
   SessionEpoch,
 } from "./generated";
 
@@ -13,6 +19,46 @@ export function isTauriRuntime(): boolean {
 
 export async function appBootstrap(): Promise<BootstrapState> {
   return invoke<BootstrapState>("app_bootstrap");
+}
+
+export async function courseInspectSource(
+  source: CourseSourceInput,
+): Promise<CourseInspectResult> {
+  return invoke<CourseInspectResult>("course_inspect_source", { source });
+}
+
+export async function courseTrustAndOpen(
+  req: OpenWorkspaceReq,
+): Promise<OpenedWorkspaceView> {
+  return invoke<OpenedWorkspaceView>("course_trust_and_open", { req });
+}
+
+export async function courseReloadManual(
+  epoch: SessionEpoch,
+): Promise<ParsedCourse> {
+  return invoke<ParsedCourse>("course_reload_manual", { epoch });
+}
+
+export async function courseAuthorPreview(
+  markdown: string,
+  checksJson: string | null = null,
+): Promise<AuthorPreviewResult> {
+  return invoke<AuthorPreviewResult>("course_author_preview", {
+    markdown,
+    checksJson,
+  });
+}
+
+export async function courseAuthorSave(
+  packDir: string,
+  markdown: string,
+  checksJson: string,
+): Promise<ParsedCourse> {
+  return invoke<ParsedCourse>("course_author_save", {
+    packDir,
+    markdown,
+    checksJson,
+  });
 }
 
 export async function settingsUpdate(patch: GlobalConfigPatch): Promise<GlobalConfigView> {
