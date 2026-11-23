@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ChapterId": {
+      "type": "string"
+    },
+    "CourseSourceRef": {
+      "oneOf": [
+        {
+          "properties": {
+            "courseId": {
+              "type": "string"
+            },
+            "entryFile": {
+              "$ref": "#/definitions/RelWorkspacePath"
+            },
+            "kind": {
+              "enum": [
+                "builtin"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "courseId",
+            "entryFile",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "filePath": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "localMarkdown"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "filePath",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "dirPath": {
+              "type": "string"
+            },
+            "entryFile": {
+              "$ref": "#/definitions/RelWorkspacePath"
+            },
+            "kind": {
+              "enum": [
+                "localPackDir"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "dirPath",
+            "entryFile",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "entryFile": {
+              "$ref": "#/definitions/RelWorkspacePath"
+            },
+            "gitRef": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "gitRepo"
+              ],
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "entryFile",
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LayoutSnapshot": {
+      "properties": {
+        "bottomHeightPx": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "focusMode": {
+          "type": "boolean"
+        },
+        "manualWidthPct": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bottomHeightPx",
+        "focusMode",
+        "manualWidthPct"
+      ],
+      "type": "object"
+    },
+    "RelWorkspacePath": {
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*/$)(?!.*\\\\)(?!.*//)(?!\\.{1,2}(?:/|$))(?!.*/\\.{1,2}(?:/|$)).+$",
+      "type": "string"
+    },
+    "StorageSchemaVersion": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "properties": {
+    "activeChapterId": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ChapterId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "activeTab": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/RelWorkspacePath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "courseSource": {
+      "$ref": "#/definitions/CourseSourceRef"
+    },
+    "hydratedFiles": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/RelWorkspacePath"
+      },
+      "type": "array"
+    },
+    "layout": {
+      "$ref": "#/definitions/LayoutSnapshot"
+    },
+    "openTabs": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/RelWorkspacePath"
+      },
+      "type": "array"
+    },
+    "packFingerprint": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "$ref": "#/definitions/StorageSchemaVersion"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "workspaceId": {
+      "type": "string"
+    },
+    "workspaceRoot": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "courseSource",
+    "layout",
+    "packFingerprint",
+    "schemaVersion",
+    "updatedAt",
+    "workspaceId",
+    "workspaceRoot"
+  ],
+  "title": "WorkspaceMeta",
+  "type": "object"
+}

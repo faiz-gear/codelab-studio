@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ChapterChatLog": {
+      "properties": {
+        "chapterId": {
+          "$ref": "#/definitions/ChapterId"
+        },
+        "messages": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/ChatMessage"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chapterId",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ChapterId": {
+      "type": "string"
+    },
+    "ChatMessage": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/ChatRole"
+        },
+        "teachingMode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TeachingMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "createdAt",
+        "id",
+        "role"
+      ],
+      "type": "object"
+    },
+    "ChatRole": {
+      "enum": [
+        "user",
+        "assistant",
+        "system"
+      ],
+      "type": "string"
+    },
+    "StorageSchemaVersion": {
+      "const": 1,
+      "type": "integer"
+    },
+    "TeachingMode": {
+      "enum": [
+        "socratic",
+        "direct"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "chapters": {
+      "additionalProperties": {
+        "$ref": "#/definitions/ChapterChatLog"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "schemaVersion": {
+      "$ref": "#/definitions/StorageSchemaVersion"
+    }
+  },
+  "required": [
+    "schemaVersion"
+  ],
+  "title": "ChatHistory",
+  "type": "object"
+}

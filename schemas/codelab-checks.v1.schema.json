@@ -1,0 +1,411 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/MultiChapterChecksSpec"
+    },
+    {
+      "$ref": "#/definitions/SingleChapterChecksSpec"
+    }
+  ],
+  "definitions": {
+    "ChapterChecksSpec": {
+      "properties": {
+        "chapterId": {
+          "$ref": "#/definitions/ChapterId"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/definitions/CheckSpec"
+          },
+          "type": "array"
+        },
+        "requiresDaemon": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DaemonRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "chapterId",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "ChapterId": {
+      "type": "string"
+    },
+    "CheckSpec": {
+      "oneOf": [
+        {
+          "properties": {
+            "expect": {
+              "$ref": "#/definitions/HttpExpectSpec"
+            },
+            "id": {
+              "type": "string"
+            },
+            "request": {
+              "$ref": "#/definitions/HttpRequestSpec"
+            },
+            "timeoutSec": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "http_assert"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "expect",
+            "id",
+            "request",
+            "title",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RelWorkspacePath"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "expectExitCode": {
+              "default": null,
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "forbidOutput": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "timeoutSec": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "command_test"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "id",
+            "title",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "cwd": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RelWorkspacePath"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "entryFile": {
+              "$ref": "#/definitions/RelWorkspacePath"
+            },
+            "id": {
+              "type": "string"
+            },
+            "language": {
+              "$ref": "#/definitions/Language"
+            },
+            "testFile": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RelWorkspacePath"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "timeoutSec": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "function_test"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "entryFile",
+            "id",
+            "language",
+            "title",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "hint": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "self_check"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DaemonRequirement": {
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "port": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "serviceKey": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "port"
+      ],
+      "type": "object"
+    },
+    "HttpExpectSpec": {
+      "properties": {
+        "bodyContains": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bodyEquals": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "status": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "HttpRequestSpec": {
+      "properties": {
+        "body": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "url"
+      ],
+      "type": "object"
+    },
+    "Language": {
+      "enum": [
+        "js",
+        "ts",
+        "go",
+        "java",
+        "python"
+      ],
+      "type": "string"
+    },
+    "MultiChapterChecksSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "chapters": {
+          "items": {
+            "$ref": "#/definitions/ChapterChecksSpec"
+          },
+          "type": "array"
+        },
+        "courseId": {
+          "type": "string"
+        },
+        "language": {
+          "$ref": "#/definitions/Language"
+        },
+        "schemaVersion": {
+          "$ref": "#/definitions/PackSchemaVersion"
+        }
+      },
+      "required": [
+        "chapters",
+        "courseId",
+        "language",
+        "schemaVersion"
+      ],
+      "type": "object"
+    },
+    "PackSchemaVersion": {
+      "const": "1.0",
+      "type": "string"
+    },
+    "RelWorkspacePath": {
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*/$)(?!.*\\\\)(?!.*//)(?!\\.{1,2}(?:/|$))(?!.*/\\.{1,2}(?:/|$)).+$",
+      "type": "string"
+    },
+    "SingleChapterChecksSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "chapterId": {
+          "$ref": "#/definitions/ChapterId"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/definitions/CheckSpec"
+          },
+          "type": "array"
+        },
+        "language": {
+          "$ref": "#/definitions/Language"
+        },
+        "requiresDaemon": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DaemonRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schemaVersion": {
+          "$ref": "#/definitions/PackSchemaVersion"
+        }
+      },
+      "required": [
+        "chapterId",
+        "checks",
+        "language",
+        "schemaVersion"
+      ],
+      "type": "object"
+    }
+  },
+  "title": "ChecksSpec"
+}
