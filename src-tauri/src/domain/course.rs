@@ -315,6 +315,35 @@ pub struct CommandBlock {
     pub cwd: Option<RelWorkspacePath>,
     pub role: PtyRole,
     pub is_secondary: bool,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceCodeBlock {
+    pub code_index: u32,
+    pub language: Option<String>,
+    pub target_path: Option<RelWorkspacePath>,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfCheckItem {
+    pub id: String,
+    pub title: String,
+    pub checked_by_default: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterThreeStepFlow {
+    pub step1_primary_commands: Vec<CommandBlockId>,
+    pub step2_reference_blocks: Vec<ReferenceCodeBlock>,
+    pub step3_self_checks: Vec<SelfCheckItem>,
+    pub secondary_commands: Vec<CommandBlockId>,
+    pub reflection_nodes: Vec<MarkdownNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
@@ -327,6 +356,7 @@ pub struct ParsedChapter {
     pub nodes: Vec<MarkdownNode>,
     pub command_blocks: Vec<CommandBlock>,
     pub self_check_items: Vec<String>,
+    pub three_step: ChapterThreeStepFlow,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
@@ -335,6 +365,8 @@ pub struct ParsedCourse {
     pub course_id: String,
     pub title: String,
     pub language: Option<Language>,
+    #[serde(default)]
+    pub intro_nodes: Vec<MarkdownNode>,
     pub chapters: Vec<ParsedChapter>,
 }
 

@@ -152,11 +152,17 @@ export type ChecksSpec = MultiChapterChecksSpec | SingleChapterChecksSpec;
 
 export type MarkdownNode = { "kind": "paragraph", children: Array<MarkdownNode>, } | { "kind": "heading", level: number, id: string | null, children: Array<MarkdownNode>, } | { "kind": "text", value: string, } | { "kind": "strong", children: Array<MarkdownNode>, } | { "kind": "emphasis", children: Array<MarkdownNode>, } | { "kind": "inlineCode", value: string, } | { "kind": "codeBlock", language: string | null, code: string, targetPath: RelWorkspacePath | null, commandBlockId: CommandBlockId | null, } | { "kind": "list", ordered: boolean, start: number | null, items: Array<Array<MarkdownNode>>, } | { "kind": "blockQuote", children: Array<MarkdownNode>, } | { "kind": "table", headers: Array<Array<MarkdownNode>>, rows: Array<Array<Array<MarkdownNode>>>, } | { "kind": "link", href: string, title: string | null, children: Array<MarkdownNode>, } | { "kind": "image", src: string, alt: string, title: string | null, } | { "kind": "lineBreak" } | { "kind": "thematicBreak" } | { "kind": "kbd", label: string, } | { "kind": "superscript", children: Array<MarkdownNode>, } | { "kind": "subscript", children: Array<MarkdownNode>, } | { "kind": "details", summary: string, children: Array<MarkdownNode>, };
 
-export type CommandBlock = { id: CommandBlockId, chapterId: ChapterId, command: string, cwd: RelWorkspacePath | null, role: PtyRole, isSecondary: boolean, };
+export type CommandBlock = { id: CommandBlockId, chapterId: ChapterId, command: string, cwd: RelWorkspacePath | null, role: PtyRole, isSecondary: boolean, label: string | null, };
 
-export type ParsedChapter = { chapterId: ChapterId, index: number, title: string, goal: string | null, nodes: Array<MarkdownNode>, commandBlocks: Array<CommandBlock>, selfCheckItems: Array<string>, };
+export type ReferenceCodeBlock = { codeIndex: number, language: string | null, targetPath: RelWorkspacePath | null, code: string, };
 
-export type ParsedCourse = { courseId: string, title: string, language: Language | null, chapters: Array<ParsedChapter>, };
+export type SelfCheckItem = { id: string, title: string, checkedByDefault: boolean, };
+
+export type ChapterThreeStepFlow = { step1PrimaryCommands: Array<CommandBlockId>, step2ReferenceBlocks: Array<ReferenceCodeBlock>, step3SelfChecks: Array<SelfCheckItem>, secondaryCommands: Array<CommandBlockId>, reflectionNodes: Array<MarkdownNode>, };
+
+export type ParsedChapter = { chapterId: ChapterId, index: number, title: string, goal: string | null, nodes: Array<MarkdownNode>, commandBlocks: Array<CommandBlock>, selfCheckItems: Array<string>, threeStep: ChapterThreeStepFlow, };
+
+export type ParsedCourse = { courseId: string, title: string, language: Language | null, introNodes: Array<MarkdownNode>, chapters: Array<ParsedChapter>, };
 
 export type MetricEventName = "app_launched" | "course_opened" | "preflight_executed" | "runtime_installed" | "cmd_block_clicked" | "cmd_risk_modal_action" | "cmd_finished" | "file_tree_open" | "selection_ai_clicked" | "ai_mode_switched" | "acp_permission_decision" | "verify_chapter_clicked" | "chapter_marked_done";
 

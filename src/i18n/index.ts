@@ -23,7 +23,9 @@ export type MessageKey =
   | "shell.status.offlineReady"
   | "error.unknown"
   | "error.invalidInput"
-  | "error.notReady";
+  | "error.notReady"
+  | "error.markdownLimitExceeded"
+  | "error.fileTooLargeOrBinary";
 
 export type MessageParams = Readonly<Record<string, string | number>>;
 

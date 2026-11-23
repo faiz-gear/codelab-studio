@@ -20,4 +20,6 @@ export const enUS = {
   "error.unknown": "An unknown error occurred: {detail}",
   "error.invalidInput": "Invalid input: {field}",
   "error.notReady": "Environment is not ready yet. Please try again.",
+  "error.markdownLimitExceeded": "Markdown handbook size ({actualBytes} bytes) exceeds the {maxBytes}-byte limit.",
+  "error.fileTooLargeOrBinary": "File is too large or not valid UTF-8 text: {path}",
 } satisfies Record<MessageKey, string>;

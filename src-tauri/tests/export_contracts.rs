@@ -7,9 +7,10 @@ use codelab_studio_lib::domain::ai::{
     ContextChipKind, FinishReason, SelectionSource, TeachingMode, ToolCallStatus,
 };
 use codelab_studio_lib::domain::course::{
-    ChapterChecksSpec, CheckSpec, ChecksSpec, CommandBlock, CourseChapterRef, CourseManifest,
-    DaemonRequirement, HttpExpectSpec, HttpRequestSpec, MarkdownNode, MultiChapterChecksSpec,
-    PackSchemaVersion, ParsedChapter, ParsedCourse, SingleChapterChecksSpec,
+    ChapterChecksSpec, ChapterThreeStepFlow, CheckSpec, ChecksSpec, CommandBlock, CourseChapterRef,
+    CourseManifest, DaemonRequirement, HttpExpectSpec, HttpRequestSpec, MarkdownNode,
+    MultiChapterChecksSpec, PackSchemaVersion, ParsedChapter, ParsedCourse, ReferenceCodeBlock,
+    SelfCheckItem, SingleChapterChecksSpec,
 };
 use codelab_studio_lib::domain::error::{AppError, ErrorCode};
 use codelab_studio_lib::domain::events::{
@@ -109,7 +110,6 @@ fn render_schema<T: JsonSchema>() -> String {
 #[test]
 fn export_bindings() {
     let declarations: Vec<String> = vec![
-        // IDs & primitives
         format_ts_decl::<SessionEpoch>(),
         format_ts_decl::<ChapterId>(),
         format_ts_decl::<TerminalId>(),
@@ -117,29 +117,23 @@ fn export_bindings() {
         format_ts_decl::<RunId>(),
         format_ts_decl::<RiskConfirmationToken>(),
         format_ts_decl::<RelWorkspacePath>(),
-        // Errors
         format_ts_decl::<ErrorCode>(),
         format_ts_decl::<AppError>(),
-        // Runtime
         format_ts_decl::<Language>(),
         format_ts_decl::<PreflightStatus>(),
         format_ts_decl::<PreflightCheckItem>(),
         format_ts_decl::<PreflightReport>(),
         format_ts_decl::<ManagedRuntimeTarget>(),
-        // PTY
         format_ts_decl::<PtyRole>(),
         format_ts_decl::<OneshotIdleState>(),
         format_ts_decl::<RiskRuleMatch>(),
         format_ts_decl::<RiskAssessment>(),
-        // Grading
         format_ts_decl::<ExpectedActualDiff>(),
         format_ts_decl::<CheckResult>(),
         format_ts_decl::<GradeRunResult>(),
-        // LSP
         format_ts_decl::<LspLifecycleState>(),
         format_ts_decl::<DiagnosticSeverity>(),
         format_ts_decl::<DiagnosticItem>(),
-        // AI & ACP
         format_ts_decl::<TeachingMode>(),
         format_ts_decl::<SelectionSource>(),
         format_ts_decl::<ContextChipKind>(),
@@ -150,7 +144,6 @@ fn export_bindings() {
         format_ts_decl::<AcpDecision>(),
         format_ts_decl::<FinishReason>(),
         format_ts_decl::<AiStreamEvent>(),
-        // Broadcast events
         format_ts_decl::<SessionEventEnvelope<Dummy>>(),
         format_ts_decl::<FsDelta>(),
         format_ts_decl::<FsDeltaEvent>(),
@@ -159,7 +152,6 @@ fn export_bindings() {
         format_ts_decl::<PortConflictEvent>(),
         format_ts_decl::<LspStatusEvent>(),
         format_ts_decl::<LspDiagnosticsEvent>(),
-        // Workspace & global config
         format_ts_decl::<StorageSchemaVersion>(),
         format_ts_decl::<Locale>(),
         format_ts_decl::<ThemeMode>(),
@@ -182,7 +174,6 @@ fn export_bindings() {
         format_ts_decl::<RecentWorkspaceItem>(),
         format_ts_decl::<BuiltinCourseSummary>(),
         format_ts_decl::<BootstrapState>(),
-        // Course & checks
         format_ts_decl::<PackSchemaVersion>(),
         format_ts_decl::<CourseChapterRef>(),
         format_ts_decl::<CourseManifest>(),
@@ -196,9 +187,11 @@ fn export_bindings() {
         format_ts_decl::<ChecksSpec>(),
         format_ts_decl::<MarkdownNode>(),
         format_ts_decl::<CommandBlock>(),
+        format_ts_decl::<ReferenceCodeBlock>(),
+        format_ts_decl::<SelfCheckItem>(),
+        format_ts_decl::<ChapterThreeStepFlow>(),
         format_ts_decl::<ParsedChapter>(),
         format_ts_decl::<ParsedCourse>(),
-        // Metrics
         format_ts_decl::<MetricEventName>(),
         format_ts_decl::<MetricEvent>(),
         format_ts_decl::<MetricValue>(),

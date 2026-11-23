@@ -20,4 +20,6 @@ export const zhCN = {
   "error.unknown": "发生未知错误：{detail}",
   "error.invalidInput": "输入参数无效：{field}",
   "error.notReady": "当前环境尚未就绪，请稍后重试。",
+  "error.markdownLimitExceeded": "Markdown 手册大小（{actualBytes} 字节）超过上限（{maxBytes} 字节）。",
+  "error.fileTooLargeOrBinary": "文件过大或不是有效的 UTF-8 文本：{path}",
 } satisfies Record<MessageKey, string>;
