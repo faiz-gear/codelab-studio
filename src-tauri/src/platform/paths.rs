@@ -17,6 +17,7 @@ static PROCESS_STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
 static HELD_WORKSPACE_LOCKS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 static NEXT_LOCK_NONCE: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(unix)]
 const MAX_LOCK_INODE_RETRIES: usize = 4;
 
 pub fn current_process_started_at_ms() -> u64 {
@@ -277,8 +278,37 @@ fn acquire_kernel_lock(
     lock_path: &Path,
     workspace_root: String,
 ) -> Result<(File, WorkspaceLockRecord, bool), WorkspaceLockError> {
+    let mut file = open_and_lock_file(lock_path, &workspace_root)?;
+
+    let mut prior_bytes = Vec::new();
+    let _ = file.seek(SeekFrom::Start(0));
+    let _ = file.read_to_end(&mut prior_bytes);
+    let reclaimed_stale = !prior_bytes.is_empty();
+
+    let record = WorkspaceLockRecord {
+        pid: std::process::id(),
+        process_started_at_ms: current_process_started_at_ms(),
+        nonce: NEXT_LOCK_NONCE.fetch_add(1, Ordering::Relaxed),
+        acquired_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        workspace_root,
+    };
+
+    let mut payload = serde_json::to_vec_pretty(&record)
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    payload.push(b'\n');
+
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&payload)?;
+    file.sync_all()?;
+
+    Ok((file, record, reclaimed_stale))
+}
+
+#[cfg(unix)]
+fn open_and_lock_file(lock_path: &Path, workspace_root: &str) -> Result<File, WorkspaceLockError> {
     for _ in 0..MAX_LOCK_INODE_RETRIES {
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -288,42 +318,35 @@ fn acquire_kernel_lock(
         match file.try_lock() {
             Ok(()) => {}
             Err(TryLockError::WouldBlock) => {
-                return Err(read_holder_error(lock_path, workspace_root));
+                return Err(read_holder_error(lock_path, workspace_root.to_owned()));
             }
             Err(TryLockError::Error(err)) => return Err(WorkspaceLockError::Io(err)),
         }
 
-        #[cfg(unix)]
-        if !same_open_inode(&file, lock_path) {
-            continue;
+        if same_open_inode(&file, lock_path) {
+            return Ok(file);
         }
-
-        let mut prior_bytes = Vec::new();
-        let _ = file.seek(SeekFrom::Start(0));
-        let _ = file.read_to_end(&mut prior_bytes);
-        let reclaimed_stale = !prior_bytes.is_empty();
-
-        let record = WorkspaceLockRecord {
-            pid: std::process::id(),
-            process_started_at_ms: current_process_started_at_ms(),
-            nonce: NEXT_LOCK_NONCE.fetch_add(1, Ordering::Relaxed),
-            acquired_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            workspace_root: workspace_root.clone(),
-        };
-
-        let mut payload = serde_json::to_vec_pretty(&record)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
-        payload.push(b'\n');
-
-        file.set_len(0)?;
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(&payload)?;
-        file.sync_all()?;
-
-        return Ok((file, record, reclaimed_stale));
     }
 
-    Err(read_holder_error(lock_path, workspace_root))
+    Err(read_holder_error(lock_path, workspace_root.to_owned()))
+}
+
+#[cfg(not(unix))]
+fn open_and_lock_file(lock_path: &Path, workspace_root: &str) -> Result<File, WorkspaceLockError> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path)?;
+
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => {
+            Err(read_holder_error(lock_path, workspace_root.to_owned()))
+        }
+        Err(TryLockError::Error(err)) => Err(WorkspaceLockError::Io(err)),
+    }
 }
 
 fn read_holder_error(lock_path: &Path, fallback_root: String) -> WorkspaceLockError {
