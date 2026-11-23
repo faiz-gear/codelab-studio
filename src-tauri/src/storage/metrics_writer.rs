@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use chrono::Utc;
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use uuid::Uuid;
 
@@ -49,11 +49,19 @@ pub struct MetricsShutdownStats {
     pub flush_count: u64,
 }
 
+type FlushReply = oneshot::Sender<Result<u64, StorageError>>;
+type ShutdownReply = oneshot::Sender<Result<MetricsShutdownStats, StorageError>>;
+
+struct DrainedReplies {
+    flushes: Vec<FlushReply>,
+    shutdowns: Vec<ShutdownReply>,
+}
+
 enum MetricsCommand {
     Record(MetricEvent),
     RecordBatch(Vec<MetricEvent>),
-    Flush(oneshot::Sender<Result<u64, StorageError>>),
-    Shutdown(oneshot::Sender<Result<MetricsShutdownStats, StorageError>>),
+    Flush(FlushReply),
+    Shutdown(ShutdownReply),
 }
 
 struct WriterLifecycle {
@@ -82,6 +90,7 @@ impl MetricsWriter {
         path: PathBuf,
         config: MetricsWriterConfig,
     ) -> Result<(MetricsWriterHandle, LoadOutcome<MetricsLog>), StorageError> {
+        let path_for_err = path.clone();
         let store = AtomicJsonStore::new(path);
         let outcome = store.load_or_init(|| MetricsLog {
             schema_version: StorageSchemaVersion::V1,
@@ -93,7 +102,25 @@ impl MetricsWriter {
 
         let capacity = config.channel_capacity.max(1);
         let (tx, rx) = mpsc::channel(capacity);
-        let join_handle = tokio::spawn(run_writer_loop(store, initial_log, config, rx));
+        let join_handle = thread::Builder::new()
+            .name("codelab-metrics-writer".to_owned())
+            .spawn(move || {
+                let rt = match tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(err) => {
+                        eprintln!("codelab metrics writer runtime init failed: {err}");
+                        return;
+                    }
+                };
+                rt.block_on(run_writer_loop(store, initial_log, config, rx));
+            })
+            .map_err(|source| StorageError::Io {
+                path: path_for_err,
+                source,
+            })?;
 
         let handle = MetricsWriterHandle {
             tx,
@@ -161,10 +188,33 @@ impl MetricsWriterHandle {
         };
 
         if let Some(handle) = lifecycle.join_handle.take() {
-            let _ = handle.await;
+            let _ = tokio::task::spawn_blocking(move || {
+                let _ = handle.join();
+            })
+            .await;
         }
         lifecycle.completed_stats = Some(stats);
         Ok(stats)
+    }
+}
+
+fn try_flush_background(
+    store: &AtomicJsonStore,
+    log: &MetricsLog,
+    pending_since_flush: &mut usize,
+    flush_count: &mut u64,
+) {
+    match store.write_atomic(log) {
+        Ok(()) => {
+            *pending_since_flush = 0;
+            *flush_count += 1;
+        }
+        Err(err) => {
+            eprintln!(
+                "codelab metrics flush failed at '{}': {err}",
+                store.path().display()
+            );
+        }
     }
 }
 
@@ -193,11 +243,13 @@ async fn run_writer_loop(
                         let flush_now = matches!(event, MetricEvent::ChapterMarkedDone { .. });
                         push_event(&mut log.events, event, max_events);
                         pending_since_flush += 1;
-                        if (flush_now || pending_since_flush >= batch_size)
-                            && store.write_atomic(&log).is_ok()
-                        {
-                            pending_since_flush = 0;
-                            flush_count += 1;
+                        if flush_now || pending_since_flush >= batch_size {
+                            try_flush_background(
+                                &store,
+                                &log,
+                                &mut pending_since_flush,
+                                &mut flush_count,
+                            );
                         }
                     }
                     Some(MetricsCommand::RecordBatch(events)) => {
@@ -205,9 +257,13 @@ async fn run_writer_loop(
                             push_event(&mut log.events, event, max_events);
                             pending_since_flush += 1;
                         }
-                        if pending_since_flush > 0 && store.write_atomic(&log).is_ok() {
-                            pending_since_flush = 0;
-                            flush_count += 1;
+                        if pending_since_flush > 0 {
+                            try_flush_background(
+                                &store,
+                                &log,
+                                &mut pending_since_flush,
+                                &mut flush_count,
+                            );
                         }
                     }
                     Some(MetricsCommand::Flush(reply)) => {
@@ -223,37 +279,82 @@ async fn run_writer_loop(
                         let _ = reply.send(result);
                     }
                     Some(MetricsCommand::Shutdown(reply)) => {
-                        drain_remaining_commands(&mut rx, &mut log.events, &mut pending_since_flush, max_events);
-                        let result = if pending_since_flush > 0 {
+                        let drained = drain_remaining_commands(
+                            &mut rx,
+                            &mut log.events,
+                            &mut pending_since_flush,
+                            max_events,
+                        );
+                        let write_res = if pending_since_flush > 0 {
                             store.write_atomic(&log).map(|()| {
                                 pending_since_flush = 0;
                                 flush_count += 1;
-                                MetricsShutdownStats {
-                                    total_persisted_events: log.events.len(),
-                                    flush_count,
-                                }
                             })
                         } else {
-                            Ok(MetricsShutdownStats {
-                                total_persisted_events: log.events.len(),
-                                flush_count,
-                            })
+                            Ok(())
                         };
-                        let _ = reply.send(result);
+                        match write_res {
+                            Ok(()) => {
+                                for flush_reply in drained.flushes {
+                                    let _ = flush_reply.send(Ok(flush_count));
+                                }
+                                let stats = MetricsShutdownStats {
+                                    total_persisted_events: log.events.len(),
+                                    flush_count,
+                                };
+                                for shutdown_reply in drained.shutdowns {
+                                    let _ = shutdown_reply.send(Ok(stats));
+                                }
+                                let _ = reply.send(Ok(stats));
+                            }
+                            Err(err) => {
+                                let msg = err.to_string();
+                                for flush_reply in drained.flushes {
+                                    let _ = flush_reply.send(Err(StorageError::Domain(
+                                        AppError::new(
+                                            ErrorCode::StorageCorruptedRecovered,
+                                            "error.unknown",
+                                        )
+                                        .with_param("detail", msg.clone())
+                                        .with_detail(msg.clone()),
+                                    )));
+                                }
+                                for shutdown_reply in drained.shutdowns {
+                                    let _ = shutdown_reply.send(Err(StorageError::Domain(
+                                        AppError::new(
+                                            ErrorCode::StorageCorruptedRecovered,
+                                            "error.unknown",
+                                        )
+                                        .with_param("detail", msg.clone())
+                                        .with_detail(msg.clone()),
+                                    )));
+                                }
+                                let _ = reply.send(Err(err));
+                            }
+                        }
                         break;
                     }
                     None => {
                         if pending_since_flush > 0 {
-                            let _ = store.write_atomic(&log);
+                            try_flush_background(
+                                &store,
+                                &log,
+                                &mut pending_since_flush,
+                                &mut flush_count,
+                            );
                         }
                         break;
                     }
                 }
             }
             _ = ticker.tick() => {
-                if pending_since_flush > 0 && store.write_atomic(&log).is_ok() {
-                    pending_since_flush = 0;
-                    flush_count += 1;
+                if pending_since_flush > 0 {
+                    try_flush_background(
+                        &store,
+                        &log,
+                        &mut pending_since_flush,
+                        &mut flush_count,
+                    );
                 }
             }
         }
@@ -265,7 +366,10 @@ fn drain_remaining_commands(
     events: &mut Vec<MetricRecord>,
     pending_since_flush: &mut usize,
     max_events: usize,
-) {
+) -> DrainedReplies {
+    let mut flushes = Vec::new();
+    let mut shutdowns = Vec::new();
+
     while let Ok(cmd) = rx.try_recv() {
         match cmd {
             MetricsCommand::Record(event) => {
@@ -279,16 +383,15 @@ fn drain_remaining_commands(
                 }
             }
             MetricsCommand::Flush(reply) => {
-                let _ = reply.send(Ok(0));
+                flushes.push(reply);
             }
             MetricsCommand::Shutdown(reply) => {
-                let _ = reply.send(Ok(MetricsShutdownStats {
-                    total_persisted_events: events.len(),
-                    flush_count: 0,
-                }));
+                shutdowns.push(reply);
             }
         }
     }
+
+    DrainedReplies { flushes, shutdowns }
 }
 
 fn push_event(events: &mut Vec<MetricRecord>, event: MetricEvent, max_events: usize) {
@@ -627,8 +730,16 @@ mod tests {
             .record(MetricEvent::FileTreeOpen { opened: true })
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(120)).await;
-        let after_timer: MetricsLog = AtomicJsonStore::new(path.clone()).read_valid().unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let mut after_timer = AtomicJsonStore::new(path.clone())
+            .read_valid::<MetricsLog>()
+            .unwrap();
+        while after_timer.events.len() < 2 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            after_timer = AtomicJsonStore::new(path.clone())
+                .read_valid::<MetricsLog>()
+                .unwrap();
+        }
         assert_eq!(after_timer.events.len(), 2);
 
         let batch: Vec<MetricEvent> = (0..5_200u32)

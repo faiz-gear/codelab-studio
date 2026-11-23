@@ -26,7 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
-        .manage(AppState::new())
+        .manage(AppState::try_new().expect("failed to initialize CodeLab Studio AppState"))
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(tauri::LogicalSize::new(1024.0, 720.0)));
@@ -54,9 +54,7 @@ pub fn run() {
         .expect("error while building CodeLab Studio")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                let _ = app_handle
-                    .state::<AppState>()
-                    .drain_active_session_for_shutdown();
+                let _ = tauri::async_runtime::block_on(app_handle.state::<AppState>().shutdown());
             }
         });
 }

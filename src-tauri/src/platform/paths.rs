@@ -1,9 +1,10 @@
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::collections::HashSet;
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -13,18 +14,17 @@ pub const CODELAB_DIR_NAME: &str = ".codelab";
 pub const CODELAB_HOME_ENV: &str = "CODELAB_HOME";
 
 static PROCESS_STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
-static LOCK_OP_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+static HELD_WORKSPACE_LOCKS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 static NEXT_LOCK_NONCE: AtomicU64 = AtomicU64::new(1);
 
-const MAX_LOCK_RECLAIM_ATTEMPTS: usize = 4;
-const CORRUPT_LOCK_GRACE_PERIOD: Duration = Duration::from_millis(250);
+const MAX_LOCK_INODE_RETRIES: usize = 4;
 
 pub fn current_process_started_at_ms() -> u64 {
     *PROCESS_STARTED_AT_MS.get_or_init(unix_timestamp_ms)
 }
 
-fn lock_op_guard() -> &'static Mutex<()> {
-    LOCK_OP_GUARD.get_or_init(|| Mutex::new(()))
+fn held_workspace_locks() -> &'static Mutex<HashSet<PathBuf>> {
+    HELD_WORKSPACE_LOCKS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 fn unix_timestamp_ms() -> u64 {
@@ -69,6 +69,10 @@ impl CodelabHomePaths {
         &self.root
     }
 
+    pub fn lock_file(&self) -> PathBuf {
+        self.root.join(".lock")
+    }
+
     pub fn config_path(&self) -> PathBuf {
         self.root.join("config.json")
     }
@@ -87,6 +91,27 @@ impl CodelabHomePaths {
 
     pub fn cache_dir(&self) -> PathBuf {
         self.root.join("cache")
+    }
+}
+
+#[derive(Debug)]
+pub struct DirectoryFileLock {
+    _file: File,
+}
+
+impl DirectoryFileLock {
+    pub fn lock_blocking(lock_path: &Path) -> io::Result<Self> {
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)?;
+        file.lock()?;
+        Ok(Self { _file: file })
     }
 }
 
@@ -158,7 +183,9 @@ pub struct WorkspaceLockRecord {
 
 #[derive(Debug, Error)]
 pub enum WorkspaceLockError {
-    #[error("workspace '{workspace_root}' is already locked by live process {pid} (since {acquired_at})")]
+    #[error(
+        "workspace '{workspace_root}' is already locked by live process {pid} (since {acquired_at})"
+    )]
     AlreadyLocked {
         pid: u32,
         acquired_at: String,
@@ -171,6 +198,7 @@ pub enum WorkspaceLockError {
 #[derive(Debug)]
 pub struct WorkspaceLock {
     lock_path: PathBuf,
+    file: Option<File>,
     record: WorkspaceLockRecord,
     reclaimed_stale: bool,
 }
@@ -181,65 +209,30 @@ impl WorkspaceLock {
         fs::create_dir_all(&meta_dir)?;
         let lock_path = paths.lock_file();
 
-        let _guard = lock_op_guard()
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-
-        let record = WorkspaceLockRecord {
-            pid: std::process::id(),
-            process_started_at_ms: current_process_started_at_ms(),
-            nonce: NEXT_LOCK_NONCE.fetch_add(1, Ordering::Relaxed),
-            acquired_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            workspace_root: paths.root_string(),
-        };
-
-        let mut reclaimed_stale = false;
-
-        for _ in 0..MAX_LOCK_RECLAIM_ATTEMPTS {
-            match try_create_lock_file(&lock_path, &record) {
-                Ok(()) => {
-                    return Ok(Self {
-                        lock_path,
-                        record,
-                        reclaimed_stale,
-                    });
-                }
-                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-                    match inspect_existing_lock(&lock_path)? {
-                        ExistingLockStatus::Missing => continue,
-                        ExistingLockStatus::Active(existing) => {
-                            return Err(WorkspaceLockError::AlreadyLocked {
-                                pid: existing.pid,
-                                acquired_at: existing.acquired_at,
-                                workspace_root: existing.workspace_root,
-                            });
-                        }
-                        ExistingLockStatus::Stale => {
-                            if let Err(remove_err) = fs::remove_file(&lock_path) {
-                                if remove_err.kind() != io::ErrorKind::NotFound {
-                                    return Err(WorkspaceLockError::Io(remove_err));
-                                }
-                            }
-                            reclaimed_stale = true;
-                        }
-                        ExistingLockStatus::UnreadableFresh => {
-                            return Err(WorkspaceLockError::AlreadyLocked {
-                                pid: 0,
-                                acquired_at: "unknown".to_owned(),
-                                workspace_root: paths.root_string(),
-                            });
-                        }
-                    }
-                }
-                Err(err) => return Err(WorkspaceLockError::Io(err)),
+        {
+            let mut held = held_workspace_locks()
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if !held.insert(lock_path.clone()) {
+                return Err(read_holder_error(&lock_path, paths.root_string()));
             }
         }
 
-        Err(WorkspaceLockError::AlreadyLocked {
-            pid: 0,
-            acquired_at: "contended".to_owned(),
-            workspace_root: paths.root_string(),
-        })
+        match acquire_kernel_lock(&lock_path, paths.root_string()) {
+            Ok((file, record, reclaimed_stale)) => Ok(Self {
+                lock_path,
+                file: Some(file),
+                record,
+                reclaimed_stale,
+            }),
+            Err(err) => {
+                let mut held = held_workspace_locks()
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                held.remove(&lock_path);
+                Err(err)
+            }
+        }
     }
 
     pub fn record(&self) -> &WorkspaceLockRecord {
@@ -257,175 +250,114 @@ impl WorkspaceLock {
 
 impl Drop for WorkspaceLock {
     fn drop(&mut self) {
-        let _guard = lock_op_guard()
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let Ok(raw) = fs::read(&self.lock_path) else {
-            return;
-        };
-        let Ok(on_disk) = serde_json::from_slice::<WorkspaceLockRecord>(&raw) else {
-            return;
-        };
-        if on_disk.pid == self.record.pid
-            && on_disk.process_started_at_ms == self.record.process_started_at_ms
-            && on_disk.nonce == self.record.nonce
+        #[cfg(unix)]
         {
+            if let Some(ref file) = self.file {
+                if same_open_inode(file, &self.lock_path) {
+                    let _ = fs::remove_file(&self.lock_path);
+                }
+            }
+            let _ = self.file.take();
+        }
+
+        #[cfg(not(unix))]
+        {
+            let _ = self.file.take();
             let _ = fs::remove_file(&self.lock_path);
         }
+
+        let mut held = held_workspace_locks()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        held.remove(&self.lock_path);
     }
 }
 
-enum ExistingLockStatus {
-    Missing,
-    Active(WorkspaceLockRecord),
-    Stale,
-    UnreadableFresh,
-}
-
-fn try_create_lock_file(lock_path: &Path, record: &WorkspaceLockRecord) -> io::Result<()> {
-    let mut payload = serde_json::to_vec_pretty(record)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
-    payload.push(b'\n');
-
-    let tmp_path = lock_path.with_file_name(format!(".lock.tmp.{}.{}", record.pid, record.nonce));
-
-    {
-        let mut tmp_file = OpenOptions::new()
+fn acquire_kernel_lock(
+    lock_path: &Path,
+    workspace_root: String,
+) -> Result<(File, WorkspaceLockRecord, bool), WorkspaceLockError> {
+    for _ in 0..MAX_LOCK_INODE_RETRIES {
+        let mut file = OpenOptions::new()
+            .read(true)
             .write(true)
-            .create_new(true)
-            .open(&tmp_path)?;
-        tmp_file.write_all(&payload)?;
-        tmp_file.sync_all()?;
-    }
+            .create(true)
+            .truncate(false)
+            .open(lock_path)?;
 
-    let link_result = fs::hard_link(&tmp_path, lock_path);
-    let _ = fs::remove_file(&tmp_path);
-
-    match link_result {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Err(err),
-        Err(err) if err.kind() == io::ErrorKind::Unsupported => {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(lock_path)?;
-            file.write_all(&payload)?;
-            file.sync_all()?;
-            Ok(())
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => {
+                return Err(read_holder_error(lock_path, workspace_root));
+            }
+            Err(TryLockError::Error(err)) => return Err(WorkspaceLockError::Io(err)),
         }
-        Err(err) => Err(err),
+
+        #[cfg(unix)]
+        if !same_open_inode(&file, lock_path) {
+            continue;
+        }
+
+        let mut prior_bytes = Vec::new();
+        let _ = file.seek(SeekFrom::Start(0));
+        let _ = file.read_to_end(&mut prior_bytes);
+        let reclaimed_stale = !prior_bytes.is_empty();
+
+        let record = WorkspaceLockRecord {
+            pid: std::process::id(),
+            process_started_at_ms: current_process_started_at_ms(),
+            nonce: NEXT_LOCK_NONCE.fetch_add(1, Ordering::Relaxed),
+            acquired_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            workspace_root: workspace_root.clone(),
+        };
+
+        let mut payload = serde_json::to_vec_pretty(&record)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+        payload.push(b'\n');
+
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(&payload)?;
+        file.sync_all()?;
+
+        return Ok((file, record, reclaimed_stale));
     }
+
+    Err(read_holder_error(lock_path, workspace_root))
 }
 
-fn inspect_existing_lock(lock_path: &Path) -> io::Result<ExistingLockStatus> {
-    let raw = match fs::read(lock_path) {
-        Ok(bytes) => bytes,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            return Ok(ExistingLockStatus::Missing);
-        }
-        Err(err) => return Err(err),
-    };
-
-    match serde_json::from_slice::<WorkspaceLockRecord>(&raw) {
-        Ok(existing) => {
-            if is_lock_record_live(&existing) {
-                Ok(ExistingLockStatus::Active(existing))
-            } else {
-                Ok(ExistingLockStatus::Stale)
-            }
-        }
-        Err(_) => {
-            let is_fresh = fs::metadata(lock_path)
-                .and_then(|meta| meta.modified())
-                .ok()
-                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-                .is_some_and(|age| age < CORRUPT_LOCK_GRACE_PERIOD && raw.is_empty());
-
-            if is_fresh {
-                Ok(ExistingLockStatus::UnreadableFresh)
-            } else {
-                Ok(ExistingLockStatus::Stale)
-            }
+fn read_holder_error(lock_path: &Path, fallback_root: String) -> WorkspaceLockError {
+    if let Ok(raw) = fs::read(lock_path) {
+        if let Ok(existing) = serde_json::from_slice::<WorkspaceLockRecord>(&raw) {
+            return WorkspaceLockError::AlreadyLocked {
+                pid: existing.pid,
+                acquired_at: existing.acquired_at,
+                workspace_root: existing.workspace_root,
+            };
         }
     }
-}
-
-fn is_lock_record_live(record: &WorkspaceLockRecord) -> bool {
-    if record.pid == 0 {
-        return false;
+    WorkspaceLockError::AlreadyLocked {
+        pid: std::process::id(),
+        acquired_at: "active".to_owned(),
+        workspace_root: fallback_root,
     }
-
-    let my_pid = std::process::id();
-    if record.pid == my_pid {
-        return record.process_started_at_ms == current_process_started_at_ms();
-    }
-
-    is_other_pid_alive(record.pid)
 }
 
 #[cfg(unix)]
-fn is_other_pid_alive(pid: u32) -> bool {
-    let Ok(pid_t) = libc::pid_t::try_from(pid) else {
+fn same_open_inode(file: &File, path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(fd_meta) = file.metadata() else {
         return false;
     };
-    if pid_t <= 0 {
+    let Ok(path_meta) = fs::metadata(path) else {
         return false;
-    }
-    let rc = unsafe { libc::kill(pid_t, 0) };
-    if rc == 0 {
-        return true;
-    }
-    let errno = io::Error::last_os_error().raw_os_error();
-    errno == Some(libc::EPERM)
-}
-
-#[cfg(windows)]
-fn is_other_pid_alive(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, STILL_ACTIVE};
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
-
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
-    if handle.is_null() {
-        return io::Error::last_os_error().raw_os_error() == Some(ERROR_ACCESS_DENIED as i32);
-    }
-
-    let mut exit_code: u32 = 0;
-    let ok = unsafe { GetExitCodeProcess(handle, &mut exit_code) };
-    unsafe {
-        CloseHandle(handle);
-    }
-    ok != 0 && exit_code == STILL_ACTIVE as u32
-}
-
-#[cfg(not(any(unix, windows)))]
-fn is_other_pid_alive(_pid: u32) -> bool {
-    false
+    fd_meta.dev() == path_meta.dev() && fd_meta.ino() == path_meta.ino()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
-
-    fn dead_child_pid() -> u32 {
-        #[cfg(unix)]
-        let mut child = Command::new("/usr/bin/true")
-            .spawn()
-            .or_else(|_| Command::new("true").spawn())
-            .expect("spawn short-lived child");
-
-        #[cfg(windows)]
-        let mut child = Command::new("cmd")
-            .args(["/C", "exit", "0"])
-            .spawn()
-            .expect("spawn short-lived child");
-
-        let pid = child.id();
-        let _ = child.wait();
-        pid
-    }
 
     #[test]
     fn codelab_home_paths_exposes_expected_layout() {
@@ -471,13 +403,13 @@ mod tests {
     }
 
     #[test]
-    fn workspace_lock_reclaims_dead_pid_stale_lock() {
+    fn workspace_lock_reclaims_unlocked_stale_lock_even_if_pid_was_reused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = WorkspacePaths::from_root(dir.path(), false).expect("workspace paths");
         fs::create_dir_all(paths.meta_dir()).expect("create .codelab");
 
         let stale = WorkspaceLockRecord {
-            pid: dead_child_pid(),
+            pid: 1,
             process_started_at_ms: 1_700_000_000_000,
             nonce: 99,
             acquired_at: "2026-01-01T00:00:00Z".to_owned(),
@@ -489,40 +421,13 @@ mod tests {
         )
         .expect("write stale lock");
 
-        let lock = WorkspaceLock::acquire(&paths).expect("reclaim stale dead-PID lock");
+        let lock = WorkspaceLock::acquire(&paths).expect("reclaim unlocked stale lock");
         assert!(lock.reclaimed_stale());
         assert_eq!(lock.record().pid, std::process::id());
     }
 
     #[test]
-    fn workspace_lock_reclaims_pid_reused_lock_with_different_start_timestamp() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let paths = WorkspacePaths::from_root(dir.path(), false).expect("workspace paths");
-        fs::create_dir_all(paths.meta_dir()).expect("create .codelab");
-
-        let stale = WorkspaceLockRecord {
-            pid: std::process::id(),
-            process_started_at_ms: current_process_started_at_ms().saturating_sub(60_000),
-            nonce: 1,
-            acquired_at: "2026-01-01T00:00:00Z".to_owned(),
-            workspace_root: paths.root_string(),
-        };
-        fs::write(
-            paths.lock_file(),
-            serde_json::to_vec_pretty(&stale).expect("serialize stale lock"),
-        )
-        .expect("write stale lock");
-
-        let lock = WorkspaceLock::acquire(&paths).expect("reclaim PID-reused stale lock");
-        assert!(lock.reclaimed_stale());
-        assert_eq!(
-            lock.record().process_started_at_ms,
-            current_process_started_at_ms()
-        );
-    }
-
-    #[test]
-    fn workspace_lock_reclaims_corrupt_lock_file() {
+    fn workspace_lock_reclaims_corrupt_unlocked_lock_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = WorkspacePaths::from_root(dir.path(), false).expect("workspace paths");
         fs::create_dir_all(paths.meta_dir()).expect("create .codelab");
@@ -533,25 +438,29 @@ mod tests {
     }
 
     #[test]
-    fn workspace_lock_drop_does_not_remove_replaced_lock() {
+    fn workspace_lock_rejects_external_kernel_held_lock() {
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = WorkspacePaths::from_root(dir.path(), false).expect("workspace paths");
+        fs::create_dir_all(paths.meta_dir()).expect("create .codelab");
 
-        let lock = WorkspaceLock::acquire(&paths).expect("acquire lock");
-        let other = WorkspaceLockRecord {
-            pid: std::process::id(),
-            process_started_at_ms: current_process_started_at_ms(),
-            nonce: lock.record().nonce + 1000,
-            acquired_at: "2026-11-23T00:00:00Z".to_owned(),
-            workspace_root: paths.root_string(),
-        };
-        fs::write(
-            paths.lock_file(),
-            serde_json::to_vec_pretty(&other).expect("serialize other lock"),
-        )
-        .expect("replace lock");
+        let external_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(paths.lock_file())
+            .expect("open external lock");
+        external_file.try_lock().expect("hold external kernel lock");
 
-        drop(lock);
-        assert!(paths.lock_file().exists());
+        let attempt = WorkspaceLock::acquire(&paths);
+        assert!(matches!(
+            attempt,
+            Err(WorkspaceLockError::AlreadyLocked { .. })
+        ));
+
+        drop(external_file);
+
+        let acquired = WorkspaceLock::acquire(&paths).expect("acquire after external unlock");
+        assert_eq!(acquired.record().pid, std::process::id());
     }
 }

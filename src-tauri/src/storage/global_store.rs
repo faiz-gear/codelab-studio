@@ -7,7 +7,7 @@ use crate::domain::workspace::{
     AccentPreset, ExternalIdeKind, GlobalConfigPatch, GlobalConfigView, Locale,
     RecentWorkspaceItem, StorageSchemaVersion, ThemeMode,
 };
-use crate::platform::CodelabHomePaths;
+use crate::platform::{CodelabHomePaths, DirectoryFileLock};
 use crate::storage::atomic_json::{
     cleanup_stale_tmp_files, AtomicJsonFile, LoadOutcome, StorageError,
 };
@@ -219,7 +219,9 @@ pub struct GlobalStore {
 
 impl GlobalStore {
     pub fn new(paths: CodelabHomePaths) -> Self {
-        let _ = cleanup_stale_tmp_files(paths.root());
+        if let Ok(_lock) = DirectoryFileLock::lock_blocking(&paths.lock_file()) {
+            let _ = cleanup_stale_tmp_files(paths.root());
+        }
         let config_file = AtomicJsonFile::new(paths.config_path());
         let trusted_packs_file = AtomicJsonFile::new(paths.trusted_packs_path());
         Self {
@@ -233,10 +235,19 @@ impl GlobalStore {
         &self.paths
     }
 
+    fn acquire_home_lock(&self) -> Result<DirectoryFileLock, StorageError> {
+        let lock_path = self.paths.lock_file();
+        DirectoryFileLock::lock_blocking(&lock_path).map_err(|source| StorageError::Io {
+            path: lock_path,
+            source,
+        })
+    }
+
     pub fn load_or_init_config(
         &self,
         default_locale: Locale,
     ) -> Result<LoadOutcome<GlobalConfigFile>, StorageError> {
+        let _home_lock = self.acquire_home_lock()?;
         self.config_file
             .load_or_init(|| GlobalConfigFile::default_with_locale(default_locale))
     }
@@ -246,13 +257,14 @@ impl GlobalStore {
         default_locale: Locale,
         patch: GlobalConfigPatch,
     ) -> Result<(GlobalConfigView, Option<StorageCorruptedEvent>), StorageError> {
-        let outcome = self.load_or_init_config(default_locale)?;
-        let corruption = outcome.corruption_event().cloned();
-        let view = self.config_file.update(|cfg| {
-            cfg.apply_patch(patch);
-            Ok(cfg.to_view())
-        })?;
-        Ok((view, corruption))
+        let _home_lock = self.acquire_home_lock()?;
+        self.config_file.load_or_init_and_update(
+            || GlobalConfigFile::default_with_locale(default_locale),
+            |cfg| {
+                cfg.apply_patch(patch);
+                Ok(cfg.to_view())
+            },
+        )
     }
 
     pub fn record_recent_workspace(
@@ -260,11 +272,15 @@ impl GlobalStore {
         default_locale: Locale,
         item: RecentWorkspaceItem,
     ) -> Result<Vec<RecentWorkspaceItem>, StorageError> {
-        let _ = self.load_or_init_config(default_locale)?;
-        self.config_file.update(|cfg| {
-            cfg.record_recent_workspace(item);
-            Ok(cfg.recent_workspaces.clone())
-        })
+        let _home_lock = self.acquire_home_lock()?;
+        let (recents, _) = self.config_file.load_or_init_and_update(
+            || GlobalConfigFile::default_with_locale(default_locale),
+            |cfg| {
+                cfg.record_recent_workspace(item);
+                Ok(cfg.recent_workspaces.clone())
+            },
+        )?;
+        Ok(recents)
     }
 
     pub fn is_pack_trusted(
@@ -272,6 +288,7 @@ impl GlobalStore {
         source_key: &str,
         content_hash: &str,
     ) -> Result<bool, StorageError> {
+        let _home_lock = self.acquire_home_lock()?;
         let outcome = self
             .trusted_packs_file
             .load_or_init(TrustedPacksFile::default)?;
@@ -287,28 +304,29 @@ impl GlobalStore {
         source_key: impl Into<String>,
         content_hash: impl Into<String>,
     ) -> Result<TrustedPackEntry, StorageError> {
+        let _home_lock = self.acquire_home_lock()?;
         let source_key = source_key.into();
         let content_hash = content_hash.into();
-        let _ = self
-            .trusted_packs_file
-            .load_or_init(TrustedPacksFile::default)?;
         let entry = TrustedPackEntry {
             source_key: source_key.clone(),
             content_hash: content_hash.clone(),
             trusted_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         };
-        self.trusted_packs_file.update(|file| {
-            if let Some(existing) = file
-                .packs
-                .iter_mut()
-                .find(|p| p.source_key == source_key && p.content_hash == content_hash)
-            {
-                return Ok(existing.clone());
-            }
-            file.packs.retain(|p| p.source_key != source_key);
-            file.packs.push(entry.clone());
-            Ok(entry)
-        })
+        let (saved, _) =
+            self.trusted_packs_file
+                .load_or_init_and_update(TrustedPacksFile::default, |file| {
+                    if let Some(existing) = file
+                        .packs
+                        .iter()
+                        .find(|p| p.source_key == source_key && p.content_hash == content_hash)
+                    {
+                        return Ok(existing.clone());
+                    }
+                    file.packs.retain(|p| p.source_key != source_key);
+                    file.packs.push(entry.clone());
+                    Ok(entry)
+                })?;
+        Ok(saved)
     }
 }
 

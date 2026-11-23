@@ -61,6 +61,7 @@ pub struct AppState {
     fallback_locale: RwLock<Locale>,
     current_epoch: AtomicU64,
     app_launched_recorded: AtomicBool,
+    shutting_down: AtomicBool,
     pending_metrics: Mutex<VecDeque<MetricEvent>>,
     lifecycle_lock: tokio::sync::Mutex<()>,
     slot: RwLock<SessionSlot>,
@@ -75,17 +76,14 @@ impl std::fmt::Debug for AppState {
     }
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AppState {
-    pub fn new() -> Self {
-        let home_paths = CodelabHomePaths::resolve_default()
-            .unwrap_or_else(|_| CodelabHomePaths::from_root(std::env::temp_dir().join(".codelab")));
-        Self::with_home_paths(home_paths)
+    pub fn try_new() -> Result<Self, AppError> {
+        let home_paths = CodelabHomePaths::resolve_default().map_err(|err| {
+            AppError::new(ErrorCode::PathOutsideSandbox, "error.unknown")
+                .with_param("detail", err.to_string())
+                .with_detail(err.to_string())
+        })?;
+        Ok(Self::with_home_paths(home_paths))
     }
 
     pub fn with_home_paths(home_paths: CodelabHomePaths) -> Self {
@@ -95,6 +93,7 @@ impl AppState {
             fallback_locale: RwLock::new(Locale::EnUs),
             current_epoch: AtomicU64::new(0),
             app_launched_recorded: AtomicBool::new(false),
+            shutting_down: AtomicBool::new(false),
             pending_metrics: Mutex::new(VecDeque::with_capacity(PENDING_METRICS_CAPACITY)),
             lifecycle_lock: tokio::sync::Mutex::new(()),
             slot: RwLock::new(SessionSlot::Idle),
@@ -234,7 +233,15 @@ impl AppState {
         &self,
         params: SessionOpenParams,
     ) -> Result<Arc<WorkspaceSession>, AppError> {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(AppError::new(ErrorCode::Cancelled, "error.notReady")
+                .with_detail("application is shutting down"));
+        }
         let _op = self.lifecycle_lock.lock().await;
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(AppError::new(ErrorCode::Cancelled, "error.notReady")
+                .with_detail("application is shutting down"));
+        }
 
         let previous = {
             let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
@@ -273,24 +280,24 @@ impl AppState {
         let language = params.language;
         let total_chapters = params.total_chapters;
 
-        let session = match WorkspaceSession::open(next_epoch, params) {
-            Ok(session) => Arc::new(session),
-            Err(err) => {
-                let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
-                *slot = SessionSlot::Idle;
-                return Err(err);
-            }
-        };
-
-        let pending = self.drain_pending_metrics();
-        if !pending.is_empty() {
-            if let Err(err) = session.metrics().record_batch(pending).await {
-                let _ = session.drain_and_close().await;
-                let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
-                *slot = SessionSlot::Idle;
-                return Err(err);
-            }
-        }
+        let session =
+            match tokio::task::spawn_blocking(move || WorkspaceSession::open(next_epoch, params))
+                .await
+            {
+                Ok(Ok(session)) => Arc::new(session),
+                Ok(Err(err)) => {
+                    let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
+                    *slot = SessionSlot::Idle;
+                    return Err(err);
+                }
+                Err(join_err) => {
+                    let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
+                    *slot = SessionSlot::Idle;
+                    return Err(AppError::new(ErrorCode::Cancelled, "error.unknown")
+                        .with_param("detail", join_err.to_string())
+                        .with_detail(join_err.to_string()));
+                }
+            };
 
         if let (Ok(meta), Ok(progress)) =
             (session.store().read_meta(), session.store().read_progress())
@@ -304,7 +311,7 @@ impl AppState {
                 .fallback_locale
                 .read()
                 .unwrap_or_else(PoisonError::into_inner);
-            let _ = self.global_store.record_recent_workspace(
+            if let Err(err) = self.global_store.record_recent_workspace(
                 fallback,
                 RecentWorkspaceItem {
                     workspace_id: meta.workspace_id,
@@ -316,13 +323,34 @@ impl AppState {
                     total_chapters,
                     last_opened_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 },
-            );
+            ) {
+                eprintln!("codelab warning: failed to update recent workspaces: {err}");
+            }
         }
 
-        self.current_epoch.store(next_epoch.0, Ordering::Release);
-        {
+        let pending_or_cancelled = {
             let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
-            *slot = SessionSlot::Active(Arc::clone(&session));
+            if self.shutting_down.load(Ordering::Acquire) {
+                *slot = SessionSlot::Idle;
+                None
+            } else {
+                let pending = self.drain_pending_metrics();
+                self.current_epoch.store(next_epoch.0, Ordering::Release);
+                *slot = SessionSlot::Active(Arc::clone(&session));
+                Some(pending)
+            }
+        };
+
+        let Some(pending) = pending_or_cancelled else {
+            let _ = session.drain_and_close().await;
+            return Err(AppError::new(ErrorCode::Cancelled, "error.notReady")
+                .with_detail("application is shutting down"));
+        };
+
+        if !pending.is_empty() {
+            if let Err(err) = session.metrics().record_batch(pending).await {
+                eprintln!("codelab warning: failed to flush pending startup metrics: {err}");
+            }
         }
 
         Ok(session)
@@ -374,10 +402,19 @@ impl AppState {
                 session.record_metric(event).await
             }
             None => {
-                if let Some(session) = self.active_session() {
+                let active = {
+                    let slot = self.slot.read().unwrap_or_else(PoisonError::into_inner);
+                    match &*slot {
+                        SessionSlot::Active(session) => Some(Arc::clone(session)),
+                        _ => {
+                            self.push_pending_metric(event.clone());
+                            None
+                        }
+                    }
+                };
+                if let Some(session) = active {
                     session.record_metric(event).await
                 } else {
-                    self.push_pending_metric(event);
                     Ok(())
                 }
             }
@@ -431,7 +468,10 @@ impl AppState {
         Ok(report)
     }
 
-    pub fn drain_active_session_for_shutdown(&self) -> Option<SessionShutdownReport> {
+    pub async fn shutdown(&self) -> Option<SessionShutdownReport> {
+        self.shutting_down.store(true, Ordering::Release);
+        let _op = self.lifecycle_lock.lock().await;
+
         let session = {
             let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
             match std::mem::replace(&mut *slot, SessionSlot::Idle) {
@@ -445,30 +485,10 @@ impl AppState {
             }
         };
 
-        let report = session.map(|active| match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
-                    tokio::task::block_in_place(|| handle.block_on(active.drain_and_close()))
-                } else {
-                    std::thread::spawn(move || {
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .expect("shutdown drain runtime");
-                        rt.block_on(active.drain_and_close())
-                    })
-                    .join()
-                    .expect("join shutdown drain thread")
-                }
-            }
-            Err(_) => {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("shutdown drain runtime");
-                rt.block_on(active.drain_and_close())
-            }
-        });
+        let report = match session {
+            Some(active) => Some(active.drain_and_close().await),
+            None => None,
+        };
 
         let mut slot = self.slot.write().unwrap_or_else(PoisonError::into_inner);
         *slot = SessionSlot::Idle;
@@ -621,10 +641,18 @@ mod tests {
             ErrorCode::SessionEpochStale
         );
 
-        let report = state.drain_active_session_for_shutdown().unwrap();
+        let report = state.shutdown().await.unwrap();
         assert_eq!(report.epoch, SessionEpoch(2));
         assert_eq!(state.lifecycle_state(), SessionLifecycleKind::Idle);
         assert!(!s2.paths().lock_file().exists());
+        assert_eq!(
+            state
+                .open_workspace(open_params(ws1.path()))
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::Cancelled
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -669,6 +697,25 @@ mod tests {
         assert!(finished.load(Ordering::SeqCst));
         assert_eq!(report.metrics.total_persisted_events, 1);
         assert!(!session.paths().lock_file().exists());
+        assert_eq!(state.lifecycle_state(), SessionLifecycleKind::Idle);
+    }
+
+    #[tokio::test]
+    async fn shutdown_completes_without_deadlock_on_current_thread_runtime() {
+        let (_home, state) = isolated_state();
+        let ws = tempfile::tempdir().unwrap();
+        let session = state.open_workspace(open_params(ws.path())).await.unwrap();
+        state
+            .record_metric(
+                Some(session.epoch()),
+                MetricEvent::FileTreeOpen { opened: false },
+            )
+            .await
+            .unwrap();
+
+        let report = state.shutdown().await.unwrap();
+        assert_eq!(report.epoch, session.epoch());
+        assert_eq!(report.metrics.total_persisted_events, 1);
         assert_eq!(state.lifecycle_state(), SessionLifecycleKind::Idle);
     }
 }

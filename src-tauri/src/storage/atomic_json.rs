@@ -417,6 +417,27 @@ where
         self.store.write_atomic(&current)?;
         Ok(output)
     }
+
+    pub fn load_or_init_and_update<R, D, F>(
+        &self,
+        default_fn: D,
+        mutator: F,
+    ) -> Result<(R, Option<StorageCorruptedEvent>), StorageError>
+    where
+        D: FnOnce() -> T,
+        F: FnOnce(&mut T) -> Result<R, StorageError>,
+    {
+        let _guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let outcome = self.store.load_or_init(default_fn)?;
+        let corruption = outcome.corruption_event().cloned();
+        let mut current = outcome.into_value();
+        let output = mutator(&mut current)?;
+        self.store.write_atomic(&current)?;
+        Ok((output, corruption))
+    }
 }
 
 pub fn cleanup_stale_tmp_files(dir: &Path) -> io::Result<Vec<String>> {
