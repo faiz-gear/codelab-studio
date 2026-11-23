@@ -750,3 +750,4 @@ IPC 严格分为四类通道，按吞吐与语义隔离：
 | 日期 | 涉及章节 | 偏差摘要 | 状态（已接受 / 待决） | 批准人 / 理由 |
 |---|---|---|---|---|
 | 2026-11-23 | 全文 | 初版系统架构蓝图经三候选 Arena 与盲评综合定稿 | 已接受 | 架构定稿基线（详见 [arena-synthesis.md](./arena-synthesis.md)） |
+| 2026-11-23 | §1.3, §2.1, §3.2, §7 | U0 落地调整：`tauri-plugin-single-instance` 仅在 Rust 侧注册且不写入 `capabilities/default.json`；`schemas/` 导出 6 个 v1 Schema 文件覆盖 `codelab.json`、`.codelab-checks.json` 与 `.codelab/*.json`；锁定 Tailwind v3.4 复用设计配置；严格 CSP 下采用本地系统字体回退栈且不外链在线字体；`src-tauri/Cargo.toml` 在许可证确定前暂不填写 `license` 字段。 | 已接受 | U0 评审确认，见 [u0-implementation-plan.md](./u0-implementation-plan.md) 第 2 节 |

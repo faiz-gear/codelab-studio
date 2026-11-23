@@ -10,7 +10,12 @@
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check:tokens": "node scripts/check-tokens-sync.mjs"
+    "check:tokens": "node scripts/check-tokens-sync.mjs",
+    "check:guards": "node scripts/check-architecture-guards.mjs",
+    "check:schemas": "node scripts/validate-schemas.mjs",
+    "check:contracts": "node scripts/check-contracts-drift.mjs",
+    "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "check:all": "pnpm run typecheck && pnpm test && pnpm build && pnpm run check:guards && pnpm run check:rust && pnpm run check:contracts && pnpm run check:schemas"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
