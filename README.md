@@ -1,26 +1,28 @@
 # CodeLab Studio
 
-CodeLab Studio 是一个开源、本地优先（Local-first）的 Tauri 2 桌面交互式编程实践工作台，面向 macOS、Windows 和 Linux。它把标准 Markdown 实践手册或本地与 Git 课程包，转化为同一窗口内的三步引导手册、本地代码工作区、多终端与四语言函数判题环境，并按需展开上下文感知 AI 助教。
+CodeLab Studio 是一个开源、本地优先（Local-first）的 Tauri 2 桌面交互式编程实践工作台，面向 macOS、Windows 和 Linux。目标是把标准 Markdown 实践手册或本地与 Git 课程包，转化为同一窗口内的三步引导手册、本地代码工作区、多终端与四语言函数判题环境，并按需展开上下文感知 AI 助教。
 
-应用不需要登录、订阅或云端服务。未配置 AI 或处于离线状态时，手册解析、代码编辑、多终端运行与自动验收全部在本地可用。
+产品设计以本地运行为前提，手册、编辑、终端和验收流程无需账号或云端服务。
 
-> 当前仓库处于 **v3.1 文档与高保真原型定稿阶段**，尚未包含 Tauri 2 应用实现代码。你可以先直接用浏览器打开 [docs/design/prototype/index.html](docs/design/prototype/index.html) 体验界面与交互，再依据本文档导航进入工程开发。
+## 当前实现
 
-## 当前状态与实现边界
+- **桌面外壳与持久化。** Tauri 2 和 React 外壳支持应用启动、单实例和全局配置。Rust 工作区存储具备原子写入和损坏恢复。`US-001` 已通过验收。
+- **课程后端。** Rust 已能解析 Markdown 章节、三步流和命令块，加载本地课程包和 Git 来源。Go/GoFrame 练习 0 至 9 随应用分发。`US-002` 待真实桌面的预览、信任确认和工作区绑定验收。
 
-### 当前可直接打开与复用
+### 构建与检查
 
-- **浏览器交互原型。** 直接打开 [docs/design/prototype/index.html](docs/design/prototype/index.html) 即可体验全部界面流程。页面内真实运行浅深主题与 8 组 Arc UI 强调色切换、代码字号调整、主题 CSS 复制、渐进披露布局、快捷键（`⌘/Ctrl + B`、`⌘/Ctrl + S`、`Esc`），以及「TypeScript 数据流水线实战」中 `getAdultNames` 的 JS 函数断言。Go、Python、Java 判题结果、双终端路由、高危命令拦截、参考代码 Diff、BYOK 与 ACP 助教回复及权限审批卡、课程包导入与创作、环境体检安装属于内存态交互模拟。
-- **Arc UI 视觉规范与令牌。** [docs/design/design-system.md](docs/design/design-system.md)、[docs/design/tokens.css](docs/design/tokens.css) 与 [docs/design/tailwind.config.js](docs/design/tailwind.config.js) 已定稿，可直接接入前端工程。
-- **产品需求与任务拆解。** [docs/prd/PRD.md](docs/prd/PRD.md) 定义完整需求与边界，[docs/prd/prd-stories.json](docs/prd/prd-stories.json) 拆解为 18 条原子用户故事（`US-001` 至 `US-018`，当前状态均为 `"passes": false`）。
-- **评审记录与实机截图。** [docs/design/design-review.md](docs/design/design-review.md) 记录三轮评审迭代与 Headless Chrome 回归结果，配套 4 张 `2880×1800` 原型截图存放在 [docs/design/screenshots/](docs/design/screenshots/)。
+安装 Node.js、pnpm、Rust stable 和 Tauri 对应平台的构建依赖后，在仓库根目录执行：
 
-### 尚未实现（研发待建）
+```sh
+pnpm install --frozen-lockfile
+pnpm run check:all
+pnpm tauri build --no-bundle
+```
 
-仓库中目前没有 Rust 后端、前端构建工程或可执行桌面程序。下列能力均待按 [docs/prd/prd-stories.json](docs/prd/prd-stories.json) 逐项实现。
+macOS 上的发布模式可执行文件位于 `src-tauri/target/release/codelab-studio`。运行中的桌面外壳可切换语言、主题和强调色。
 
-- **Tauri 2 桌面端外壳与本地状态持久化。** 包含三端应用脚手架，以及 `<workspace>/.codelab/` 下 `workspace.json`、`progress.json`、`metrics.json` 的原子读写与损坏恢复（`US-001`）。
-- **Markdown 解析器与课程包引擎。** 包含标准 Markdown 零改造解析（章节拆分、命令 `cwd` 与运行模式推断），以及本地目录或 Git 课程包的加载、校验与创作试跑（`US-002`、`US-012`）。
+### 后续交付
+
 - **四语言隔离托管运行时与环境体检。** 包含并行探测本地工具链、LSP 与 `GOPROXY`，以及将 Bun、Go 1.23、Eclipse Temurin JDK 21、`uv` 与 Python 3.12 隔离安装至 `~/.codelab/runtimes/`（`US-003`）。
 - **本地 PTY 多终端与安全拦截。** 包含基于 `portable-pty` 的常驻服务与单次命令终端路由、端口占用捕获、子进程组清理、高危 Shell 命令确认弹窗与未信任课程包警告（`US-004`、`US-005`、`US-016`）。
 - **工作区文件沙箱、Monaco 编辑器与可选 LSP 桥接。** 包含严格路径沙箱、500ms 内同步的文件监听、多标签编辑、外部修改冲突保护、参考代码强制 Diff 合并，以及 `gopls`、`tsserver`、`pyright`、`jdtls` 的按模块根启动与缺失降级（`US-006`、`US-014`、`US-015`）。
@@ -29,6 +31,8 @@ CodeLab Studio 是一个开源、本地优先（Local-first）的 Tauri 2 桌面
 - **Arc UI 生产界面与设置中心。** 包含正式组件接入、双主题与 8 组强调色抽屉、单入口首页、默认两栏三步流工作台、设置弹窗与 13 项本地隐私埋点（`US-011`、`US-013`、`US-018`）。
 
 ## 快速预览原型
+
+浏览器原型展示产品设计。Go、Python 和 Java 判题、多终端、AI 与课程导入使用模拟数据。JS/TS 示例在浏览器内运行函数断言。
 
 1. 用任意现代浏览器直接打开 [docs/design/prototype/index.html](docs/design/prototype/index.html)，无需安装依赖或启动本地服务。联网时页面加载 Geist、Inter 和 JetBrains Mono 字体，离线时自动回退至本地系统字体。
 2. 在首页查看单一主入口卡片与 `2×2` 四语言课程列表，或点击 **导入 / 创作课程包** 体验导入解析与规则编辑弹窗。
@@ -89,12 +93,13 @@ my-course-pack/
 
 ## 文档导航与仓库结构
 
-下表按查阅目的列出当前仓库的全部产品与设计文件。
+下表列出产品需求、实施计划和设计参考。
 
 | 查阅目的 | 文件路径 | 内容说明 |
 | --- | --- | --- |
 | 了解完整需求、边界与指标 | [docs/prd/PRD.md](docs/prd/PRD.md) | v3.1 定稿版产品需求文档，覆盖 M1 至 M6 规格、安全红线与里程碑 |
 | 拆解开发任务与验收条件 | [docs/prd/prd-stories.json](docs/prd/prd-stories.json) | 18 条按优先级排列的原子用户故事（`US-001` 至 `US-018`） |
+| 跟进剩余交付 | [U2 至 U14 多阶段实施计划](docs/architecture/u2-u14-multi-phase-plan.md) | PR 依赖、实机验证和性能门禁 |
 | 对齐视觉体系与渐进披露规范 | [docs/design/design-system.md](docs/design/design-system.md) | Arc UI 纯中性灰阶、双主题对比度校准、界面断点与无障碍规则 |
 | 复用三层 CSS 变量令牌 | [docs/design/tokens.css](docs/design/tokens.css) | `oklch` 色彩、字体、圆角、动效曲线与 8 组 `data-accent` 定义 |
 | 接入 Tailwind 主题映射 | [docs/design/tailwind.config.js](docs/design/tailwind.config.js) | 将 `tokens.css` 映射为 Tailwind 配置的基准文件 |
@@ -102,28 +107,11 @@ my-course-pack/
 | 直接体验高保真交互原型 | [docs/design/prototype/index.html](docs/design/prototype/index.html) | 浏览器可打开的单文件交互原型 |
 | 查看原型实机状态截图 | [docs/design/screenshots/](docs/design/screenshots/) | 4 张 `2880×1800` 原型截图（首页、工作台默认态、AI 与 ACP、深色验收通过） |
 
-当前仓库面向项目文档与设计产物的实际文件树如下，可运行 `find README.md docs -type f | sort` 核对。
+主要目录包括：
 
-```text
-codelab-studio/
-├── README.md
-└── docs/
-    ├── prd/
-    │   ├── PRD.md
-    │   └── prd-stories.json
-    └── design/
-        ├── design-system.md
-        ├── tokens.css
-        ├── tailwind.config.js
-        ├── design-review.md
-        ├── prototype/
-        │   └── index.html
-        └── screenshots/
-            ├── 01-welcome-light.png
-            ├── 02-workbench-default-light.png
-            ├── 03-workbench-active-ai.png
-            └── 04-workbench-dark.png
-```
+- `src/` 存放桌面前端，`src-tauri/` 存放 Rust 后端与集成测试。
+- `schemas/` 存放版本化 JSON Schema，`scripts/` 存放工程检查与桌面冒烟脚本。
+- `builtin-courses/` 存放随应用分发的课程包，`docs/` 存放需求、架构和设计文档。
 
 ## 研发里程碑（8 周开源 MVP）
 

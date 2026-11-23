@@ -65,11 +65,11 @@
 7. **`starter/` 幂等注水与外部 IDE 原子重命名保存事件：** `workspace.json` 记录 `hydratedFiles` 防止误覆盖或复活学习者已删文件；将打开标签路径上的 `Create` 和 `RenameTo` 事件统一归一化为 `ContentChanged`，适配 VS Code、GoLand、Vim 的原子重命名保存。
 8. **Git 课程包缓存限额与淘汰：** 明确单仓库 `30s` 超时与 `100 MB` 上限，以及 `~/.codelab/cache/git-packs/` 最多 20 包 / `500 MB` LRU 淘汰规则。
 
-## 7. Phase F 自动化验证结果
+## 7. Phase F 架构检查
 
 通过确定性脚本核对 [ARCHITECTURE.md](./ARCHITECTURE.md) 与 [PRD.md](../prd/PRD.md)、[prd-stories.json](../prd/prd-stories.json) 及设计规范，全部检查均已通过：
 
-- 18 条用户故事覆盖（`US-001` 至 `US-018`）：`18/18` 通过。
+- 架构文档已覆盖 `US-001` 至 `US-018` 的设计。实现验收状态以 [prd-stories.json](../prd/prd-stories.json) 为准。
 - 13 项统一本地埋点事件名称核对：`13/13` 通过。
 - 34 项核心架构、安全与性能不变量核对：`34/34` 通过。
 - `unslop`（无破折号连接）与文档标题层级（单一 H1、零跳级）及相对链接有效性核对：全部通过。

@@ -1,5 +1,7 @@
 # CodeLab Studio — 设计评审与实机验证报告
 
+> 本报告记录浏览器原型的设计评审。桌面应用的实现状态和验收证据见 [多阶段实施计划](../architecture/u2-u14-multi-phase-plan.md)。
+
 > 评审对象：[design-system.md](./design-system.md) · [tokens.css](./tokens.css) · [tailwind.config.js](./tailwind.config.js) · [prototype/index.html](./prototype/index.html)
 > 实机截图：[首页](./screenshots/01-welcome-light.png) · [默认两栏工作台](./screenshots/02-workbench-default-light.png) · [按需展开 AI 与 ACP](./screenshots/03-workbench-active-ai.png) · [深色模式验收通过](./screenshots/04-workbench-dark.png)
 
@@ -32,22 +34,22 @@ AI 与终端依然是交互模拟，以上检查不表示已接通实际模型�
 
 ---
 
-## 2. 自动化回归与实机检查结果
+## 2. 浏览器原型回归结果
 
 - **脚本语法与运行时**：`node --check` 零语法错误；Headless Chrome（`1440×900` 与 `1280×800`）全程 `PROTO_ERRORS: []`。
-- **核心业务闭环实测**：
+- **原型交互演练**：
   - Go 练习 1：启动常驻服务 `go run .` → 运行验收初检 `2/3` 展开 Diff → 唤起 AI 与 ACP 权限审批卡 → 安全写入参考修改 → 复检 `3/3` 全绿通过。
   - JS/TS 练习：编辑器内真实执行 `getAdultNames` 函数断言 `3/3` 通过。
   - 安全与扩展：`rm -rf` 触发高危确认弹窗；Java 托管运行时一键安装生效；外观抽屉 8 组强调色与浅/深主题无闪烁切换。
 
 ---
 
-## 3. 综合评审得分
+## 3. 原型设计评分
 
 | 维度 | 得分（/10） | 说明 |
 |---|---:|---|
 | 入口清晰度与视觉呼吸感 | **9.7** | 单一居中主入口 + 默认两栏三步引导流，零压迫感 |
 | Arc UI 风格还原度 | **9.7** | 纯中性灰阶、Geist Medium、柔和光晕 Hero、外观侧滑抽屉 |
 | 对比度与无障碍（WCAG 2.1 AA） | **9.8** | 浅/深双主题全令牌实测 ≥ 4.95:1，完整键盘与减弱动效支持 |
-| PRD 业务闭环完整度 | **9.8** | 四语言判题、双终端路由、课程包导入/创作、BYOK + ACP 全闭环 |
-| **综合评分** | **9.75 / 10** | **设计定稿，可直接进入 Tauri 2 工程研发** |
+| 原型流程覆盖 | **9.8** | 涵盖四语言判题、双终端、课程包与 AI 助教的演示流程 |
+| **原型设计评分** | **9.75 / 10** | 作为 Tauri 2 桌面界面的设计参考 |

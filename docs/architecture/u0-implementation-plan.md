@@ -1,6 +1,6 @@
 # U0「工程骨架与契约」实施计划
 
-> 状态：待批准（本轮仅定计划，不写业务与工程代码）
+> 历史记录。U0 已在 `954a930`、`eda2f24`、`3dae58c` 和 `86d3c4a` 交付。后续执行见 [U2 至 U14 多阶段实施计划](./u2-u14-multi-phase-plan.md)。
 > 对齐基线：[ARCHITECTURE.md](./ARCHITECTURE.md)（v1.0）、[PRD.md](../prd/PRD.md)（v3.1）、[prd-stories.json](../prd/prd-stories.json)、[design-system.md](../design/design-system.md)（v3.2 B 定稿）、[tokens.css](../design/tokens.css)、[tailwind.config.js](../design/tailwind.config.js)
 
 本计划把 [ARCHITECTURE.md](./ARCHITECTURE.md) 第 7 节的 `U0`（Wave 0 · 骨架与契约）拆解为 4 个小而可独立验证的 PR。每个 PR 只交付一项可核验改动，包含依赖、允许修改的文件集合、单测命令、真实运行验证、性能门禁和评审关卡。
@@ -55,9 +55,9 @@ flowchart LR
 
 ## 3. 前置环境准备（`U0-2` 开始前）
 
-在合入 `U0-1` 后、启动 `U0-2` 前，本机开发机须完成以下环境就绪检查。
+以下为启动 `U0-2` 时的前置检查。
 
-- [ ] 安装 Rust stable 工具链（`rustup`、`rustc`、`cargo`、`rustfmt`、`clippy`），实测当前机器 `which rustc cargo` 为空。
+- [ ] 安装 Rust stable 工具链（`rustup`、`rustc`、`cargo`、`rustfmt`、`clippy`）。
 - [ ] 验证版本命令：`rustc -V && cargo -V && cargo clippy -V && rustfmt -V && pnpm -v && node -v`。
 - [ ] 确认 `git status` 对未提交的 `docs/architecture/` 与 `todo.md` 已有明确归属（先提交或留在基线分支），避免 `U0` 的 `git diff --exit-code` 检查混入无关变更。
 
@@ -262,6 +262,6 @@ U0 的职责严格止步于「可启动的空桌面壳 + 稳定领域契约 + �
 
 ## 7. 待操作者确认或留待后续验证的事项
 
-1. **前置阻塞（已实测）**：当前本机缺少 Rust 工具链（`rustc`、`cargo`、`rustup` 均未安装），执行 `U0-2` 前须安装 Rust stable。
+1. **U0-2 的构建依赖。** Rust stable 工具链已用于 U0 至 U2 的构建与验证。
 2. **包管理器与插件清单确认**：本计划默认前端使用 `pnpm`（本机已安装 `12.16.1`），并按 Tauri 2 真实机制把 `tauri-plugin-single-instance` 仅在 Rust 侧注册而不写入 `capabilities/default.json`、`schemas/` 导出 6 个 v1 文件。若希望调整包管理器或保留仅 3 个 Schema 文件，请在开跑前指示。
 3. **跨平台真实桌面窗口启动**：本机为 macOS，Windows 与 Linux 的真实 GUI 窗口拉起与窗口最小尺寸钳制无法在 U0 本机实测，U0 阶段通过 GitHub Actions 三平台 CI 覆盖编译与单测，实机桌面启动留待对应平台环境验证。
