@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AuthorPreviewResult,
   BootstrapState,
@@ -19,6 +20,15 @@ export function isTauriRuntime(): boolean {
 
 export async function appBootstrap(): Promise<BootstrapState> {
   return invoke<BootstrapState>("app_bootstrap");
+}
+
+export async function pickMarkdownFile(title: string): Promise<string | null> {
+  return open({
+    multiple: false,
+    directory: false,
+    title,
+    filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] }],
+  });
 }
 
 export async function courseInspectSource(

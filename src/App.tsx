@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CoursePreview } from "./features/course-preview/CoursePreview";
 import { LOCALES, type Locale, type MessageKey, resolveInitialLocale, t } from "./i18n";
-import { appBootstrap, isTauriRuntime } from "./lib/ipc/client";
-import type { SessionEpoch } from "./lib/ipc/generated";
+import { appBootstrap, courseInspectSource, isTauriRuntime, pickMarkdownFile } from "./lib/ipc/client";
+import type { ParsedCourse, SessionEpoch } from "./lib/ipc/generated";
 
 const THEMES = ["light", "dark"] as const;
 type ThemeMode = (typeof THEMES)[number];
@@ -23,6 +24,11 @@ type BootstrapViewState =
   | { kind: "loading" }
   | { kind: "ready"; epoch: SessionEpoch }
   | { kind: "error" };
+
+type PreviewState =
+  | { kind: "idle" | "picking" | "loading" }
+  | { kind: "ready"; course: ParsedCourse }
+  | { kind: "error"; key: MessageKey };
 
 const THEME_STORAGE_KEY = "codelab.theme";
 const ACCENT_STORAGE_KEY = "codelab.accent";
@@ -91,6 +97,9 @@ export function App() {
     isTauriRuntime() ? { kind: "loading" } : { kind: "browser" },
   );
 
+  const [preview, setPreview] = useState<PreviewState>({ kind: "idle" });
+  const openMarkdownButton = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
@@ -142,6 +151,35 @@ export function App() {
     };
   }, []);
 
+  async function openMarkdown() {
+    setPreview({ kind: "picking" });
+    try {
+      const filePath = await pickMarkdownFile(t(locale, "preview.open"));
+      if (filePath === null) {
+        setPreview({ kind: "idle" });
+        return;
+      }
+      setPreview({ kind: "loading" });
+      const { course } = await courseInspectSource({ kind: "localMarkdown", filePath });
+      setPreview({ kind: "ready", course });
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? error.code : null;
+      setPreview({
+        kind: "error",
+        key: code === "MARKDOWN_LIMIT_EXCEEDED" ? "preview.tooLarge" : "preview.openFailed",
+      });
+    }
+  }
+
+  if (preview.kind === "ready") {
+    return (
+      <CoursePreview course={preview.course} locale={locale} onClose={() => {
+        setPreview({ kind: "idle" });
+        requestAnimationFrame(() => openMarkdownButton.current?.focus());
+      }} />
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <section className="w-full max-w-xl rounded-panel border border-border bg-surface p-6 shadow-resting space-y-5">
@@ -151,6 +189,24 @@ export function App() {
           </h1>
           <p className="text-sm text-text-secondary">{t(locale, "shell.subtitle")}</p>
         </header>
+
+        {bootstrap.kind === "ready" && (
+          <div className="space-y-2">
+            <button
+              ref={openMarkdownButton}
+              type="button"
+              className="rounded-control bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60"
+              disabled={preview.kind === "picking" || preview.kind === "loading"}
+              onClick={() => void openMarkdown()}
+            >
+              {t(locale, "preview.open")}
+            </button>
+            <p role="status" className="text-sm text-text-secondary">
+              {preview.kind === "loading" && t(locale, "preview.loading")}
+            </p>
+            {preview.kind === "error" && <p role="alert" className="text-sm">{t(locale, preview.key)}</p>}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 rounded-control border border-border-subtle bg-surface-muted p-3 text-sm">
           <div>
