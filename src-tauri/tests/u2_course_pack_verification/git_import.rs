@@ -593,7 +593,11 @@ async fn git_import_stops_a_stalled_clone_after_timeout() {
     )
     .await
     .expect_err("stalled server must hit clone timeout");
-    assert_eq!(timeout_err.code, ErrorCode::SchemaValidationFailed);
+    assert_eq!(
+        timeout_err.code,
+        ErrorCode::SchemaValidationFailed,
+        "{timeout_err:?}"
+    );
     assert_eq!(timeout_err.message_key, "error.gitImportFailed");
     assert!(timeout_err.retryable);
     assert!(started.elapsed() < Duration::from_secs(5));
