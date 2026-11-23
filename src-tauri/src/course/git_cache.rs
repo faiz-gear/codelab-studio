@@ -242,6 +242,8 @@ fn make_tree_writable(path: &Path) {
     {
         let mut permissions = metadata.permissions();
         if permissions.readonly() {
+            // Windows clears the read-only file attribute here.
+            #[cfg_attr(windows, allow(clippy::permissions_set_readonly_false))]
             permissions.set_readonly(false);
             let _ = fs::set_permissions(path, permissions);
         }
