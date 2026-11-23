@@ -1,6 +1,8 @@
 pub mod domain;
 pub mod ipc;
+pub mod platform;
 pub mod session;
+pub mod storage;
 
 use std::io::Write;
 

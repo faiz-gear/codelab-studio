@@ -44,6 +44,33 @@ pub struct AppError {
     pub retryable: bool,
 }
 
+impl AppError {
+    pub fn new(code: ErrorCode, message_key: impl Into<String>) -> Self {
+        Self {
+            code,
+            message_key: message_key.into(),
+            params: BTreeMap::new(),
+            detail: None,
+            retryable: false,
+        }
+    }
+
+    pub fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.params.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    pub fn with_retryable(mut self, retryable: bool) -> Self {
+        self.retryable = retryable;
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
