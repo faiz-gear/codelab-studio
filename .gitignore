@@ -12,10 +12,10 @@
 CLAUDE.local.md
 GEMINI.md
 
-# Impeccable design tooling artifacts
-.impeccable/
-/DESIGN.md
-/PRODUCT.md
+# Impeccable local configuration and generated files
+/.impeccable/*
+!/.impeccable/config.json
+!/.impeccable/design.json
 
 # Build & workspace artifacts (U0-1)
 node_modules/

@@ -1,0 +1,501 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-23T00:36:30+08:00",
+  "title": "Design System: CodeLab Studio",
+  "extensions": {
+    "colorMeta": {
+      "carbon-control": {
+        "role": "primary",
+        "displayName": "Carbon Control",
+        "canonical": "oklch(18% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "graphite-accent": {
+        "role": "primary",
+        "displayName": "Graphite Accent",
+        "canonical": "oklch(33% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "chalk-control-dark": {
+        "role": "primary",
+        "displayName": "Chalk Control Dark",
+        "canonical": "oklch(94% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "silver-accent-dark": {
+        "role": "primary",
+        "displayName": "Silver Accent Dark",
+        "canonical": "oklch(80% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "botanical-mint": {
+        "role": "secondary",
+        "displayName": "Botanical Mint",
+        "canonical": "oklch(50% 0.12 162)",
+        "tonalRamp": ["oklch(18% 0.04 162)", "oklch(28% 0.07 162)", "oklch(39% 0.1 162)", "oklch(50% 0.12 162)", "oklch(64% 0.13 162)", "oklch(79% 0.14 162)", "oklch(89% 0.08 162)", "oklch(96% 0.03 162)"]
+      },
+      "botanical-mint-dark": {
+        "role": "secondary",
+        "displayName": "Botanical Mint Dark",
+        "canonical": "oklch(79% 0.14 162)",
+        "tonalRamp": ["oklch(18% 0.04 162)", "oklch(28% 0.07 162)", "oklch(39% 0.1 162)", "oklch(50% 0.12 162)", "oklch(64% 0.13 162)", "oklch(79% 0.14 162)", "oklch(89% 0.08 162)", "oklch(96% 0.03 162)"]
+      },
+      "cerulean-mist": {
+        "role": "secondary",
+        "displayName": "Cerulean Mist",
+        "canonical": "oklch(51% 0.11 240)",
+        "tonalRamp": ["oklch(18% 0.035 240)", "oklch(29% 0.065 240)", "oklch(40% 0.095 240)", "oklch(51% 0.11 240)", "oklch(65% 0.105 238)", "oklch(79% 0.095 236)", "oklch(89% 0.055 236)", "oklch(96% 0.02 236)"]
+      },
+      "cerulean-mist-dark": {
+        "role": "secondary",
+        "displayName": "Cerulean Mist Dark",
+        "canonical": "oklch(79% 0.095 236)",
+        "tonalRamp": ["oklch(18% 0.035 240)", "oklch(29% 0.065 240)", "oklch(40% 0.095 240)", "oklch(51% 0.11 240)", "oklch(65% 0.105 238)", "oklch(79% 0.095 236)", "oklch(89% 0.055 236)", "oklch(96% 0.02 236)"]
+      },
+      "studio-violet": {
+        "role": "secondary",
+        "displayName": "Studio Violet",
+        "canonical": "oklch(51% 0.16 290)",
+        "tonalRamp": ["oklch(18% 0.05 290)", "oklch(29% 0.09 290)", "oklch(40% 0.13 290)", "oklch(51% 0.16 290)", "oklch(63% 0.145 290)", "oklch(74% 0.125 290)", "oklch(88% 0.065 290)", "oklch(96% 0.02 290)"]
+      },
+      "studio-violet-dark": {
+        "role": "secondary",
+        "displayName": "Studio Violet Dark",
+        "canonical": "oklch(74% 0.125 290)",
+        "tonalRamp": ["oklch(18% 0.05 290)", "oklch(29% 0.09 290)", "oklch(40% 0.13 290)", "oklch(51% 0.16 290)", "oklch(63% 0.145 290)", "oklch(74% 0.125 290)", "oklch(88% 0.065 290)", "oklch(96% 0.02 290)"]
+      },
+      "ochre-amber": {
+        "role": "secondary",
+        "displayName": "Ochre Amber",
+        "canonical": "oklch(50% 0.12 68)",
+        "tonalRamp": ["oklch(18% 0.035 68)", "oklch(29% 0.07 68)", "oklch(40% 0.1 68)", "oklch(50% 0.12 68)", "oklch(66% 0.125 74)", "oklch(83% 0.12 78)", "oklch(91% 0.07 78)", "oklch(96% 0.025 78)"]
+      },
+      "ochre-amber-dark": {
+        "role": "secondary",
+        "displayName": "Ochre Amber Dark",
+        "canonical": "oklch(83% 0.12 78)",
+        "tonalRamp": ["oklch(18% 0.035 68)", "oklch(29% 0.07 68)", "oklch(40% 0.1 68)", "oklch(50% 0.12 68)", "oklch(66% 0.125 74)", "oklch(83% 0.12 78)", "oklch(91% 0.07 78)", "oklch(96% 0.025 78)"]
+      },
+      "crimson-rose": {
+        "role": "secondary",
+        "displayName": "Crimson Rose",
+        "canonical": "oklch(53% 0.18 10)",
+        "tonalRamp": ["oklch(18% 0.05 10)", "oklch(30% 0.1 10)", "oklch(42% 0.15 10)", "oklch(53% 0.18 10)", "oklch(62% 0.17 9)", "oklch(71% 0.155 8)", "oklch(87% 0.075 8)", "oklch(96% 0.025 8)"]
+      },
+      "crimson-rose-dark": {
+        "role": "secondary",
+        "displayName": "Crimson Rose Dark",
+        "canonical": "oklch(71% 0.155 8)",
+        "tonalRamp": ["oklch(18% 0.05 10)", "oklch(30% 0.1 10)", "oklch(42% 0.15 10)", "oklch(53% 0.18 10)", "oklch(62% 0.17 9)", "oklch(71% 0.155 8)", "oklch(87% 0.075 8)", "oklch(96% 0.025 8)"]
+      },
+      "verdigris-teal": {
+        "role": "tertiary",
+        "displayName": "Verdigris Teal",
+        "canonical": "oklch(50% 0.095 182)",
+        "tonalRamp": ["oklch(18% 0.035 182)", "oklch(29% 0.06 182)", "oklch(40% 0.08 182)", "oklch(50% 0.095 182)", "oklch(65% 0.115 182)", "oklch(79% 0.13 182)", "oklch(89% 0.07 182)", "oklch(96% 0.025 182)"]
+      },
+      "verdigris-teal-dark": {
+        "role": "tertiary",
+        "displayName": "Verdigris Teal Dark",
+        "canonical": "oklch(79% 0.13 182)",
+        "tonalRamp": ["oklch(18% 0.035 182)", "oklch(29% 0.06 182)", "oklch(40% 0.08 182)", "oklch(50% 0.095 182)", "oklch(65% 0.115 182)", "oklch(79% 0.13 182)", "oklch(89% 0.07 182)", "oklch(96% 0.025 182)"]
+      },
+      "gallery-white": {
+        "role": "neutral",
+        "displayName": "Gallery White",
+        "canonical": "oklch(100% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(91.5% 0 0)", "oklch(100% 0 0)"]
+      },
+      "paper-muted": {
+        "role": "neutral",
+        "displayName": "Paper Muted",
+        "canonical": "oklch(97.8% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(91.5% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "paper-subtle": {
+        "role": "neutral",
+        "displayName": "Paper Subtle",
+        "canonical": "oklch(95.8% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(91.5% 0 0)", "oklch(95.8% 0 0)"]
+      },
+      "hairline-subtle": {
+        "role": "neutral",
+        "displayName": "Hairline Subtle",
+        "canonical": "oklch(96.2% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(28.5% 0 0)", "oklch(46% 0 0)", "oklch(66% 0 0)", "oklch(82% 0 0)", "oklch(93% 0 0)", "oklch(96.2% 0 0)", "oklch(99% 0 0)"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(93% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(28.5% 0 0)", "oklch(46% 0 0)", "oklch(66% 0 0)", "oklch(82% 0 0)", "oklch(93% 0 0)", "oklch(96.2% 0 0)", "oklch(99% 0 0)"]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong",
+        "canonical": "oklch(82% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(28.5% 0 0)", "oklch(46% 0 0)", "oklch(66% 0 0)", "oklch(82% 0 0)", "oklch(93% 0 0)", "oklch(96.2% 0 0)", "oklch(99% 0 0)"]
+      },
+      "pewter-muted": {
+        "role": "neutral",
+        "displayName": "Pewter Muted",
+        "canonical": "oklch(52% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "graphite-slate": {
+        "role": "neutral",
+        "displayName": "Graphite Slate",
+        "canonical": "oklch(46% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "carbon-ink": {
+        "role": "neutral",
+        "displayName": "Carbon Ink",
+        "canonical": "oklch(15% 0 0)",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(23% 0 0)", "oklch(34% 0 0)", "oklch(46% 0 0)", "oklch(52% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(97.8% 0 0)"]
+      },
+      "obsidian-sidebar": {
+        "role": "neutral",
+        "displayName": "Obsidian Sidebar",
+        "canonical": "oklch(17.8% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(19% 0 0)", "oklch(21.5% 0 0)", "oklch(24% 0 0)", "oklch(25.5% 0 0)", "oklch(28.5% 0 0)", "oklch(66% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-canvas": {
+        "role": "neutral",
+        "displayName": "Obsidian Canvas",
+        "canonical": "oklch(19% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(19% 0 0)", "oklch(21.5% 0 0)", "oklch(24% 0 0)", "oklch(25.5% 0 0)", "oklch(28.5% 0 0)", "oklch(66% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-surface": {
+        "role": "neutral",
+        "displayName": "Obsidian Surface",
+        "canonical": "oklch(21.5% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(19% 0 0)", "oklch(21.5% 0 0)", "oklch(24% 0 0)", "oklch(25.5% 0 0)", "oklch(28.5% 0 0)", "oklch(66% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-raised": {
+        "role": "neutral",
+        "displayName": "Obsidian Raised",
+        "canonical": "oklch(24% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(19% 0 0)", "oklch(21.5% 0 0)", "oklch(24% 0 0)", "oklch(25.5% 0 0)", "oklch(28.5% 0 0)", "oklch(66% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-muted": {
+        "role": "neutral",
+        "displayName": "Obsidian Muted",
+        "canonical": "oklch(25.5% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(19% 0 0)", "oklch(21.5% 0 0)", "oklch(24% 0 0)", "oklch(25.5% 0 0)", "oklch(28.5% 0 0)", "oklch(66% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-border-subtle": {
+        "role": "neutral",
+        "displayName": "Obsidian Border Subtle",
+        "canonical": "oklch(24.5% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(21.5% 0 0)", "oklch(24.5% 0 0)", "oklch(28.5% 0 0)", "oklch(39% 0 0)", "oklch(66% 0 0)", "oklch(77% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-border": {
+        "role": "neutral",
+        "displayName": "Obsidian Border",
+        "canonical": "oklch(28.5% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(21.5% 0 0)", "oklch(24.5% 0 0)", "oklch(28.5% 0 0)", "oklch(39% 0 0)", "oklch(66% 0 0)", "oklch(77% 0 0)", "oklch(96% 0 0)"]
+      },
+      "obsidian-border-strong": {
+        "role": "neutral",
+        "displayName": "Obsidian Border Strong",
+        "canonical": "oklch(39% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(21.5% 0 0)", "oklch(24.5% 0 0)", "oklch(28.5% 0 0)", "oklch(39% 0 0)", "oklch(66% 0 0)", "oklch(77% 0 0)", "oklch(96% 0 0)"]
+      },
+      "ash-muted-dark": {
+        "role": "neutral",
+        "displayName": "Ash Muted Dark",
+        "canonical": "oklch(66% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(21.5% 0 0)", "oklch(28.5% 0 0)", "oklch(39% 0 0)", "oklch(66% 0 0)", "oklch(77% 0 0)", "oklch(88% 0 0)", "oklch(96% 0 0)"]
+      },
+      "silver-secondary-dark": {
+        "role": "neutral",
+        "displayName": "Silver Secondary Dark",
+        "canonical": "oklch(77% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(21.5% 0 0)", "oklch(28.5% 0 0)", "oklch(39% 0 0)", "oklch(66% 0 0)", "oklch(77% 0 0)", "oklch(88% 0 0)", "oklch(96% 0 0)"]
+      },
+      "chalk-ink-dark": {
+        "role": "neutral",
+        "displayName": "Chalk Ink Dark",
+        "canonical": "oklch(96% 0 0)",
+        "tonalRamp": ["oklch(17.8% 0 0)", "oklch(21.5% 0 0)", "oklch(28.5% 0 0)", "oklch(39% 0 0)", "oklch(66% 0 0)", "oklch(77% 0 0)", "oklch(88% 0 0)", "oklch(96% 0 0)"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Welcome Home centered hero headline only, capped at 18ch measure."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Active exercise chapter heading at the top of the guided manual."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section heads, course card titles, modal headers, drawer headers, and numbered step titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Manual prose (580px max measure), course descriptions, hero subtitle, and AI tutor responses."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, segmented controls, badges, context chips, form labels, and status footers."
+      },
+      "code": {
+        "displayName": "Code / Mono",
+        "purpose": "Code editor, terminal viewport, command blocks, diffs, file tabs, cwd pills, progress counters, and token budgets."
+      }
+    },
+    "shadows": [
+      {
+        "name": "resting-light",
+        "value": "0 1px 2px oklch(0% 0 0 / 0.03)",
+        "purpose": "Subtle edge crispness on Light primary/secondary buttons and active segmented or editor tabs."
+      },
+      {
+        "name": "raised-light",
+        "value": "0 8px 24px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.03)",
+        "purpose": "Hover lift under interactive Light course cards paired with translateY(-2px)."
+      },
+      {
+        "name": "floating-light",
+        "value": "0 20px 48px oklch(0% 0 0 / 0.11), 0 3px 10px oklch(0% 0 0 / 0.04)",
+        "purpose": "Transient Light overlays crossing pane boundaries: dropdowns, popovers, selection pill, drawers, modals, and toasts."
+      },
+      {
+        "name": "resting-dark",
+        "value": "0 1px 2px oklch(0% 0 0 / 0.22)",
+        "purpose": "Subtle edge crispness on Dark buttons and active tabs."
+      },
+      {
+        "name": "raised-dark",
+        "value": "0 8px 24px oklch(0% 0 0 / 0.30)",
+        "purpose": "Hover lift under interactive Dark course cards."
+      },
+      {
+        "name": "floating-dark",
+        "value": "0 22px 55px oklch(0% 0 0 / 0.48)",
+        "purpose": "Transient Dark overlays, modals, drawers, selection pill, and floating AI drawer."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 2px var(--background), 0 0 0 4px var(--accent)",
+        "purpose": "Universal double-ring keyboard focus indicator applied via :focus-visible."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-enter",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Decelerated entrance curve for popovers, dropdowns, floating selection pill, and message reveals."
+      },
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Default critically damped curve for buttons, tabs, card lift, and pane resizing."
+      },
+      {
+        "name": "ease-exit",
+        "value": "cubic-bezier(0.7, 0, 0.84, 0)",
+        "purpose": "Brisk dismissal curve for closing overlays."
+      },
+      {
+        "name": "ease-drawer",
+        "value": "cubic-bezier(0.32, 0.72, 0, 1)",
+        "purpose": "Smooth deceleration curve for the AI tutor drawer and Appearance slide-over drawer."
+      },
+      {
+        "name": "ease-spring",
+        "value": "linear(0, 0.0213, 0.0739, 0.1443, 0.2235, 0.305, 0.3849, 0.4606, 0.5305, 0.594, 0.6508, 0.7011, 0.7452, 0.7836, 0.8168, 0.8454, 0.8699, 0.8907, 0.9084, 0.9234, 0.9361, 0.9467, 0.9557, 0.9632, 0.9694, 0.9747, 0.979, 0.9826, 0.9857, 0.9882, 0.9902, 0.992, 0.9934, 0.9946, 0.9955, 0.9963, 1)",
+        "purpose": "Critically damped linear() spring curve for expressive drawer and progress motion."
+      },
+      {
+        "name": "duration-instant",
+        "value": "100ms",
+        "purpose": "Tactile active button press feedback."
+      },
+      {
+        "name": "duration-fast",
+        "value": "150ms",
+        "purpose": "Hover, border, focus, tab switch, and floating pill pop-in."
+      },
+      {
+        "name": "duration-standard",
+        "value": "220ms",
+        "purpose": "Card lift, pane transitions, and modal/toast entrances."
+      },
+      {
+        "name": "duration-considered",
+        "value": "360ms",
+        "purpose": "Progress bar fills and deliberate panel expansions."
+      },
+      {
+        "name": "duration-spring",
+        "value": "440ms",
+        "purpose": "Spring-driven layout reveals."
+      }
+    ],
+    "breakpoints": [
+      { "name": "compact-stack", "value": "960px" },
+      { "name": "md", "value": "1024px" },
+      { "name": "lg", "value": "1280px" },
+      { "name": "tree-auto-collapse", "value": "1360px" },
+      { "name": "xl", "value": "1440px" },
+      { "name": "2xl", "value": "1920px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-contrast monochrome primary action used for running exercises, verifying checks, and continuing courses.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"6 3 20 12 6 21 6 3\"/></svg><span>Run Verification</span></button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: var(--radius-control, 10px); border: 1px solid transparent; background: var(--control-on, oklch(18% 0 0)); color: var(--control-glyph, oklch(100% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); font-size: 13px; font-weight: 500; letter-spacing: -0.01em; cursor: pointer; box-shadow: var(--shadow-resting, 0 1px 2px oklch(0% 0 0 / 0.03)); transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 100ms; } .ds-btn-primary:hover { opacity: 0.88; } .ds-btn-primary:active { transform: scale(0.975); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background, oklch(100% 0 0)), 0 0 0 4px var(--accent, oklch(33% 0 0)); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Hairline-bordered quiet secondary action for importing course packs, viewing Diffs, and toggling the AI drawer.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z\"/></svg><span>Import / Author Pack</span></button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: var(--radius-control, 10px); border: 1px solid var(--border, oklch(93% 0 0)); background: var(--surface, oklch(100% 0 0)); color: var(--foreground, oklch(15% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); font-size: 13px; font-weight: 500; letter-spacing: -0.01em; cursor: pointer; box-shadow: var(--shadow-resting, 0 1px 2px oklch(0% 0 0 / 0.03)); transition: background 150ms cubic-bezier(0.22, 1, 0.36, 1), border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 100ms; } .ds-btn-secondary:hover { background: var(--surface-muted, oklch(97.8% 0 0)); border-color: var(--border-strong, oklch(82% 0 0)); } .ds-btn-secondary:active { transform: scale(0.975); } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background, oklch(100% 0 0)), 0 0 0 4px var(--accent, oklch(33% 0 0)); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Borderless quiet control used in the desktop topbar, pane headers, and secondary tool triggers.",
+      "html": "<button class=\"ds-btn-ghost\" type=\"button\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"4\" x2=\"20\" y1=\"21\" y2=\"21\"/><line x1=\"4\" x2=\"20\" y1=\"14\" y2=\"14\"/><line x1=\"4\" x2=\"20\" y1=\"7\" y2=\"7\"/><circle cx=\"9\" cy=\"7\" r=\"2\"/><circle cx=\"15\" cy=\"14\" r=\"2\"/></svg><span>Appearance</span></button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: var(--radius-pill, 9999px); border: 1px solid transparent; background: transparent; color: var(--text-secondary, oklch(46% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); font-size: 12.5px; font-weight: 500; letter-spacing: -0.01em; cursor: pointer; transition: background 150ms cubic-bezier(0.22, 1, 0.36, 1), color 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 100ms; } .ds-btn-ghost:hover { background: var(--hover-fill, color-mix(in oklab, oklch(15% 0 0) 4%, transparent)); color: var(--foreground, oklch(15% 0 0)); } .ds-btn-ghost:active { transform: scale(0.975); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background, oklch(100% 0 0)), 0 0 0 4px var(--accent, oklch(33% 0 0)); }"
+    },
+    {
+      "name": "Segmented Filter Control",
+      "kind": "nav",
+      "refersTo": "segmented-control",
+      "description": "Pill-shaped segmented tray for language filtering on Welcome Home and Socratic/Direct AI mode switching.",
+      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Filter by language\"><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"true\">All</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">Go</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">JS/TS</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">Python</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">Java</button></div>",
+      "css": ".ds-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius-pill, 9999px); background: var(--surface-muted, oklch(97.8% 0 0)); border: 1px solid var(--border, oklch(93% 0 0)); } .ds-seg-btn { height: 25px; padding: 0 11px; border-radius: var(--radius-pill, 9999px); border: 1px solid transparent; background: transparent; color: var(--text-muted, oklch(52% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); font-size: 12px; font-weight: 500; cursor: pointer; transition: background 150ms cubic-bezier(0.22, 1, 0.36, 1), color 150ms cubic-bezier(0.22, 1, 0.36, 1), border-color 150ms; } .ds-seg-btn:hover { color: var(--foreground, oklch(15% 0 0)); } .ds-seg-btn[aria-pressed='true'] { background: var(--surface, oklch(100% 0 0)); color: var(--foreground, oklch(15% 0 0)); border-color: var(--border, oklch(93% 0 0)); box-shadow: var(--shadow-resting, 0 1px 2px oklch(0% 0 0 / 0.03)); } .ds-seg-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background, oklch(100% 0 0)), 0 0 0 4px var(--accent, oklch(33% 0 0)); }"
+    },
+    {
+      "name": "Language & Context Chips",
+      "kind": "chip",
+      "refersTo": "chip-badge",
+      "description": "Cool pastel oklab-tinted pills for 4-language tags, verification badges, and removable 4D AI context chips.",
+      "html": "<div class=\"ds-chip-row\"><span class=\"ds-lang-chip ds-lang-go\">Go</span><span class=\"ds-lang-chip ds-lang-js\">JS/TS</span><span class=\"ds-lang-chip ds-lang-py\">Python</span><span class=\"ds-lang-chip ds-lang-java\">Java</span><span class=\"ds-ctx-chip\"><span>main.go</span><button class=\"ds-ctx-rm\" type=\"button\" aria-label=\"Remove context\">×</button></span></div>",
+      "css": ".ds-chip-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; } .ds-lang-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--radius-pill, 9999px); font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 11px; font-weight: 500; } .ds-lang-go { background: color-mix(in oklab, var(--tone-sky, oklch(51% 0.11 240)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--tone-sky, oklch(51% 0.11 240)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-lang-js { background: color-mix(in oklab, var(--tone-amber, oklch(50% 0.12 68)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--tone-amber, oklch(50% 0.12 68)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-lang-py { background: color-mix(in oklab, var(--tone-teal, oklch(50% 0.095 182)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--tone-teal, oklch(50% 0.095 182)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-lang-java { background: color-mix(in oklab, var(--tone-rose, oklch(53% 0.18 10)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--tone-rose, oklch(53% 0.18 10)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-ctx-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px 0 9px; border-radius: var(--radius-pill, 9999px); font-family: var(--font-body, 'Inter', sans-serif); font-size: 11.5px; font-weight: 500; background: color-mix(in oklab, var(--ai, oklch(51% 0.16 290)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--ai, oklch(51% 0.16 290)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-ctx-rm { border: 0; background: transparent; color: inherit; opacity: 0.7; padding: 0 3px; border-radius: 9999px; cursor: pointer; } .ds-ctx-rm:hover { opacity: 1; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Crisp 36px hairline-bordered input used in Settings, Course Pack import, and ACP command configuration.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">ACP Command</span><input class=\"ds-input\" type=\"text\" value=\"claude --acp\" placeholder=\"Enter local ACP command...\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; max-width: 320px; } .ds-field-label { font-family: var(--font-body, 'Inter', sans-serif); font-size: 12.5px; font-weight: 500; color: var(--text-secondary, oklch(46% 0 0)); } .ds-input { height: 36px; padding: 0 11px; border-radius: var(--radius-control, 10px); border: 1px solid var(--border, oklch(93% 0 0)); background: var(--surface, oklch(100% 0 0)); color: var(--foreground, oklch(15% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); font-size: 13px; outline: none; transition: border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 150ms; } .ds-input:focus { border-color: var(--foreground, oklch(15% 0 0)); box-shadow: 0 0 0 3px var(--accent-subtle, oklch(33% 0 0 / 0.08)); }"
+    },
+    {
+      "name": "Course Card",
+      "kind": "card",
+      "refersTo": "card-course",
+      "description": "Airy 18px-rounded course card resting flat on a 1px hairline and lifting subtly on hover.",
+      "html": "<article class=\"ds-course-card\" tabindex=\"0\"><div class=\"ds-card-top\"><span class=\"ds-card-tag\">Go</span><span class=\"ds-card-prog\">4 / 10</span></div><h3 class=\"ds-card-title\">Go &amp; GoFrame Engineering Practice</h3><p class=\"ds-card-desc\">From standard library net/http to race-tested concurrency and GoFrame migration.</p><div class=\"ds-prog-track\"><div class=\"ds-prog-fill\" style=\"width:40%\"></div></div></article>",
+      "css": ".ds-course-card { display: flex; flex-direction: column; gap: 12px; padding: 22px 24px; max-width: 440px; border-radius: 18px; background: var(--surface, oklch(100% 0 0)); border: 1px solid var(--border, oklch(93% 0 0)); cursor: pointer; transition: border-color 150ms, box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-course-card:hover { border-color: var(--border-strong, oklch(82% 0 0)); box-shadow: var(--shadow-raised, 0 8px 24px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.03)); transform: translateY(-2px); } .ds-course-card:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background, oklch(100% 0 0)), 0 0 0 4px var(--accent, oklch(33% 0 0)); } .ds-card-top { display: flex; align-items: center; justify-content: space-between; } .ds-card-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 9999px; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 11px; font-weight: 500; background: color-mix(in oklab, var(--tone-sky, oklch(51% 0.11 240)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--tone-sky, oklch(51% 0.11 240)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-card-prog { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-muted, oklch(52% 0 0)); } .ds-card-title { margin: 0; font-family: var(--font-display, 'Geist', sans-serif); font-size: 16.5px; font-weight: 500; line-height: 1.3; letter-spacing: -0.02em; color: var(--foreground, oklch(15% 0 0)); } .ds-card-desc { margin: 0; font-family: var(--font-body, 'Inter', sans-serif); font-size: 13.5px; line-height: 1.5; color: var(--text-secondary, oklch(46% 0 0)); } .ds-prog-track { height: 4px; border-radius: 9999px; background: var(--surface-subtle, oklch(95.8% 0 0)); overflow: hidden; } .ds-prog-fill { height: 100%; border-radius: 9999px; background: var(--control-on, oklch(18% 0 0)); }"
+    },
+    {
+      "name": "Minimalist Desktop Topbar",
+      "kind": "nav",
+      "refersTo": "topbar",
+      "description": "48px frosted desktop bar holding quiet window dots, brand mark, course breadcrumb pill, preflight status, and on-demand drawers.",
+      "html": "<header class=\"ds-topbar\"><span class=\"ds-brand\"><span class=\"ds-brand-mark\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"><path d=\"M5 19V11a7 7 0 0 1 14 0v8\"/><path d=\"M9.5 19v-5.5a2.5 2.5 0 0 1 5 0V19\" opacity=\"0.55\"/></svg></span><span>CodeLab Studio</span></span><span class=\"ds-slash\">/</span><button class=\"ds-course-pill\" type=\"button\"><span class=\"ds-pill-lang\">Go</span><span>Go &amp; GoFrame Practice</span></button><span class=\"ds-topbar-right\"><span class=\"ds-env-pill\"><span class=\"ds-dot-ok\"></span><span>Env 4/4</span></span><button class=\"ds-ai-trigger\" type=\"button\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z\"/></svg><span>AI Tutor</span></button></span></header>",
+      "css": ".ds-topbar { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; background: color-mix(in oklab, var(--background, oklch(100% 0 0)) 94%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-subtle, oklch(96.2% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); } .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display, 'Geist', sans-serif); font-size: 14.5px; font-weight: 500; letter-spacing: -0.02em; color: var(--foreground, oklch(15% 0 0)); } .ds-brand-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--foreground, oklch(15% 0 0)); color: var(--background, oklch(100% 0 0)); display: inline-grid; place-items: center; } .ds-slash { color: var(--text-muted, oklch(52% 0 0)); font-size: 13px; } .ds-course-pill { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: 9999px; background: var(--surface-muted, oklch(97.8% 0 0)); border: 1px solid var(--border, oklch(93% 0 0)); color: var(--foreground, oklch(15% 0 0)); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: border-color 150ms, background 150ms; } .ds-course-pill:hover { border-color: var(--border-strong, oklch(82% 0 0)); background: var(--surface, oklch(100% 0 0)); } .ds-pill-lang { padding: 1px 7px; border-radius: 9999px; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 11px; background: color-mix(in oklab, var(--tone-sky, oklch(51% 0.11 240)) 9%, var(--surface, oklch(100% 0 0))); color: color-mix(in oklab, var(--tone-sky, oklch(51% 0.11 240)) 86%, var(--foreground, oklch(15% 0 0))); } .ds-topbar-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; } .ds-env-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary, oklch(46% 0 0)); } .ds-dot-ok { width: 7px; height: 7px; border-radius: 50%; background: var(--success, oklch(50% 0.12 162)); } .ds-ai-trigger { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 9999px; background: var(--surface, oklch(100% 0 0)); border: 1px solid var(--border, oklch(93% 0 0)); color: var(--foreground, oklch(15% 0 0)); font-size: 12.5px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow-resting, 0 1px 2px oklch(0% 0 0 / 0.03)); } .ds-ai-trigger svg { color: var(--ai, oklch(51% 0.16 290)); } .ds-ai-trigger:hover { background: var(--surface-muted, oklch(97.8% 0 0)); border-color: var(--border-strong, oklch(82% 0 0)); }"
+    },
+    {
+      "name": "Floating Selection Ask-AI Pill",
+      "kind": "custom",
+      "refersTo": "selection-pill",
+      "description": "Contextual 34px floating pill surfacing within 150ms near any >=2-char highlight in Manual, Editor, or Terminal.",
+      "html": "<div class=\"ds-sel-pill\" role=\"toolbar\" aria-label=\"Selection AI actions\"><button class=\"ds-sel-btn\" type=\"button\">Explain code</button><span class=\"ds-sel-sep\" aria-hidden=\"true\"></span><button class=\"ds-sel-btn\" type=\"button\">Find issue</button><span class=\"ds-sel-sep\" aria-hidden=\"true\"></span><button class=\"ds-sel-btn\" type=\"button\">Ask</button></div>",
+      "css": ".ds-sel-pill { display: inline-flex; align-items: center; gap: 2px; height: 34px; padding: 0 5px; border-radius: var(--radius-pill, 9999px); background: var(--surface-raised, oklch(100% 0 0)); border: 1px solid var(--border-strong, oklch(82% 0 0)); box-shadow: var(--shadow-floating, 0 20px 48px oklch(0% 0 0 / 0.11), 0 3px 10px oklch(0% 0 0 / 0.04)); } .ds-sel-btn { height: 26px; padding: 0 10px; border-radius: var(--radius-pill, 9999px); border: 0; background: transparent; color: var(--foreground, oklch(15% 0 0)); font-family: var(--font-body, 'Inter', sans-serif); font-size: 12px; font-weight: 500; cursor: pointer; transition: background 150ms cubic-bezier(0.22, 1, 0.36, 1), color 150ms; } .ds-sel-btn:hover { background: var(--surface-muted, oklch(97.8% 0 0)); color: var(--accent-strong, oklch(18% 0 0)); } .ds-sel-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background, oklch(100% 0 0)), 0 0 0 4px var(--accent, oklch(33% 0 0)); } .ds-sel-sep { width: 1px; height: 14px; background: var(--border, oklch(93% 0 0)); margin: 0 1px; }"
+    },
+    {
+      "name": "ACP Permission Approval Card",
+      "kind": "custom",
+      "refersTo": "acp-permission-card",
+      "description": "Amber-tinted inline governance card rendered in the AI stream whenever an external ACP agent requests file or shell permission.",
+      "html": "<div class=\"ds-acp-card\"><div class=\"ds-acp-head\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/></svg><span>ACP Permission Request</span></div><p class=\"ds-acp-body\">Claude Code requests read-only access to <code class=\"ds-acp-code\">task-api/main.go</code></p><div class=\"ds-acp-actions\"><button class=\"ds-acp-allow\" type=\"button\">Allow Read</button><button class=\"ds-acp-deny\" type=\"button\">Deny</button></div></div>",
+      "css": ".ds-acp-card { display: flex; flex-direction: column; gap: 8px; max-width: 340px; padding: 12px 14px; border-radius: 14px; background: color-mix(in oklab, var(--warning, oklch(50% 0.12 68)) 9%, var(--surface, oklch(100% 0 0))); border: 1px solid color-mix(in oklab, var(--warning, oklch(50% 0.12 68)) 28%, var(--border, oklch(93% 0 0))); font-family: var(--font-body, 'Inter', sans-serif); font-size: 12.5px; color: var(--foreground, oklch(15% 0 0)); } .ds-acp-head { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: color-mix(in oklab, var(--warning, oklch(50% 0.12 68)) 84%, var(--foreground, oklch(15% 0 0))); } .ds-acp-body { margin: 0; line-height: 1.5; } .ds-acp-code { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 11.5px; padding: 1px 5px; border-radius: 6px; background: var(--surface, oklch(100% 0 0)); border: 1px solid var(--border, oklch(93% 0 0)); } .ds-acp-actions { display: flex; align-items: center; gap: 6px; } .ds-acp-allow { height: 28px; padding: 0 12px; border-radius: 9999px; border: 0; background: var(--control-on, oklch(18% 0 0)); color: var(--control-glyph, oklch(100% 0 0)); font-size: 12px; font-weight: 500; cursor: pointer; } .ds-acp-allow:hover { opacity: 0.88; } .ds-acp-deny { height: 28px; padding: 0 12px; border-radius: 9999px; border: 1px solid var(--border, oklch(93% 0 0)); background: var(--surface, oklch(100% 0 0)); color: var(--foreground, oklch(15% 0 0)); font-size: 12px; font-weight: 500; cursor: pointer; } .ds-acp-deny:hover { background: var(--surface-muted, oklch(97.8% 0 0)); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Atelier",
+    "overview": "CodeLab Studio is designed as a calm, gallery-lit engineering bench where generous neutral whitespace frames editorial exercises, live source code, and deterministic verification without visual noise. Because learners spend hours inside the workbench reading technical steps, editing code, and diagnosing terminal output, the interface deliberately steps back: pure achromatic surfaces carry the chrome so syntax highlighting, pass/fail states, and language tags read immediately at a glance.\n\nThe system follows progressive disclosure as an architectural discipline rather than an afterthought. Every screen opens to a single clear priority—one centered entry on Welcome Home, two spacious panes in the default Workbench—while secondary instruments (project file tree, auxiliary debug commands, reflection prompts, and the AI/ACP tutor drawer) stay tucked away until summoned. Confirmed visual rejections include heavy multi-chrome IDE toolbars, blue-gray tinted dark modes that muddy syntax colors, and non-actionable decorative stat walls.",
+    "keyCharacteristics": [
+      "Pure achromatic Light (`Gallery White`) and Dark (`Obsidian Canvas`) neutral scales calibrated to WCAG 2.1 AA (≥ 4.5:1) across every foreground and surface pair.",
+      "Monochrome-first default controls backed by 8 user-switchable Arc `data-accent` presets (`neutral`, `violet`, `blue`, `green`, `amber`, `orange`, `coral`, `rose`) tuned separately for Light and Dark themes.",
+      "Cool pastel categorical and status tones rendered through an `oklab` soft-wash formula so badges signal meaning without visual shouting.",
+      "Medium-weight editorial typography (`Geist`) paired with neutral UI sans (`Inter`) and tabular code/metrics (`JetBrains Mono`), animated with critically damped easing and full `prefers-reduced-motion` support."
+    ],
+    "rules": [
+      {
+        "name": "The Zero-Hue Neutral Rule",
+        "body": "Every background, surface, sidebar, border, and neutral text token uses strictly `0` chroma (`oklch(L% 0 0)`). Blue-gray and warm-gray chrome tints are prohibited so syntax highlighting and status hues stay true.",
+        "section": "colors"
+      },
+      {
+        "name": "The Pastel Tint Formula Rule",
+        "body": "Categorical badges, language tags, context chips, and soft status buttons never use raw saturated fills; they derive their tint via `color-mix(in oklab, var(--tone) var(--badge-tint), var(--surface))` (`9%` Light / `14%` Dark) paired with `var(--badge-ink)` (`86%` Light / `94%` Dark) foreground ink.",
+        "section": "colors"
+      },
+      {
+        "name": "The Monochrome Default Rule",
+        "body": "Out of the box, primary actions, progress fills, and chrome remain monochrome (`carbon-control` / `chalk-control-dark`), keeping chromatic ink reserved for live status and user-opted `data-accent` customization.",
+        "section": "colors"
+      },
+      {
+        "name": "The Medium-Ceiling Rule",
+        "body": "Display and UI headings stop at weight `500` (Medium) rather than `700` (Bold). Hierarchy comes from scale, tight negative tracking (`-0.02em` to `-0.03em`), and generous whitespace rather than heavy strokes.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "All numeric progress ratios (`4/10`), test latencies (`4ms`), line/column readouts, and AI token budgets (`~786 tok`) use `JetBrains Mono` with `font-variant-numeric: tabular-nums` so live updates never jitter horizontally.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two-Pane Default Rule",
+        "body": "Opening a course always starts in a two-pane workbench (3-step manual + editor/terminal). The file tree, secondary commands, reflections, and AI drawer never open unasked on initial load.",
+        "section": "layout"
+      },
+      {
+        "name": "The 520px Editor Floor Rule",
+        "body": "Secondary drawers must yield before the code editor is cramped: auto-collapse the file tree at `≤ 1360px` and float the AI drawer as an overlay below `1280px`.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Panes, command cards, verification lists, and disclosures sit flat at rest with `1px` borders. Shadows appear only on interactive lift or transient floating overlays.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Scrim-Only Blur Rule",
+        "body": "Reserve `backdrop-filter: blur()` for the translucent desktop topbar (`12px`) and modal/drawer scrims (`8px`); never blur scrolling editor or manual panes.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep all neutral backgrounds, borders, and chrome strictly zero-chroma (`oklch(L% 0 0)`) in both Light and Dark themes.",
+      "Do use the `oklab` soft-tint recipe (`9%` Light / `14%` Dark) for every language tag, status badge, context chip, and soft semantic button so every state clears WCAG 2.1 AA (≥ 4.5:1).",
+      "Do keep command headers single-line (`flex-wrap: nowrap`) with truncated `cwd` pills (`max-width: 130px`) so narrow manual panes never wrap action buttons.",
+      "Do anchor transient toast notifications at top-center (`top: 58px`, max 2 visible) so they never overlap the bottom-right AI composer or dialog action bars.",
+      "Do honor `prefers-reduced-motion: reduce` by collapsing all transition and animation durations to `0ms` / `0.01ms`."
+    ],
+    "donts": [
+      "Don't introduce blue-gray or tinted dark-mode surfaces; Dark mode stays strictly pure achromatic Obsidian (`obsidian-canvas` through `obsidian-muted`).",
+      "Don't place the Atmospheric Hero Mesh (`--arc-hero-bg`) inside the coding workbench, editor, or drawers; keep it exclusive to the Welcome Home hero panel.",
+      "Don't open the file tree, auxiliary debug commands, reflection box, or AI tutor drawer by default when entering a workbench exercise.",
+      "Don't add heavy bold (`700`) display weights or non-actionable dashboard statistic walls that compete with the single primary entry or 3-step manual flow.",
+      "Don't apply drop shadows to resting workbench panes, command blocks, or verification cards; rely on `1px` hairlines at rest."
+    ]
+  }
+}
