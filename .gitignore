@@ -16,3 +16,12 @@ GEMINI.md
 .impeccable/
 /DESIGN.md
 /PRODUCT.md
+
+# Build & workspace artifacts (U0-1)
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.audit/
+*.tsbuildinfo
+

@@ -1,0 +1,85 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  darkMode: ['selector', '[data-theme="dark"]'],
+  theme: {
+    extend: {
+      colors: {
+        background: 'var(--background)',
+        surface: {
+          DEFAULT: 'var(--surface)',
+          raised: 'var(--surface-raised)',
+          muted: 'var(--surface-muted)',
+          subtle: 'var(--surface-subtle)',
+        },
+        sidebar: 'var(--sidebar-fill)',
+        foreground: 'var(--foreground)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-muted': 'var(--text-muted)',
+        border: {
+          DEFAULT: 'var(--border)',
+          subtle: 'var(--border-subtle)',
+          strong: 'var(--border-strong)',
+        },
+        accent: {
+          DEFAULT: 'var(--accent)',
+          strong: 'var(--accent-strong)',
+          subtle: 'var(--accent-subtle)',
+          foreground: 'var(--accent-foreground)',
+        },
+        control: {
+          on: 'var(--control-on)',
+          glyph: 'var(--control-glyph)',
+          track: 'var(--control-track)',
+        },
+        tone: {
+          teal: 'var(--tone-teal)',
+          sky: 'var(--tone-sky)',
+          orchid: 'var(--tone-orchid)',
+          violet: 'var(--tone-violet)',
+          rose: 'var(--tone-rose)',
+          amber: 'var(--tone-amber)',
+          green: 'var(--tone-green)',
+        },
+        success: 'var(--success)',
+        warning: 'var(--warning)',
+        danger: 'var(--danger)',
+        info: 'var(--info)',
+        ai: 'var(--ai)',
+      },
+      fontFamily: {
+        display: ['Geist', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Noto Sans SC', 'sans-serif'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Noto Sans SC', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+      },
+      borderRadius: {
+        xs: 'var(--radius-xs)',
+        control: 'var(--radius-control)',
+        'control-lg': 'var(--radius-control-lg)',
+        panel: 'var(--radius-panel)',
+        surface: 'var(--radius-surface)',
+        pill: 'var(--radius-pill)',
+      },
+      boxShadow: {
+        resting: 'var(--shadow-resting)',
+        raised: 'var(--shadow-raised)',
+        floating: 'var(--shadow-floating)',
+        focus: 'var(--focus-outline)',
+      },
+      transitionTimingFunction: {
+        enter: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        standard: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        exit: 'cubic-bezier(0.7, 0, 0.84, 0)',
+        drawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      },
+      transitionDuration: {
+        instant: '100ms',
+        fast: '150ms',
+        standard: '220ms',
+        considered: '360ms',
+        spring: '440ms',
+      },
+      screens: { md: '1024px', lg: '1280px', xl: '1440px', '2xl': '1920px' },
+    },
+  },
+};
