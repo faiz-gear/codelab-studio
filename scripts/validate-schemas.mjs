@@ -217,6 +217,15 @@ for (const fileName of REQUIRED_SCHEMAS) {
   loadedSchemas.set(fileName, parsed);
 }
 
+function readJsonFixture(relPath) {
+  const fullPath = path.join(repoRoot, relPath);
+  if (!fs.existsSync(fullPath)) {
+    console.error(`FAIL missing fixture file: ${fullPath}`);
+    process.exit(1);
+  }
+  return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+}
+
 const VALID_FIXTURES = [
   {
     name: 'codelab.json (Go/GoFrame pack)',
@@ -233,6 +242,50 @@ const VALID_FIXTURES = [
       dependencies: ['go>=1.22'],
       chapters: [{ chapterId: 'ex-1', title: 'Exercise 1: /healthz' }],
     },
+  },
+  {
+    name: 'codelab.json (extended CourseChapterRef with kind/match/defaultCwd/entryFile)',
+    schema: 'codelab-pack.v1.schema.json',
+    data: {
+      schemaVersion: '1.0',
+      courseId: 'go-goframe-practice',
+      title: 'Go & GoFrame Practical Handbook',
+      description: 'Exercises 0-9 from first principles',
+      language: 'go',
+      entryFile: 'README.md',
+      chapters: [
+        {
+          chapterId: 'ex-0',
+          title: 'Overview',
+          kind: 'reading',
+          match: {
+            anchor: 'overview',
+            headingExact: 'Overview',
+            headingPrefix: 'Over',
+          },
+          defaultCwd: null,
+          entryFile: null,
+        },
+        {
+          chapterId: 'ex-2',
+          title: 'Exercise 2',
+          kind: 'exercise',
+          match: { headingPrefix: 'Exercise 2' },
+          defaultCwd: 'task-api',
+          entryFile: 'task-api/main.go',
+        },
+      ],
+    },
+  },
+  {
+    name: 'builtin-courses/go-goframe-practice/codelab.json',
+    schema: 'codelab-pack.v1.schema.json',
+    data: readJsonFixture('builtin-courses/go-goframe-practice/codelab.json'),
+  },
+  {
+    name: 'builtin-courses/go-goframe-practice/.codelab-checks.json',
+    schema: 'codelab-checks.v1.schema.json',
+    data: readJsonFixture('builtin-courses/go-goframe-practice/.codelab-checks.json'),
   },
   {
     name: '.codelab-checks.json (PRD.md §4 M1 verbatim multi-chapter)',
@@ -414,6 +467,25 @@ const INVALID_FIXTURES = [
       description: 'Desc',
       language: 'go',
       entryFile: 'README.md',
+    },
+  },
+  {
+    name: 'codelab-pack with invalid ChapterKind "quiz"',
+    schema: 'codelab-pack.v1.schema.json',
+    data: {
+      schemaVersion: '1.0',
+      courseId: 'demo',
+      title: 'Demo',
+      description: 'Desc',
+      language: 'go',
+      entryFile: 'README.md',
+      chapters: [
+        {
+          chapterId: 'ex-1',
+          title: 'Exercise 1',
+          kind: 'quiz',
+        },
+      ],
     },
   },
   {

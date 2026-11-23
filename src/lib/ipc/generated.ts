@@ -130,7 +130,11 @@ export type BootstrapState = { epoch: SessionEpoch, config: GlobalConfigView, re
 
 export type PackSchemaVersion = "1.0";
 
-export type CourseChapterRef = { chapterId: ChapterId, title: string, entryFile: RelWorkspacePath | null, };
+export type ChapterKind = "exercise" | "reading";
+
+export type ChapterMatchSpec = { anchor: string | null, headingExact: string | null, headingPrefix: string | null, };
+
+export type CourseChapterRef = { chapterId: ChapterId, title: string, kind: ChapterKind | null, match: ChapterMatchSpec | null, defaultCwd: RelWorkspacePath | null, entryFile: RelWorkspacePath | null, };
 
 export type CourseManifest = { schemaVersion: PackSchemaVersion, courseId: string, title: string, description: string, language: Language, version: string | null, author: string | null, entryFile: RelWorkspacePath, starterDir: RelWorkspacePath | null, checksFile: RelWorkspacePath | null, dependencies: Array<string>, chapters: Array<CourseChapterRef>, };
 
@@ -160,9 +164,25 @@ export type SelfCheckItem = { id: string, title: string, checkedByDefault: boole
 
 export type ChapterThreeStepFlow = { step1PrimaryCommands: Array<CommandBlockId>, step2ReferenceBlocks: Array<ReferenceCodeBlock>, step3SelfChecks: Array<SelfCheckItem>, secondaryCommands: Array<CommandBlockId>, reflectionNodes: Array<MarkdownNode>, };
 
-export type ParsedChapter = { chapterId: ChapterId, index: number, title: string, goal: string | null, nodes: Array<MarkdownNode>, commandBlocks: Array<CommandBlock>, selfCheckItems: Array<string>, threeStep: ChapterThreeStepFlow, };
+export type ParsedChapter = { chapterId: ChapterId, index: number, kind: ChapterKind, title: string, goal: string | null, defaultCwd: RelWorkspacePath | null, entryFile: RelWorkspacePath | null, nodes: Array<MarkdownNode>, commandBlocks: Array<CommandBlock>, selfCheckItems: Array<string>, threeStep: ChapterThreeStepFlow, };
 
 export type ParsedCourse = { courseId: string, title: string, language: Language | null, introNodes: Array<MarkdownNode>, chapters: Array<ParsedChapter>, };
+
+export type CourseSourceInput = { "kind": "builtin", courseId: string, } | { "kind": "localMarkdown", filePath: string, } | { "kind": "localPackDir", dirPath: string, } | { "kind": "gitRepo", url: string, gitRef: string | null, refresh: boolean, };
+
+export type CourseChapterPreview = { chapterId: ChapterId, index: number, kind: ChapterKind, title: string, commandCount: number, autoCheckCount: number, selfCheckCount: number, defaultCwd: RelWorkspacePath | null, };
+
+export type CommandSummary = { id: CommandBlockId, chapterId: ChapterId, command: string, cwd: RelWorkspacePath | null, role: PtyRole, isSecondary: boolean, };
+
+export type PackValidationIssue = { file: string, message: string, };
+
+export type CourseInspectResult = { source: CourseSourceRef, sourceKey: string, packFingerprint: string, requiresTrust: boolean, trusted: boolean, manifest: CourseManifest | null, checks: ChecksSpec | null, course: ParsedCourse, starterFiles: Array<RelWorkspacePath>, chaptersPreview: Array<CourseChapterPreview>, commandSummaries: Array<CommandSummary>, validationIssues: Array<PackValidationIssue>, };
+
+export type OpenWorkspaceReq = { source: CourseSourceInput, workspaceRoot: string, createIfMissing: boolean, acceptTrust: boolean, expectedFingerprint: string | null, };
+
+export type OpenedWorkspaceView = { epoch: SessionEpoch, workspaceMeta: WorkspaceMeta, progress: ProgressState, course: ParsedCourse, manifest: CourseManifest | null, checks: ChecksSpec | null, newlyHydratedFiles: Array<RelWorkspacePath>, skippedExistingFiles: Array<RelWorkspacePath>, recoveredFromBackup: Array<string>, };
+
+export type AuthorPreviewResult = { course: ParsedCourse, checks: ChecksSpec | null, validationIssues: Array<PackValidationIssue>, };
 
 export type MetricEventName = "app_launched" | "course_opened" | "preflight_executed" | "runtime_installed" | "cmd_block_clicked" | "cmd_risk_modal_action" | "cmd_finished" | "file_tree_open" | "selection_ai_clicked" | "ai_mode_switched" | "acp_permission_decision" | "verify_chapter_clicked" | "chapter_marked_done";
 

@@ -22,4 +22,7 @@ export const enUS = {
   "error.notReady": "Environment is not ready yet. Please try again.",
   "error.markdownLimitExceeded": "Markdown handbook size ({actualBytes} bytes) exceeds the {maxBytes}-byte limit.",
   "error.fileTooLargeOrBinary": "File is too large or not valid UTF-8 text: {path}",
+  "error.externalPackUntrusted": "External course pack is not trusted yet; confirm trust before opening: {source}",
+  "error.schemaValidationFailed": "Schema validation failed for {file}: {detail}",
+  "error.gitImportFailed": "Failed to import Git course pack: {detail}",
 } satisfies Record<MessageKey, string>;

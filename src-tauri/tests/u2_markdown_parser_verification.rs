@@ -440,6 +440,10 @@ cd app/sub
 ```
 
 ```bash
+pwd
+```
+
+```bash
 cd /etc
 ```
 
@@ -452,6 +456,10 @@ cd app/sub
 ```
 
 ```bash
+pwd
+```
+
+```bash
 cd ~
 ```
 
@@ -461,6 +469,10 @@ pwd
 
 ```bash
 cd app/sub
+```
+
+```bash
+pwd
 ```
 
 ```bash
@@ -510,25 +522,40 @@ pwd
         cmds[7].cwd.as_ref().map(RelWorkspacePath::as_str),
         Some("app/sub")
     );
-    assert_eq!(cmds[8].cwd, None, "cd /etc must reset non-root cwd");
+    assert_eq!(
+        cmds[8].cwd, None,
+        "leading cd /etc resets block cwd to root"
+    );
+    assert_eq!(
+        cmds[9].cwd, None,
+        "cd /etc must keep post-block cwd at root"
+    );
 
     assert_eq!(
-        cmds[10].cwd.as_ref().map(RelWorkspacePath::as_str),
+        cmds[11].cwd.as_ref().map(RelWorkspacePath::as_str),
         Some("app/sub")
     );
-    assert_eq!(cmds[11].cwd, None, "cd ~ must reset non-root cwd");
+    assert_eq!(cmds[12].cwd, None, "leading cd ~ resets block cwd to root");
+    assert_eq!(cmds[13].cwd, None, "cd ~ must keep post-block cwd at root");
 
     assert_eq!(
-        cmds[13].cwd.as_ref().map(RelWorkspacePath::as_str),
+        cmds[15].cwd.as_ref().map(RelWorkspacePath::as_str),
         Some("app/sub")
     );
-    assert_eq!(cmds[14].cwd, None, "cd $HOME must reset non-root cwd");
+    assert_eq!(
+        cmds[16].cwd, None,
+        "leading cd $HOME resets block cwd to root"
+    );
+    assert_eq!(
+        cmds[17].cwd, None,
+        "cd $HOME must keep post-block cwd at root"
+    );
 
     assert_eq!(
-        cmds[16].cwd.as_ref().map(RelWorkspacePath::as_str),
+        cmds[19].cwd.as_ref().map(RelWorkspacePath::as_str),
         Some("app/sub")
     );
-    assert_eq!(cmds[17].cwd, None, "cd - must reset non-root cwd");
+    assert_eq!(cmds[20].cwd, None, "cd - must reset non-root cwd");
 }
 
 #[test]

@@ -4,15 +4,81 @@
     "ChapterId": {
       "type": "string"
     },
+    "ChapterKind": {
+      "enum": [
+        "exercise",
+        "reading"
+      ],
+      "type": "string"
+    },
+    "ChapterMatchSpec": {
+      "properties": {
+        "anchor": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headingExact": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headingPrefix": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "CourseChapterRef": {
       "properties": {
         "chapterId": {
           "$ref": "#/definitions/ChapterId"
         },
+        "defaultCwd": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RelWorkspacePath"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "entryFile": {
           "anyOf": [
             {
               "$ref": "#/definitions/RelWorkspacePath"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChapterKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "match": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChapterMatchSpec"
             },
             {
               "type": "null"

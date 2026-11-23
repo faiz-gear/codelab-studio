@@ -25,7 +25,10 @@ export type MessageKey =
   | "error.invalidInput"
   | "error.notReady"
   | "error.markdownLimitExceeded"
-  | "error.fileTooLargeOrBinary";
+  | "error.fileTooLargeOrBinary"
+  | "error.externalPackUntrusted"
+  | "error.schemaValidationFailed"
+  | "error.gitImportFailed";
 
 export type MessageParams = Readonly<Record<string, string | number>>;
 

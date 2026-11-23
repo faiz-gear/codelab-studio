@@ -1,0 +1,287 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "go-goframe-practice",
+  "language": "go",
+  "chapters": [
+    {
+      "chapterId": "ex-0",
+      "checks": [
+        {
+          "id": "s1",
+          "title": "POST /tasks 正常创建返回 201，标题为空等非法输入返回 400",
+          "type": "self_check"
+        },
+        {
+          "id": "s2",
+          "title": "GET /tasks/{id} 命中返回 200，不存在返回 404",
+          "type": "self_check"
+        },
+        {
+          "id": "s3",
+          "title": "GET /tasks 无任务时返回 200 与空数组 []",
+          "type": "self_check"
+        },
+        {
+          "id": "s4",
+          "title": "PATCH /tasks/{id} 修改成功返回 200，非法输入返回 400，不存在返回 404",
+          "type": "self_check"
+        },
+        {
+          "id": "s5",
+          "title": "POST /tasks/{id}/complete 幂等完成返回 200，不存在返回 404",
+          "type": "self_check"
+        },
+        {
+          "id": "s6",
+          "title": "DELETE /tasks/{id} 删除成功返回 204，不存在返回 404",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-1",
+      "requiresDaemon": {
+        "label": "go run .",
+        "port": 8080,
+        "serviceKey": "task-api"
+      },
+      "checks": [
+        {
+          "id": "v1",
+          "title": "GET /healthz 返回 200 {\"status\":\"ok\"}",
+          "type": "http_assert",
+          "request": {
+            "method": "GET",
+            "url": "http://127.0.0.1:8080/healthz"
+          },
+          "expect": {
+            "status": 200,
+            "bodyContains": "\"status\":\"ok\""
+          }
+        },
+        {
+          "id": "v2",
+          "title": "POST /healthz 返回 405 Method Not Allowed",
+          "type": "http_assert",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:8080/healthz"
+          },
+          "expect": {
+            "status": 405
+          }
+        },
+        {
+          "id": "v3",
+          "title": "GET /missing 返回 404 Not Found",
+          "type": "http_assert",
+          "request": {
+            "method": "GET",
+            "url": "http://127.0.0.1:8080/missing"
+          },
+          "expect": {
+            "status": 404
+          }
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-2",
+      "requiresDaemon": {
+        "label": "go run .",
+        "port": 8080,
+        "serviceKey": "task-api"
+      },
+      "checks": [
+        {
+          "id": "v1",
+          "title": "GET /tasks 返回 200",
+          "type": "http_assert",
+          "request": {
+            "method": "GET",
+            "url": "http://127.0.0.1:8080/tasks"
+          },
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "id": "v2",
+          "title": "POST /tasks 创建任务返回 201 且状态为 pending",
+          "type": "http_assert",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:8080/tasks",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": "{\"title\":\"学习 Go 的 HTTP 服务\"}"
+          },
+          "expect": {
+            "status": 201,
+            "bodyContains": "\"status\":\"pending\""
+          }
+        },
+        {
+          "id": "s1",
+          "title": "已完成内存版任务 CRUD 全流程自测（含 400/404 与幂等完成）",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-3",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "go test -json -race ./... 零竞态通过",
+          "type": "command_test",
+          "cwd": "task-api",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 10,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-4",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "go test -json -race ./... 零竞态通过",
+          "type": "command_test",
+          "cwd": "task-api",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 10,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ]
+        },
+        {
+          "id": "s1",
+          "title": "已验证 SQLite 数据跨越进程重启持久保留，且所有 SQL 均为参数化查询",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-5",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "go test -json -race ./... 零竞态通过",
+          "type": "command_test",
+          "cwd": "task-api",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 10,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ]
+        },
+        {
+          "id": "s1",
+          "title": "已验证事务回滚回归测试通过，且事件表包含 UNIQUE(task_id, kind) 约束",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-6",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "go test -json -race ./... 零竞态通过",
+          "type": "command_test",
+          "cwd": "task-api",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 10,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ]
+        },
+        {
+          "id": "s1",
+          "title": "已验证客户端取消请求时下游工作立即停止，且支持 Server.Shutdown 优雅退出",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-7",
+      "requiresDaemon": {
+        "label": "go run main.go",
+        "port": 8000,
+        "serviceKey": "task-api-gf"
+      },
+      "checks": [
+        {
+          "id": "v1",
+          "title": "GET /tasks 返回 200",
+          "type": "http_assert",
+          "request": {
+            "method": "GET",
+            "url": "http://127.0.0.1:8000/tasks"
+          },
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "id": "s1",
+          "title": "已验证 GoFrame HTTP 层响应契约与练习 0 规则一致",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-8",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "go test -json -race ./... 零竞态通过",
+          "type": "command_test",
+          "cwd": "task-api-gf",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 10,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ]
+        },
+        {
+          "id": "s1",
+          "title": "已验证 GoFrame gdb 事务回滚与 SQLite 持久化行为一致",
+          "type": "self_check"
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-9",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "go test -json -race ./... 零竞态通过",
+          "type": "command_test",
+          "cwd": "task-api-gf",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 10,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ]
+        },
+        {
+          "id": "s1",
+          "title": "已完成配置抽离、请求日志核对与全新空库交付验证",
+          "type": "self_check"
+        }
+      ]
+    }
+  ]
+}

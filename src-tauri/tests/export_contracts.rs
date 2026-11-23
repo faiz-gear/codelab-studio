@@ -7,9 +7,11 @@ use codelab_studio_lib::domain::ai::{
     ContextChipKind, FinishReason, SelectionSource, TeachingMode, ToolCallStatus,
 };
 use codelab_studio_lib::domain::course::{
-    ChapterChecksSpec, ChapterThreeStepFlow, CheckSpec, ChecksSpec, CommandBlock, CourseChapterRef,
-    CourseManifest, DaemonRequirement, HttpExpectSpec, HttpRequestSpec, MarkdownNode,
-    MultiChapterChecksSpec, PackSchemaVersion, ParsedChapter, ParsedCourse, ReferenceCodeBlock,
+    AuthorPreviewResult, ChapterChecksSpec, ChapterKind, ChapterMatchSpec, ChapterThreeStepFlow,
+    CheckSpec, ChecksSpec, CommandBlock, CommandSummary, CourseChapterPreview, CourseChapterRef,
+    CourseInspectResult, CourseManifest, CourseSourceInput, DaemonRequirement, HttpExpectSpec,
+    HttpRequestSpec, MarkdownNode, MultiChapterChecksSpec, OpenWorkspaceReq, OpenedWorkspaceView,
+    PackSchemaVersion, PackValidationIssue, ParsedChapter, ParsedCourse, ReferenceCodeBlock,
     SelfCheckItem, SingleChapterChecksSpec,
 };
 use codelab_studio_lib::domain::error::{AppError, ErrorCode};
@@ -175,6 +177,8 @@ fn export_bindings() {
         format_ts_decl::<BuiltinCourseSummary>(),
         format_ts_decl::<BootstrapState>(),
         format_ts_decl::<PackSchemaVersion>(),
+        format_ts_decl::<ChapterKind>(),
+        format_ts_decl::<ChapterMatchSpec>(),
         format_ts_decl::<CourseChapterRef>(),
         format_ts_decl::<CourseManifest>(),
         format_ts_decl::<DaemonRequirement>(),
@@ -192,6 +196,14 @@ fn export_bindings() {
         format_ts_decl::<ChapterThreeStepFlow>(),
         format_ts_decl::<ParsedChapter>(),
         format_ts_decl::<ParsedCourse>(),
+        format_ts_decl::<CourseSourceInput>(),
+        format_ts_decl::<CourseChapterPreview>(),
+        format_ts_decl::<CommandSummary>(),
+        format_ts_decl::<PackValidationIssue>(),
+        format_ts_decl::<CourseInspectResult>(),
+        format_ts_decl::<OpenWorkspaceReq>(),
+        format_ts_decl::<OpenedWorkspaceView>(),
+        format_ts_decl::<AuthorPreviewResult>(),
         format_ts_decl::<MetricEventName>(),
         format_ts_decl::<MetricEvent>(),
         format_ts_decl::<MetricValue>(),

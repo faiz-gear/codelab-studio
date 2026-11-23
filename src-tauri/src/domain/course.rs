@@ -8,9 +8,10 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
-use crate::domain::ids::{ChapterId, CommandBlockId, RelWorkspacePath};
+use crate::domain::ids::{ChapterId, CommandBlockId, RelWorkspacePath, SessionEpoch};
 use crate::domain::pty::PtyRole;
 use crate::domain::runtime::Language;
+use crate::domain::workspace::{CourseSourceRef, ProgressState, WorkspaceMeta};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TS)]
 pub struct PackSchemaVersion(#[ts(type = "\"1.0\"")] &'static str);
@@ -74,11 +75,38 @@ impl JsonSchema for PackSchemaVersion {
     }
 }
 
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ChapterKind {
+    #[default]
+    Exercise,
+    Reading,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterMatchSpec {
+    #[serde(default)]
+    pub anchor: Option<String>,
+    #[serde(default)]
+    pub heading_exact: Option<String>,
+    #[serde(default)]
+    pub heading_prefix: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CourseChapterRef {
     pub chapter_id: ChapterId,
     pub title: String,
+    #[serde(default)]
+    pub kind: Option<ChapterKind>,
+    #[serde(default, rename = "match")]
+    pub heading_match: Option<ChapterMatchSpec>,
+    #[serde(default)]
+    pub default_cwd: Option<RelWorkspacePath>,
     #[serde(default)]
     pub entry_file: Option<RelWorkspacePath>,
 }
@@ -351,8 +379,14 @@ pub struct ChapterThreeStepFlow {
 pub struct ParsedChapter {
     pub chapter_id: ChapterId,
     pub index: u32,
+    #[serde(default)]
+    pub kind: ChapterKind,
     pub title: String,
     pub goal: Option<String>,
+    #[serde(default)]
+    pub default_cwd: Option<RelWorkspacePath>,
+    #[serde(default)]
+    pub entry_file: Option<RelWorkspacePath>,
     pub nodes: Vec<MarkdownNode>,
     pub command_blocks: Vec<CommandBlock>,
     pub self_check_items: Vec<String>,
@@ -368,6 +402,108 @@ pub struct ParsedCourse {
     #[serde(default)]
     pub intro_nodes: Vec<MarkdownNode>,
     pub chapters: Vec<ParsedChapter>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CourseSourceInput {
+    #[serde(rename_all = "camelCase")]
+    Builtin { course_id: String },
+    #[serde(rename_all = "camelCase")]
+    LocalMarkdown { file_path: String },
+    #[serde(rename_all = "camelCase")]
+    LocalPackDir { dir_path: String },
+    #[serde(rename_all = "camelCase")]
+    GitRepo {
+        url: String,
+        #[serde(default)]
+        git_ref: Option<String>,
+        #[serde(default)]
+        refresh: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseChapterPreview {
+    pub chapter_id: ChapterId,
+    pub index: u32,
+    pub kind: ChapterKind,
+    pub title: String,
+    pub command_count: u32,
+    pub auto_check_count: u32,
+    pub self_check_count: u32,
+    pub default_cwd: Option<RelWorkspacePath>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandSummary {
+    pub id: CommandBlockId,
+    pub chapter_id: ChapterId,
+    pub command: String,
+    pub cwd: Option<RelWorkspacePath>,
+    pub role: PtyRole,
+    pub is_secondary: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PackValidationIssue {
+    pub file: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseInspectResult {
+    pub source: CourseSourceRef,
+    pub source_key: String,
+    pub pack_fingerprint: String,
+    pub requires_trust: bool,
+    pub trusted: bool,
+    pub manifest: Option<CourseManifest>,
+    pub checks: Option<ChecksSpec>,
+    pub course: ParsedCourse,
+    pub starter_files: Vec<RelWorkspacePath>,
+    pub chapters_preview: Vec<CourseChapterPreview>,
+    pub command_summaries: Vec<CommandSummary>,
+    pub validation_issues: Vec<PackValidationIssue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWorkspaceReq {
+    pub source: CourseSourceInput,
+    pub workspace_root: String,
+    #[serde(default)]
+    pub create_if_missing: bool,
+    #[serde(default)]
+    pub accept_trust: bool,
+    #[serde(default)]
+    pub expected_fingerprint: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedWorkspaceView {
+    pub epoch: SessionEpoch,
+    pub workspace_meta: WorkspaceMeta,
+    pub progress: ProgressState,
+    pub course: ParsedCourse,
+    pub manifest: Option<CourseManifest>,
+    pub checks: Option<ChecksSpec>,
+    pub newly_hydrated_files: Vec<RelWorkspacePath>,
+    pub skipped_existing_files: Vec<RelWorkspacePath>,
+    pub recovered_from_backup: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorPreviewResult {
+    pub course: ParsedCourse,
+    pub checks: Option<ChecksSpec>,
+    pub validation_issues: Vec<PackValidationIssue>,
 }
 
 #[cfg(test)]
@@ -467,5 +603,62 @@ mod tests {
             ]
         }"#;
         assert!(serde_json::from_str::<ChecksSpec>(invalid).is_err());
+    }
+
+    #[test]
+    fn course_chapter_ref_round_trips_legacy_and_extended_json() {
+        let legacy = r#"{"chapterId":"ex-1","title":"Ex 1"}"#;
+        let parsed_legacy: CourseChapterRef = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed_legacy.chapter_id, ChapterId("ex-1".to_owned()));
+        assert_eq!(parsed_legacy.title, "Ex 1");
+        assert_eq!(parsed_legacy.kind, None);
+        assert_eq!(parsed_legacy.heading_match, None);
+        assert_eq!(parsed_legacy.default_cwd, None);
+        assert_eq!(parsed_legacy.entry_file, None);
+        let legacy_rt: CourseChapterRef =
+            serde_json::from_str(&serde_json::to_string(&parsed_legacy).unwrap()).unwrap();
+        assert_eq!(parsed_legacy, legacy_rt);
+
+        let extended = r#"{
+            "chapterId": "ex-2",
+            "title": "练习 2：内存版任务 CRUD",
+            "kind": "exercise",
+            "match": {
+                "anchor": "ex-2",
+                "headingExact": "练习 2：内存版任务 CRUD",
+                "headingPrefix": "练习 2："
+            },
+            "defaultCwd": "task-api",
+            "entryFile": "task-api/main.go"
+        }"#;
+        let parsed_extended: CourseChapterRef = serde_json::from_str(extended).unwrap();
+        assert_eq!(parsed_extended.chapter_id, ChapterId("ex-2".to_owned()));
+        assert_eq!(parsed_extended.kind, Some(ChapterKind::Exercise));
+        assert_eq!(
+            parsed_extended.heading_match,
+            Some(ChapterMatchSpec {
+                anchor: Some("ex-2".to_owned()),
+                heading_exact: Some("练习 2：内存版任务 CRUD".to_owned()),
+                heading_prefix: Some("练习 2：".to_owned()),
+            })
+        );
+        assert_eq!(
+            parsed_extended
+                .default_cwd
+                .as_ref()
+                .map(RelWorkspacePath::as_str),
+            Some("task-api")
+        );
+        assert_eq!(
+            parsed_extended
+                .entry_file
+                .as_ref()
+                .map(RelWorkspacePath::as_str),
+            Some("task-api/main.go")
+        );
+        let serialized_extended = serde_json::to_string(&parsed_extended).unwrap();
+        assert!(serialized_extended.contains("\"match\""));
+        let extended_rt: CourseChapterRef = serde_json::from_str(&serialized_extended).unwrap();
+        assert_eq!(parsed_extended, extended_rt);
     }
 }

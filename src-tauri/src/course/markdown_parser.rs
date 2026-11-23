@@ -110,6 +110,7 @@ struct AstBuilder {
     intro_nodes: Vec<CourseNode>,
     chapters: Vec<CourseChapterRaw>,
     frames: Vec<Frame>,
+    pending_chapter_anchor: Option<String>,
     suppressed_tag: Option<SuppressedTag>,
     suppressed_block_depth: usize,
 }
@@ -121,6 +122,7 @@ impl AstBuilder {
             intro_nodes: Vec::new(),
             chapters: Vec::new(),
             frames: Vec::new(),
+            pending_chapter_anchor: None,
             suppressed_tag: None,
             suppressed_block_depth: 0,
         }
@@ -231,7 +233,12 @@ impl AstBuilder {
                 }
             }
             Event::HardBreak => self.push_node(CourseNode::LineBreak),
-            Event::Rule => self.push_node(CourseNode::ThematicBreak),
+            Event::Rule => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
+                self.push_node(CourseNode::ThematicBreak);
+            }
             Event::TaskListMarker(checked) => {
                 for frame in self.frames.iter_mut().rev() {
                     if let Frame::ListItem { task_checked, .. } = frame {
@@ -258,31 +265,50 @@ impl AstBuilder {
 
     fn handle_start(&mut self, tag: Tag<'_>) {
         match tag {
-            Tag::Paragraph => self.frames.push(Frame::Paragraph {
-                children: Vec::new(),
-            }),
+            Tag::Paragraph => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
+                self.frames.push(Frame::Paragraph {
+                    children: Vec::new(),
+                });
+            }
             Tag::Heading { level, id, .. } => {
                 let level_u8 = heading_level_to_u8(level);
                 let starts_chapter = level_u8 == 2 && self.only_details_or_empty();
-                if starts_chapter {
+                let pending_anchor = if starts_chapter {
                     self.close_all_details_frames();
-                }
+                    self.pending_chapter_anchor.take()
+                } else {
+                    if self.frames.is_empty() {
+                        self.pending_chapter_anchor = None;
+                    }
+                    None
+                };
                 let is_doc_title = level_u8 == 1
                     && self.frames.is_empty()
                     && self.doc_title.is_none()
                     && self.chapters.is_empty();
                 self.frames.push(Frame::Heading {
                     level: level_u8,
-                    raw_id: id.map(CowStr::into_string),
+                    raw_id: pending_anchor.or_else(|| id.map(CowStr::into_string)),
                     is_doc_title,
                     starts_chapter,
                     children: Vec::new(),
                 });
             }
-            Tag::BlockQuote(_) => self.frames.push(Frame::BlockQuote {
-                children: Vec::new(),
-            }),
+            Tag::BlockQuote(_) => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
+                self.frames.push(Frame::BlockQuote {
+                    children: Vec::new(),
+                });
+            }
             Tag::CodeBlock(kind) => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
                 let info_string = match kind {
                     CodeBlockKind::Fenced(info) => info.trim().to_owned(),
                     CodeBlockKind::Indented => String::new(),
@@ -295,19 +321,29 @@ impl AstBuilder {
                 });
             }
             Tag::HtmlBlock => self.frames.push(Frame::HtmlBlock { raw: String::new() }),
-            Tag::List(start) => self.frames.push(Frame::List {
-                ordered: start.is_some(),
-                start: start.and_then(|n| u32::try_from(n).ok()),
-                items: Vec::new(),
-            }),
+            Tag::List(start) => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
+                self.frames.push(Frame::List {
+                    ordered: start.is_some(),
+                    start: start.and_then(|n| u32::try_from(n).ok()),
+                    items: Vec::new(),
+                });
+            }
             Tag::Item => self.frames.push(Frame::ListItem {
                 children: Vec::new(),
                 task_checked: None,
             }),
-            Tag::Table(_) => self.frames.push(Frame::Table {
-                headers: Vec::new(),
-                rows: Vec::new(),
-            }),
+            Tag::Table(_) => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
+                self.frames.push(Frame::Table {
+                    headers: Vec::new(),
+                    rows: Vec::new(),
+                });
+            }
             Tag::TableHead => self.frames.push(Frame::TableHead { cells: Vec::new() }),
             Tag::TableRow => self.frames.push(Frame::TableRow { cells: Vec::new() }),
             Tag::TableCell => self.frames.push(Frame::TableCell {
@@ -516,15 +552,27 @@ impl AstBuilder {
     }
 
     fn process_inline_html(&mut self, raw: &str) {
+        if self.frames.is_empty() {
+            if let Some(anchor) = parse_chapter_anchor_comment(raw) {
+                self.pending_chapter_anchor = Some(anchor);
+                return;
+            }
+        }
         let mut synthetic_paragraph_open = false;
         match classify_inline_html_tag(raw) {
             SingleTagAction::Token(token) => {
+                if self.frames.is_empty() {
+                    self.pending_chapter_anchor = None;
+                }
                 self.apply_html_token(token, false, &mut synthetic_paragraph_open);
             }
             SingleTagAction::Ignore => {}
             SingleTagAction::FallbackToSanitizer => {
                 let plain = sanitize_to_plain_text(raw);
                 if !plain.is_empty() {
+                    if self.frames.is_empty() {
+                        self.pending_chapter_anchor = None;
+                    }
                     self.push_node(CourseNode::Text { value: plain });
                 }
             }
@@ -532,7 +580,21 @@ impl AstBuilder {
     }
 
     fn process_html_block(&mut self, raw: &str) {
+        if self.frames.is_empty() {
+            if let Some(anchor) = parse_chapter_anchor_comment(raw) {
+                self.pending_chapter_anchor = Some(anchor);
+                return;
+            }
+        }
         let tokens = sanitize_html_block_to_tokens(raw, self.open_details_depth());
+        if self.frames.is_empty()
+            && tokens.iter().any(|tok| match tok {
+                HtmlToken::Text(t) => !t.trim().is_empty(),
+                _ => true,
+            })
+        {
+            self.pending_chapter_anchor = None;
+        }
         let mut synthetic_paragraph_open = false;
         for token in tokens {
             self.apply_html_token(token, true, &mut synthetic_paragraph_open);
@@ -873,6 +935,58 @@ fn non_empty_trimmed(raw: &str) -> Option<String> {
     }
 }
 
+fn parse_chapter_anchor_comment(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let body = trimmed.strip_prefix("<!--")?.strip_suffix("-->")?;
+    if body.contains("-->") {
+        return None;
+    }
+
+    let inner = body.trim();
+    let after_prefix = inner.strip_prefix("codelab:chapter")?;
+    if !after_prefix
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_whitespace())
+    {
+        return None;
+    }
+
+    let rest = after_prefix.trim_start();
+    let after_id = rest.strip_prefix("id")?;
+    let after_eq = after_id.trim_start().strip_prefix('=')?.trim_start();
+    if after_eq.is_empty() {
+        return None;
+    }
+
+    let raw_id = if let Some(after_quote) = after_eq.strip_prefix('"') {
+        let (value, tail) = after_quote.split_once('"')?;
+        if !tail.trim().is_empty() {
+            return None;
+        }
+        value
+    } else if let Some(after_quote) = after_eq.strip_prefix('\'') {
+        let (value, tail) = after_quote.split_once('\'')?;
+        if !tail.trim().is_empty() {
+            return None;
+        }
+        value
+    } else {
+        if after_eq.chars().any(char::is_whitespace)
+            || after_eq.contains('"')
+            || after_eq.contains('\'')
+        {
+            return None;
+        }
+        after_eq
+    };
+
+    if raw_id.trim().is_empty() {
+        return None;
+    }
+    sanitize_heading_id(raw_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -968,5 +1082,84 @@ x <script>\"<script>\"alert(5)</script> z
         assert!(text.contains("end."));
         assert!(text.contains("y"));
         assert!(text.contains("z"));
+    }
+
+    #[test]
+    fn html_comment_chapter_anchor_binds_id_without_emitting_text() {
+        let md = "\
+# Course
+
+<!-- codelab:chapter id=\"ex-1\" -->
+## 练习 1：让一个请求完成往返
+
+Body paragraph.
+";
+        let doc = parse_raw_markdown(md);
+        assert!(doc.intro_nodes.is_empty());
+        assert_eq!(doc.chapters.len(), 1);
+        assert_eq!(doc.chapters[0].raw_id_attr.as_deref(), Some("ex-1"));
+        assert_eq!(doc.chapters[0].title, "练习 1：让一个请求完成往返");
+        let text = collect_plain_text(&doc.chapters[0].nodes);
+        assert_eq!(text, "Body paragraph.");
+    }
+
+    #[test]
+    fn html_comment_chapter_anchor_accepts_single_quotes_unquoted_and_flexible_whitespace() {
+        let md = "\
+<!--   codelab:chapter   id='ex-2'   -->
+
+## 练习 2：内存版任务管理
+
+First.
+
+<!-- codelab:chapter   id = ex-3 -->
+## 练习 3：分层
+
+Second.
+
+<!-- codelab:chapter id=\"bad\" extra=\"nope\" -->
+## 练习 4：无锚点
+
+Third.
+";
+        let doc = parse_raw_markdown(md);
+        assert!(doc.intro_nodes.is_empty());
+        assert_eq!(doc.chapters.len(), 3);
+        assert_eq!(doc.chapters[0].raw_id_attr.as_deref(), Some("ex-2"));
+        assert_eq!(doc.chapters[1].raw_id_attr.as_deref(), Some("ex-3"));
+        assert_eq!(doc.chapters[2].raw_id_attr, None);
+    }
+
+    #[test]
+    fn html_comment_chapter_anchor_overrides_heading_attr_id() {
+        let md = "\
+<!-- codelab:chapter id=\"ex-1\" -->
+## 练习 1：最小服务 {#other}
+
+Content.
+";
+        let doc = parse_raw_markdown(md);
+        assert_eq!(doc.chapters.len(), 1);
+        assert_eq!(doc.chapters[0].raw_id_attr.as_deref(), Some("ex-1"));
+    }
+
+    #[test]
+    fn stray_chapter_anchor_separated_by_paragraph_does_not_attach_to_heading() {
+        let md = "\
+<!-- codelab:chapter id=\"ex-1\" -->
+
+Intervening paragraph.
+
+## 练习 1：最小服务
+
+Body.
+";
+        let doc = parse_raw_markdown(md);
+        assert_eq!(doc.chapters.len(), 1);
+        assert_eq!(doc.chapters[0].raw_id_attr, None);
+        assert_eq!(
+            collect_plain_text(&doc.intro_nodes),
+            "Intervening paragraph."
+        );
     }
 }

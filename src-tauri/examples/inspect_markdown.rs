@@ -99,8 +99,8 @@ fn print_report(course: &ParsedCourse) {
     for chapter in &course.chapters {
         println!();
         println!(
-            "[{}] {} ({})",
-            chapter.index, chapter.title, chapter.chapter_id.0
+            "[{}] {} ({}, {:?})",
+            chapter.index, chapter.title, chapter.chapter_id.0, chapter.kind
         );
         if let Some(goal) = &chapter.goal {
             println!("  Goal: {goal}");

@@ -22,4 +22,7 @@ export const zhCN = {
   "error.notReady": "当前环境尚未就绪，请稍后重试。",
   "error.markdownLimitExceeded": "Markdown 手册大小（{actualBytes} 字节）超过上限（{maxBytes} 字节）。",
   "error.fileTooLargeOrBinary": "文件过大或不是有效的 UTF-8 文本：{path}",
+  "error.externalPackUntrusted": "外部课程包尚未获得信任，请先确认后再打开：{source}",
+  "error.schemaValidationFailed": "课程包文件 {file} 校验失败：{detail}",
+  "error.gitImportFailed": "Git 课程包导入失败：{detail}",
 } satisfies Record<MessageKey, string>;

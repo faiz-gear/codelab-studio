@@ -6,12 +6,12 @@ use crate::course::section_extractor::{
     extract_sections, infer_dominant_language, infer_target_path_from_paragraph,
 };
 use crate::course::shell_analyzer::{
-    analyze_shell_block, extract_loopback_port_from_text, is_shell_language,
-    parse_fence_attributes, ExplicitCommandMode, FenceAttributes,
+    analyze_shell_block, block_starts_with_root_reset_cd, extract_loopback_port_from_text,
+    is_shell_language, parse_fence_attributes, ExplicitCommandMode, FenceAttributes,
 };
 use crate::course::ParseMarkdownOptions;
 use crate::domain::course::{
-    ChapterThreeStepFlow, CommandBlock, MarkdownNode, ParsedChapter, ParsedCourse,
+    ChapterKind, ChapterThreeStepFlow, CommandBlock, MarkdownNode, ParsedChapter, ParsedCourse,
     ReferenceCodeBlock,
 };
 use crate::domain::ids::{ChapterId, CommandBlockId, RelWorkspacePath};
@@ -313,6 +313,16 @@ fn extract_chapter(index: u32, chapter_id: ChapterId, raw: CourseChapterRaw) -> 
 
     classify_primary_and_secondary(&mut extracted_commands);
 
+    let sections = extract_sections(&raw.nodes, lowered_nodes);
+    let is_exercise = extracted_commands.iter().any(|c| !c.is_pure_cd)
+        || !sections.self_checks.is_empty()
+        || !state.reference_blocks.is_empty();
+    let kind = if is_exercise {
+        ChapterKind::Exercise
+    } else {
+        ChapterKind::Reading
+    };
+
     let mut command_blocks = Vec::with_capacity(extracted_commands.len());
     let mut step1_primary_commands = Vec::new();
     let mut secondary_commands = Vec::new();
@@ -325,7 +335,6 @@ fn extract_chapter(index: u32, chapter_id: ChapterId, raw: CourseChapterRaw) -> 
         command_blocks.push(extracted.block);
     }
 
-    let sections = extract_sections(&raw.nodes, lowered_nodes);
     let self_check_items: Vec<String> = sections
         .self_checks
         .iter()
@@ -343,8 +352,11 @@ fn extract_chapter(index: u32, chapter_id: ChapterId, raw: CourseChapterRaw) -> 
     ParsedChapter {
         chapter_id,
         index,
+        kind,
         title: raw.title,
         goal: sections.goal,
+        default_cwd: None,
+        entry_file: None,
         nodes: sections.folded_nodes,
         command_blocks,
         self_check_items,
@@ -515,14 +527,12 @@ fn build_command_block(
     state: &mut ChapterLowerState<'_>,
 ) -> ExtractedCommand {
     let block_cwd = match attrs.cwd.clone() {
-        Some(explicit) => {
-            state.current_cwd = Some(explicit.clone());
-            Some(explicit)
-        }
+        Some(explicit) => Some(explicit),
+        None if block_starts_with_root_reset_cd(code) => None,
         None => state.current_cwd.clone(),
     };
 
-    let analysis = analyze_shell_block(code, state.current_cwd.as_ref());
+    let analysis = analyze_shell_block(code, block_cwd.as_ref());
     state.current_cwd = analysis.post_cd_cwd.clone();
 
     let is_daemon = match attrs.mode {
@@ -669,5 +679,68 @@ curl -s http://127.0.0.1:8080/healthz
             course.chapters[0].self_check_items,
             vec!["Top-level verification task".to_owned()]
         );
+    }
+
+    #[test]
+    fn root_reset_cd_clears_inherited_cwd_and_updates_post_block_cwd() {
+        let md = "\
+## 练习 7：迁移到 GoFrame
+
+```bash
+cd task-api
+go test ./...
+```
+
+```bash
+cd /abs/path && gf init task-api-gf && cd task-api-gf && go run main.go
+```
+
+```bash
+curl -s http://127.0.0.1:8000/tasks
+```
+";
+        let course = extract_course(parse_raw_markdown(md), &ParseMarkdownOptions::default());
+        let cmds = &course.chapters[0].command_blocks;
+        assert_eq!(cmds.len(), 3);
+        assert_eq!(cmds[0].cwd, None);
+        assert_eq!(cmds[1].cwd, None);
+        assert_eq!(
+            cmds[1].role,
+            PtyRole::Daemon {
+                service_key: "task-api-gf".to_owned(),
+                label: "go run main.go".to_owned(),
+                port_hint: Some(8000),
+            }
+        );
+        assert_eq!(
+            cmds[2].cwd.as_ref().map(RelWorkspacePath::as_str),
+            Some("task-api-gf")
+        );
+    }
+
+    #[test]
+    fn chapters_classify_reading_vs_exercise() {
+        let md = "\
+## 如何使用本手册
+
+纯阅读说明，不含可执行命令、参考代码或验收清单。
+
+## 仅目录切换说明
+
+```bash
+cd task-api
+```
+
+## 练习 1：最小服务
+
+```bash
+go run .
+```
+";
+        let course = extract_course(parse_raw_markdown(md), &ParseMarkdownOptions::default());
+        assert_eq!(course.chapters.len(), 3);
+        assert_eq!(course.chapters[0].kind, ChapterKind::Reading);
+        assert_eq!(course.chapters[1].kind, ChapterKind::Reading);
+        assert_eq!(course.chapters[2].kind, ChapterKind::Exercise);
     }
 }
