@@ -29,7 +29,7 @@ fn locale_tag(locale: Locale) -> &'static str {
 pub fn app_bootstrap(state: tauri::State<'_, AppState>) -> Result<BootstrapState, AppError> {
     let detected = sys_locale::get_locale();
     let locale = detect_system_locale(detected.as_deref());
-    let bootstrap = state.build_bootstrap_state(locale);
+    let bootstrap = state.build_bootstrap_state(locale)?;
 
     if std::env::var("CODELAB_STARTUP_PROBE").as_deref() == Ok("1") {
         let startup_ms = state.elapsed_startup_ms();
@@ -47,6 +47,7 @@ pub fn app_bootstrap(state: tauri::State<'_, AppState>) -> Result<BootstrapState
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::CodelabHomePaths;
 
     #[test]
     fn detect_system_locale_maps_zh_prefixes_case_insensitively() {
@@ -71,9 +72,11 @@ mod tests {
 
     #[test]
     fn bootstrap_state_serializes_expected_contract() {
-        let state = AppState::new();
+        let temp_home = tempfile::tempdir().expect("temp home");
+        let state =
+            AppState::with_home_paths(CodelabHomePaths::from_root(temp_home.path().to_path_buf()));
         let locale = detect_system_locale(Some("zh-CN"));
-        let bootstrap = state.build_bootstrap_state(locale);
+        let bootstrap = state.build_bootstrap_state(locale).unwrap();
         let value = serde_json::to_value(&bootstrap).unwrap();
 
         assert_eq!(value["epoch"], 0);

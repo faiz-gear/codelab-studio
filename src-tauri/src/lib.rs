@@ -44,12 +44,17 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ipc::bootstrap_cmd::app_bootstrap])
+        .invoke_handler(tauri::generate_handler![
+            ipc::bootstrap_cmd::app_bootstrap,
+            ipc::settings_cmd::settings_update,
+            ipc::settings_cmd::metrics_record,
+            ipc::workspace_cmd::workspace_close,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building CodeLab Studio")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                app_handle
+                let _ = app_handle
                     .state::<AppState>()
                     .drain_active_session_for_shutdown();
             }
