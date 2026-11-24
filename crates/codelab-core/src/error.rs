@@ -21,6 +21,11 @@ pub enum ErrorCode {
     StorageReadFailed,
     StorageWriteFailed,
     StorageCorrupted,
+    RuntimeTaskStartFailed,
+    RuntimePlatformUnsupported,
+    RuntimeDownloadFailed,
+    RuntimeIntegrityFailed,
+    RuntimeInstallFailed,
     ShutdownFailed,
 }
 

@@ -150,6 +150,7 @@ pub struct TrustState {
 #[serde(rename_all = "camelCase")]
 pub enum StoreKind {
     Settings,
+    RuntimePreferences,
     Recents,
     Trust,
 }

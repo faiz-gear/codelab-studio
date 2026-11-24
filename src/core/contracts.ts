@@ -50,6 +50,11 @@ export const ERROR_CODES = [
   "STORAGE_READ_FAILED",
   "STORAGE_WRITE_FAILED",
   "STORAGE_CORRUPTED",
+  "RUNTIME_TASK_START_FAILED",
+  "RUNTIME_PLATFORM_UNSUPPORTED",
+  "RUNTIME_DOWNLOAD_FAILED",
+  "RUNTIME_INTEGRITY_FAILED",
+  "RUNTIME_INSTALL_FAILED",
   "SHUTDOWN_FAILED",
   "IPC_UNAVAILABLE",
   "UNEXPECTED_ERROR",
@@ -124,7 +129,63 @@ export interface TrustState {
   trustedAt: string | null;
 }
 
-export type StoreKind = "settings" | "recents" | "trust";
+export type ProbeStatus = "ok" | "warn" | "missing";
+export type ProbeProblem = "versionTooOld" | "timedOut" | "failed" | "proxyDisabled" | "invalidProxy";
+export type HostTool =
+  | "bun" | "node" | "go" | "javac" | "python3" | "python" | "uv" | "uvPython"
+  | "git" | "curl" | "typeScriptLanguageServer" | "gopls" | "jdtls" | "pyright" | "goProxy";
+
+export type OptionalLsp = "typeScriptLanguageServer" | "gopls" | "jdtls" | "pyright";
+
+export interface ToolCheck {
+  tool: HostTool;
+  status: ProbeStatus;
+  value: string | null;
+  executable: string | null;
+  problem: ProbeProblem | null;
+}
+
+export interface ManagedRuntime {
+  version: string;
+  executable: string;
+  testExecutor: string;
+  uv: string | null;
+}
+
+export type InstallProgress =
+  | { phase: "preparing" }
+  | { phase: "downloading"; artifact: string; receivedBytes: number; totalBytes: number | null }
+  | { phase: "extracting"; artifact: string }
+  | { phase: "installed" }
+  | { phase: "failed"; error: DomainError };
+
+export interface RuntimePreference {
+  language: CourseLanguage;
+  preferManaged: boolean;
+}
+
+export interface LanguagePreflight extends RuntimePreference {
+  status: ProbeStatus;
+  system: ToolCheck[];
+  lsp: (ToolCheck & { tool: OptionalLsp }) | null;
+  managed: ManagedRuntime | null;
+  selected: { source: "system"; tool: HostTool } | { source: "managed" } | null;
+  canInstall: boolean;
+  install: InstallProgress | null;
+}
+
+export interface PreflightReport {
+  revision: number;
+  checked: boolean;
+  probing: boolean;
+  installingCount: number;
+  languages: LanguagePreflight[];
+  tools: ToolCheck[];
+  goProxy: ToolCheck | null;
+  installDir: string;
+}
+
+export type StoreKind = "settings" | "runtimePreferences" | "recents" | "trust";
 
 export interface StorageRecoveryNotice {
   store: StoreKind;
@@ -297,7 +358,16 @@ export type AppCommand =
   | { type: "openCourse"; payload: OpenCourseRequest }
   | { type: "reloadActiveCourse" }
   | { type: "closeActiveCourse" }
+  | { type: "getPreflight" }
+  | { type: "refreshPreflight" }
+  | { type: "setRuntimePreference"; payload: RuntimePreference }
+  | { type: "installManagedRuntime"; payload: { language: CourseLanguage } }
   | { type: "shutdown" };
+
+export type PreflightCommand = Extract<
+  AppCommand,
+  { type: "getPreflight" | "refreshPreflight" | "setRuntimePreference" | "installManagedRuntime" }
+>;
 
 export type AppResponse =
   | { type: "bootstrap"; payload: AppBootstrap }
@@ -308,6 +378,7 @@ export type AppResponse =
   | { type: "builtinCourses"; payload: CourseSummary[] }
   | { type: "loadedCourse"; payload: LoadedCourse }
   | { type: "courseClosed" }
+  | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };
 
 export type AppEvent =
@@ -316,6 +387,7 @@ export type AppEvent =
   | { type: "trustUpdated"; payload: TrustEntry[] }
   | { type: "courseLoaded"; payload: LoadedCourse }
   | { type: "courseSourceChanged"; payload: CourseSourceChangedEvent }
+  | { type: "preflightUpdated"; payload: PreflightReport }
   | { type: "shutdownCompleted"; payload: ShutdownReport };
 
 export type LocalPathPickKind = "markdownFile" | "coursePackDir";

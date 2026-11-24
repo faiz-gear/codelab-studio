@@ -4,6 +4,8 @@ import type {
   AppEvent,
   AppResponse,
   GlobalSettings,
+  PreflightCommand,
+  PreflightReport,
   LoadedCourse,
   LocalPathPickKind,
   OpenCourseRequest,
@@ -70,4 +72,16 @@ export async function closeActiveCourse(client: CoreClient): Promise<void> {
   if (response.type !== "courseClosed") {
     throw new Error(`Unexpected response type: ${response.type}`);
   }
+}
+
+
+export async function dispatchPreflight(
+  client: CoreClient,
+  command: PreflightCommand,
+): Promise<PreflightReport> {
+  const response = await client.dispatch(command);
+  if (response.type !== "preflight") {
+    throw new Error(`Unexpected response type: ${response.type}`);
+  }
+  return response.payload;
 }

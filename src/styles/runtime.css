@@ -1,0 +1,220 @@
+.preflight-anchor {
+  position: relative;
+}
+
+.preflight-count {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.preflight-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: -80px;
+  width: min(470px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--topbar-h) - 24px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-floating);
+  user-select: text;
+}
+
+.preflight-head,
+.runtime-toolbar,
+.runtime-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preflight-head {
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+
+.preflight-head h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.runtime-settings {
+  width: min(720px, calc(100vw - 32px));
+  margin: auto;
+  padding: 0;
+  color: var(--foreground);
+}
+
+.runtime-settings:not([open]) {
+  display: none;
+}
+
+.runtime-settings::backdrop {
+  background: var(--overlay-scrim);
+}
+
+.runtime-settings-tabs {
+  padding: 12px 20px 0;
+}
+
+.runtime-settings-tabs [aria-selected="true"] {
+  background: var(--surface-muted);
+}
+
+.runtime-settings .modal-body {
+  min-height: 0;
+}
+
+.runtime-panel {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
+  font-size: 12px;
+}
+
+.runtime-settings .runtime-panel {
+  padding: 0;
+}
+
+.runtime-toolbar {
+  justify-content: flex-end;
+}
+
+.runtime-toolbar p {
+  margin-inline-end: auto;
+  color: var(--text-secondary);
+}
+
+.runtime-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border-subtle);
+  list-style: none;
+}
+
+.runtime-row {
+  display: grid;
+  gap: 7px;
+  padding: 10px 0;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runtime-row-head {
+  flex-wrap: wrap;
+}
+
+.runtime-row h3 {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.runtime-selection {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.runtime-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+}
+
+.runtime-tool {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.runtime-tool .badge {
+  height: auto;
+  min-height: 19px;
+  padding-inline: 6px;
+  font-size: 11px;
+}
+
+.runtime-panel .badge--success,
+.runtime-installed {
+  color: color-mix(in oklab, var(--success) var(--badge-ink), var(--foreground));
+}
+
+.runtime-panel .badge--success {
+  background: color-mix(in oklab, var(--success) var(--badge-tint), var(--surface));
+}
+
+.runtime-value,
+.runtime-install-dir,
+.runtime-download,
+.runtime-detail,
+.runtime-error {
+  overflow-wrap: anywhere;
+}
+
+.runtime-detail,
+.runtime-download {
+  color: var(--text-secondary);
+}
+
+.runtime-lsp {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.runtime-lsp p {
+  flex-basis: 100%;
+}
+
+.runtime-preference {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  justify-self: start;
+  padding-block: 4px;
+  cursor: pointer;
+}
+
+.runtime-preference input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--control-on);
+}
+
+.runtime-download p {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.runtime-download progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-top: 5px;
+  accent-color: var(--accent);
+}
+
+.runtime-error {
+  color: color-mix(in oklab, var(--danger) var(--badge-ink), var(--foreground));
+}
+
+.runtime-install-dir code {
+  margin-inline-start: 4px;
+}
+
+@media (width <= 600px) {
+  .preflight-popover {
+    position: fixed;
+    top: calc(var(--topbar-h) + 8px);
+    right: 16px;
+  }
+}

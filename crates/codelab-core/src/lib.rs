@@ -2,6 +2,7 @@ mod app;
 mod course;
 mod error;
 mod model;
+mod runtime;
 mod storage;
 
 pub use app::{App, AppCommand, AppConfig, AppEvent, AppResponse, CleanupHook, EventSubscription};
@@ -16,4 +17,9 @@ pub use model::{
     GlobalSettings, Locale, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, ThemeMode,
     TrustEntry, TrustSource, TrustSourceKind, TrustState, UpdateSettingsPatch,
+};
+pub use runtime::{
+    HostProbeResult, HostTool, HostToolchainProbe, HttpRuntimeDownloader, InstallProgress,
+    LanguagePreflight, ManagedRuntime, PreflightReport, ProbeProblem, ProbeStatus, RuntimeAdapters,
+    RuntimeArtifact, RuntimeDownloadAdapter, RuntimePreference, RuntimeSource, ToolCheck,
 };

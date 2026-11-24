@@ -1,0 +1,178 @@
+{
+  "bunVersion": "1.3.13",
+  "goVersion": "1.23.12",
+  "javaVersion": "21.0.13.1+2",
+  "pythonVersion": "3.12.13",
+  "platforms": {
+    "macos-x86_64": {
+      "bun": {
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.13/bun-darwin-x64-baseline.zip",
+        "sha256": "a98ba6a480f22fda9b343626b906a4e26aa53618bf85d2bc5928ecf2ba45f0ed"
+      },
+      "go": {
+        "url": "https://go.dev/dl/go1.23.12.darwin-amd64.tar.gz",
+        "sha256": "0f6efdc3ffc6f03b230016acca0aef43c229de022d0ff401e7aa4ad4862eca8e"
+      },
+      "java": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_x64_mac_hotspot_21.0.13.1_2.tar.gz",
+        "sha256": "1b5eff1741bb83d32e2e19aade71452bb42e40f047c01d3e178d438304c9a26d"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "8e0ed5035eaa28c7c8cd2a46b5b9a05bfff1ef01dbdc090a010eb8fdf193a457"
+      },
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.12.13%2B20260408-x86_64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "1fee0596ba791fd83c33babf2ae8e00b0a1056b957955f2a34f7178ca8b80525"
+      }
+    },
+    "macos-aarch64": {
+      "bun": {
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.13/bun-darwin-aarch64.zip",
+        "sha256": "5467e3f65dba526b9fea98f0cce04efafc0c63e169733ec27b876a3ad32da190"
+      },
+      "go": {
+        "url": "https://go.dev/dl/go1.23.12.darwin-arm64.tar.gz",
+        "sha256": "5bfa117e401ae64e7ffb960243c448b535fe007e682a13ff6c7371f4a6f0ccaa"
+      },
+      "java": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13.1_2.tar.gz",
+        "sha256": "48067f2b7c958ed104a9d8a5749be7d25220b0a356b4d2d1bcfaab3e16ad0b14"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "4b69a4e366ec38cd5f305707de95e12951181c448679a00dce2a78868dfc9f5b"
+      },
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.12.13%2B20260408-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "ac167e74961316ceabdbe4839f19aa6000c592b08e5a1fab4646cb225ede13d5"
+      }
+    },
+    "linux-x86_64": {
+      "bun": {
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.13/bun-linux-x64-baseline.zip",
+        "sha256": "9d8a24292a7068090205daac0a5a223f5f69736f5287e37bf88d3b4031edc750"
+      },
+      "go": {
+        "url": "https://go.dev/dl/go1.23.12.linux-amd64.tar.gz",
+        "sha256": "d3847fef834e9db11bf64e3fb34db9c04db14e068eeb064f49af747010454f90"
+      },
+      "java": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13.1_2.tar.gz",
+        "sha256": "bb8a93f9ae6e7a693b2b721e85dbeff26ae1a77447985a8d7afcdd9c7cf6222e"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "0c6bab77a67a445dc849ed5e8ee8d3cb333b6e2eba863643ce1e228075f27943"
+      },
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.12.13%2B20260408-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "ddd48f521f79395d9b8b094d34a86d7ec86772ab66c96b0de65a3b561ea7cf10"
+      }
+    },
+    "linux-aarch64": {
+      "bun": {
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.13/bun-linux-aarch64.zip",
+        "sha256": "70bae41b3908b0a120e1e58c5c8af30e74afae3b8d11b0d3fdd8e787ddfb4b22"
+      },
+      "go": {
+        "url": "https://go.dev/dl/go1.23.12.linux-arm64.tar.gz",
+        "sha256": "52ce172f96e21da53b1ae9079808560d49b02ac86cecfa457217597f9bc28ab3"
+      },
+      "java": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13.1_2.tar.gz",
+        "sha256": "8c72816a6b308842d5ed1f13e5826b69c567da4784f7238d7e800efa71fe54b1"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "d5be4bf7015ea000378cb3c3aba53ba81a8673458ace9c7fa25a0be005b74802"
+      },
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.12.13%2B20260408-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "bd5011c956391391620931ea35632dc7aa7391a4558ced126ccf0708d1346915"
+      }
+    },
+    "windows-x86_64": {
+      "bun": {
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.13/bun-windows-x64-baseline.zip",
+        "sha256": "c68c7903c1190101590cc1b2129835f47211b3b37ae87759f2b97d6534aa3ad1"
+      },
+      "go": {
+        "url": "https://go.dev/dl/go1.23.12.windows-amd64.zip",
+        "sha256": "07c35866cdd864b81bb6f1cfbf25ac7f87ddc3a976ede1bf5112acbb12dfe6dc"
+      },
+      "java": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_x64_windows_hotspot_21.0.13.1_2.zip",
+        "sha256": "bbebea1469996b276683c9299c227b294f85c847039c82633218186a4ad4fbf2"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "99aa60edd017a256dbf378f372d1cff3292dbc6696e0ea01716d9158d773ab77"
+      },
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.12.13%2B20260408-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "802162fb50165fc138db0c737abda695e1cb819bfb52e4d230d14f8a5af880b2"
+      }
+    },
+    "windows-aarch64": {
+      "bun": {
+        "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.13/bun-windows-aarch64.zip",
+        "sha256": "feaf3f2951c50104dc9a33cf1a2e1ae3422f0c7e5d8890601c87b97b5d90b376"
+      },
+      "go": {
+        "url": "https://go.dev/dl/go1.23.12.windows-arm64.zip",
+        "sha256": "22a5da4989e57ee4b0fb106429ffadc3bc2357b268885720025be5b0877d6fe9"
+      },
+      "java": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jdk_x64_windows_hotspot_21.0.13.1_2.zip",
+        "sha256": "bbebea1469996b276683c9299c227b294f85c847039c82633218186a4ad4fbf2"
+      },
+      "uv": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.11.6/uv-aarch64-pc-windows-msvc.zip",
+        "sha256": "bee7b25a7a999f17291810242b47565c3ef2b9205651a0fd02a086f261a7e167"
+      },
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.12.13%2B20260408-aarch64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "3079f210cfe53a8165163da5f8ad3487915bf80263b3a7c252a567b20ae44b2c"
+      }
+    }
+  },
+  "junit": {
+    "url": "https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-console-standalone/1.13.4/junit-platform-console-standalone-1.13.4.jar",
+    "sha256": "3fdfc37e29744a9a67dd5365e81467e26fbde0b7aa204e6f8bbe79eeaa7ae892"
+  },
+  "pythonWheels": [
+    {
+      "url": "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl",
+      "sha256": "872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/81/35/d07400c715bf8a88aa0c1ee9c9eb6050ca7fe5b39981f0eea773feeb0681/pytest_json_report-1.5.0-py3-none-any.whl",
+      "sha256": "9897b68c910b12a2e48dd849f9a284b2c79a732a8a9cb398452ddd23d3c8c325"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/3e/43/7e7b2ec865caa92f67b8f0e9231a798d102724ca4c0e1f414316be1c1ef2/pytest_metadata-3.1.1-py3-none-any.whl",
+      "sha256": "c8e0844db684ee1c798cfa38908d20d67d0463ecb6137c72e91f418558dd5f4b"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl",
+      "sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl",
+      "sha256": "29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl",
+      "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl",
+      "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176"
+    }
+  ],
+  "windowsPythonWheel": {
+    "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
+    "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+  }
+}

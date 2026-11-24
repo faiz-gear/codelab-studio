@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   closeActiveCourse,
+  dispatchPreflight,
   fetchBootstrap,
   openCourse,
   reloadActiveCourse,
@@ -13,16 +14,20 @@ import {
   openRequestFromSource,
   type CourseSourceChangedEvent,
   type CourseSummary,
+  type DomainError,
   type GlobalSettings,
   type LoadedCourse,
   type LocalPathPickKind,
   type OpenCourseRequest,
+  type PreflightCommand,
+  type PreflightReport,
   type RecentWorkspace,
   type UpdateSettingsPatch,
 } from "./core/contracts";
 import { AppearanceDrawer } from "./components/AppearanceDrawer";
 import { CourseWorkbench } from "./components/CourseWorkbench";
 import { ImportCourseModal } from "./components/ImportCourseModal";
+import { RuntimeSettingsDialog } from "./components/RuntimeSettingsDialog";
 import {
   ToastStack,
   type ToastMessage,
@@ -74,12 +79,16 @@ export function App({ client }: AppProps) {
   const [reloadingCourse, setReloadingCourse] = useState(false);
 
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false);
+  const [preflight, setPreflight] = useState<PreflightReport | null>(null);
+  const [preflightError, setPreflightError] = useState<DomainError | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importSubmitting, setImportSubmitting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const appearanceTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const runtimeSettingsTrigger = useRef<HTMLElement | null>(null);
   const nextToastId = useRef(1);
   const localeRef = useRef(settings.locale);
   const activeCourseRef = useRef<LoadedCourse | null>(null);
@@ -127,6 +136,20 @@ export function App({ client }: AppProps) {
     }
   }, []);
 
+  const acceptPreflight = useCallback((report: PreflightReport) => {
+    // A streamed update can arrive ahead of the response to the command that started it.
+    setPreflight((current) => !current || report.revision > current.revision ? report : current);
+  }, []);
+
+  const runPreflight = useCallback(async (command: PreflightCommand) => {
+    setPreflightError(null);
+    try {
+      acceptPreflight(await dispatchPreflight(client, command));
+    } catch (err) {
+      setPreflightError(err instanceof CoreCommandError ? err.domainError : { code: "UNEXPECTED_ERROR" });
+    }
+  }, [acceptPreflight, client]);
+
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | null = null;
@@ -142,6 +165,8 @@ export function App({ client }: AppProps) {
             });
           } else if (event.type === "recentsUpdated") {
             setRecents(event.payload);
+          } else if (event.type === "preflightUpdated") {
+            acceptPreflight(event.payload);
           } else if (event.type === "courseSourceChanged") {
             if (activeCourseRef.current?.courseId === event.payload.courseId) {
               setPendingReload(event.payload);
@@ -149,6 +174,11 @@ export function App({ client }: AppProps) {
           }
         });
 
+        if (!active) {
+          unsubscribe();
+          return;
+        }
+        void runPreflight({ type: "refreshPreflight" });
         const bootstrap = await fetchBootstrap(client);
         if (!active) return;
         setSettings(bootstrap.settings);
@@ -179,13 +209,13 @@ export function App({ client }: AppProps) {
       active = false;
       unsubscribe?.();
     };
-  }, [client, pushToast]);
+  }, [acceptPreflight, client, pushToast, runPreflight]);
 
   // Global ⌘/Ctrl + B Focus Mode shortcut while inside the Workbench
   useEffect(() => {
     if (!activeCourse) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (importOpen || appearanceOpen) return;
+      if (importOpen || appearanceOpen || runtimeSettingsOpen) return;
       if (
         (event.metaKey || event.ctrlKey) &&
         !event.altKey &&
@@ -197,9 +227,26 @@ export function App({ client }: AppProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeCourse, importOpen, appearanceOpen]);
+  }, [activeCourse, importOpen, appearanceOpen, runtimeSettingsOpen]);
 
   const messages = getMessages(settings.locale);
+  const runtimePanel = {
+    report: preflight,
+    error: preflightError,
+    messages,
+    locale: settings.locale,
+    onCommand: (command: PreflightCommand) => void runPreflight(command),
+  };
+
+  function openRuntimeSettings(trigger: HTMLElement) {
+    runtimeSettingsTrigger.current = trigger;
+    setRuntimeSettingsOpen(true);
+  }
+
+  function closeRuntimeSettings() {
+    setRuntimeSettingsOpen(false);
+    queueMicrotask(() => runtimeSettingsTrigger.current?.focus());
+  }
 
   const handleCloseAppearance = useCallback(() => {
     setAppearanceOpen(false);
@@ -380,7 +427,9 @@ export function App({ client }: AppProps) {
         }}
         onToggleFocusMode={() => setFocusMode((prev) => !prev)}
         onOpenAppearance={() => setAppearanceOpen(true)}
-        onPlaceholderAction={handlePlaceholderAction}
+        runtimePanel={runtimePanel}
+        runtimeSettingsOpen={runtimeSettingsOpen}
+        onOpenRuntimeSettings={openRuntimeSettings}
       />
 
       <main className="view-host" id="mainView">
@@ -441,6 +490,10 @@ export function App({ client }: AppProps) {
         onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
         onCopyThemeConfig={() => void handleCopyThemeConfig()}
       />
+
+      {runtimeSettingsOpen && (
+        <RuntimeSettingsDialog {...runtimePanel} onClose={closeRuntimeSettings} />
+      )}
 
       <ToastStack toasts={toasts} />
     </div>
