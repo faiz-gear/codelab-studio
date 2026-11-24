@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::course::{
     self, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher, LoadedCourse,
-    OpenCourseRequest,
+    OpenCourseRequest, OpenedCourse, Starter,
 };
 use crate::error::{DomainError, ErrorCode};
 use crate::model::{
@@ -18,6 +18,24 @@ use crate::model::{
 };
 use crate::runtime::{PreflightReport, RuntimeAdapters, RuntimeManager, RuntimePreference};
 use crate::storage::JsonStore;
+use crate::workspace::{
+    Workspace, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename, WorkspaceFileWrite,
+    WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
+};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentWorkspaceOpened {
+    pub course: LoadedCourse,
+    pub workspace: Option<WorkspaceSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseTrustChanged {
+    pub source: CourseSource,
+    pub trusted: bool,
+}
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -44,6 +62,18 @@ pub enum AppCommand {
     OpenCourse(OpenCourseRequest),
     ReloadActiveCourse,
     CloseActiveCourse,
+    BindWorkspace {
+        path: String,
+    },
+    OpenRecentWorkspace {
+        path: String,
+    },
+    ListWorkspaceFiles(WorkspacePath),
+    ReadWorkspaceFile(WorkspacePath),
+    WriteWorkspaceFile(WorkspaceFileWrite),
+    CreateWorkspaceFile(WorkspacePath),
+    RenameWorkspaceFile(WorkspaceFileRename),
+    OpenWorkspaceIde(WorkspaceIdeRequest),
     GetPreflight,
     RefreshPreflight,
     SetRuntimePreference(RuntimePreference),
@@ -64,6 +94,12 @@ pub enum AppResponse {
     BuiltinCourses(Vec<CourseSummary>),
     LoadedCourse(LoadedCourse),
     CourseClosed,
+    WorkspaceBound(WorkspaceSummary),
+    RecentWorkspaceOpened(RecentWorkspaceOpened),
+    WorkspaceEntries(Vec<WorkspaceEntry>),
+    WorkspaceFile(WorkspaceFile),
+    WorkspaceFileConflict(WorkspaceFile),
+    WorkspaceIdeOpened,
     Preflight(PreflightReport),
     Shutdown(ShutdownReport),
 }
@@ -76,6 +112,8 @@ pub enum AppEvent {
     TrustUpdated(Vec<TrustEntry>),
     CourseLoaded(LoadedCourse),
     CourseSourceChanged(CourseSourceChangedEvent),
+    CourseTrustChanged(CourseTrustChanged),
+    WorkspaceFilesChanged(WorkspaceFilesChanged),
     PreflightUpdated(PreflightReport),
     ShutdownCompleted(ShutdownReport),
 }
@@ -105,8 +143,9 @@ impl EventSubscription {
 pub type CleanupHook = Box<dyn FnOnce() -> Result<(), String> + Send + 'static>;
 
 struct ActiveCourseState {
-    source: CourseSource,
-    watcher: Option<CourseWatcher>,
+    course: LoadedCourse,
+    starter: Option<Starter>,
+    _watcher: Option<CourseWatcher>,
 }
 
 struct AppState {
@@ -116,6 +155,8 @@ struct AppState {
     recovery_notices: Vec<StorageRecoveryNotice>,
     builtin_courses: Vec<CourseSummary>,
     active_course: Option<ActiveCourseState>,
+    active_workspace: Option<Workspace>,
+    next_workspace_id: u64,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
@@ -123,6 +164,7 @@ struct AppState {
 type Subscribers = Mutex<Vec<mpsc::Sender<AppEvent>>>;
 
 pub struct App {
+    data_dir: PathBuf,
     settings_store: JsonStore<GlobalSettings>,
     recents_store: JsonStore<Vec<RecentWorkspace>>,
     trust_store: JsonStore<Vec<TrustEntry>>,
@@ -146,9 +188,15 @@ impl App {
                 .with_detail("reason", err.to_string())
         })?;
 
-        let settings_store = JsonStore::new(&config.data_dir, "settings.json", StoreKind::Settings);
-        let recents_store = JsonStore::new(&config.data_dir, "recents.json", StoreKind::Recents);
-        let trust_store = JsonStore::new(&config.data_dir, "trust.json", StoreKind::Trust);
+        let data_dir = fs::canonicalize(&config.data_dir).map_err(|err| {
+            DomainError::new(ErrorCode::StorageReadFailed)
+                .with_detail("store", "dataDir")
+                .with_detail("reason", err.to_string())
+        })?;
+
+        let settings_store = JsonStore::new(&data_dir, "settings.json", StoreKind::Settings);
+        let recents_store = JsonStore::new(&data_dir, "recents.json", StoreKind::Recents);
+        let trust_store = JsonStore::new(&data_dir, "trust.json", StoreKind::Trust);
 
         let settings_loaded = settings_store.load_or_recover(is_valid_settings)?;
         let recents_loaded = recents_store.load_or_recover(|entries: &Vec<RecentWorkspace>| {
@@ -185,6 +233,7 @@ impl App {
         .collect();
 
         Ok(Self {
+            data_dir,
             settings_store,
             recents_store,
             trust_store,
@@ -195,6 +244,8 @@ impl App {
                 recovery_notices,
                 builtin_courses,
                 active_course: None,
+                active_workspace: None,
+                next_workspace_id: 1,
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
             }),
@@ -235,7 +286,51 @@ impl App {
             )),
             AppCommand::OpenCourse(request) => self.open_course(request),
             AppCommand::ReloadActiveCourse => self.reload_active_course(),
-            AppCommand::CloseActiveCourse => self.close_active_course(),
+            AppCommand::CloseActiveCourse => Ok(self.close_active_course()),
+            AppCommand::BindWorkspace { path } => self.bind_workspace(&path),
+            AppCommand::OpenRecentWorkspace { path } => self.open_recent_workspace(&path),
+            AppCommand::ListWorkspaceFiles(target) => self
+                .lock_state()
+                .workspace(target.workspace_id)?
+                .files
+                .list(&target.path)
+                .map(AppResponse::WorkspaceEntries),
+            AppCommand::ReadWorkspaceFile(target) => self
+                .lock_state()
+                .workspace(target.workspace_id)?
+                .files
+                .read(&target.path)
+                .map(AppResponse::WorkspaceFile),
+            AppCommand::WriteWorkspaceFile(request) => {
+                let state = self.lock_state();
+                let result = state.workspace(request.target.workspace_id)?.files.write(
+                    &request.target.path,
+                    &request.text,
+                    request.expected_revision.as_deref(),
+                )?;
+                Ok(match result {
+                    Ok(file) => AppResponse::WorkspaceFile(file),
+                    Err(file) => AppResponse::WorkspaceFileConflict(file),
+                })
+            }
+            AppCommand::CreateWorkspaceFile(target) => self
+                .lock_state()
+                .workspace(target.workspace_id)?
+                .files
+                .create(&target.path)
+                .map(AppResponse::WorkspaceFile),
+            AppCommand::RenameWorkspaceFile(request) => self
+                .lock_state()
+                .workspace(request.target.workspace_id)?
+                .files
+                .rename(&request.target.path, &request.new_path)
+                .map(AppResponse::WorkspaceFile),
+            AppCommand::OpenWorkspaceIde(request) => {
+                self.lock_state()
+                    .workspace(request.target.workspace_id)?
+                    .open_in_ide(&request)?;
+                Ok(AppResponse::WorkspaceIdeOpened)
+            }
             AppCommand::GetPreflight => Ok(AppResponse::Preflight(self.runtime.snapshot())),
             AppCommand::RefreshPreflight => self.runtime.refresh().map(AppResponse::Preflight),
             AppCommand::SetRuntimePreference(preference) => self
@@ -275,7 +370,7 @@ impl App {
     }
 
     pub fn shutdown(&self) -> Result<ShutdownReport, DomainError> {
-        let (hooks, active_course) = {
+        let (hooks, active_course, active_workspace) = {
             let mut state = self.lock_state();
             if state.shut_down {
                 return Ok(ShutdownReport {
@@ -287,14 +382,12 @@ impl App {
             (
                 std::mem::take(&mut state.cleanup_hooks),
                 state.active_course.take(),
+                state.active_workspace.take(),
             )
         };
 
-        if let Some(active) = active_course
-            && let Some(watcher) = active.watcher
-        {
-            watcher.stop();
-        }
+        drop(active_workspace);
+        drop(active_course);
 
         let mut hooks_executed = 0;
         let mut failures = Vec::new();
@@ -373,41 +466,61 @@ impl App {
             workspace_path: normalized_path,
             course_id: course_id.to_string(),
             course_title: course_title.to_string(),
-            language: input.language,
+            language: Some(input.language),
+            course_source: None,
             completed_exercises: input.completed_exercises,
             total_exercises: input.total_exercises,
             last_opened_at: Utc::now().to_rfc3339(),
         };
 
-        self.mutate_recents(|next| {
+        let mut state = self.lock_state();
+        let updated = self.store_recent(&mut state, entry)?;
+        Ok(AppResponse::Recents(updated))
+    }
+
+    fn remove_recent_workspace(&self, workspace_path: &str) -> Result<AppResponse, DomainError> {
+        let normalized_path = normalize_absolute_path(workspace_path)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
+        let mut state = self.lock_state();
+        self.mutate_recents(&mut state, |next| {
+            next.retain(|item| item.workspace_path != normalized_path)
+        })
+        .map(AppResponse::Recents)
+    }
+
+    fn store_recent(
+        &self,
+        state: &mut AppState,
+        mut entry: RecentWorkspace,
+    ) -> Result<Vec<RecentWorkspace>, DomainError> {
+        if entry.course_source.is_none() {
+            entry.course_source = state
+                .recents
+                .iter()
+                .find(|recent| {
+                    recent.workspace_path == entry.workspace_path
+                        && recent.course_id == entry.course_id
+                })
+                .and_then(|recent| recent.course_source.clone());
+        }
+        self.mutate_recents(state, |next| {
             next.retain(|item| item.workspace_path != entry.workspace_path);
             next.insert(0, entry);
             next.truncate(MAX_RECENT_WORKSPACES);
         })
     }
 
-    fn remove_recent_workspace(&self, workspace_path: &str) -> Result<AppResponse, DomainError> {
-        let normalized_path = normalize_absolute_path(workspace_path)
-            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-        self.mutate_recents(|next| {
-            next.retain(|item| item.workspace_path != normalized_path);
-        })
-    }
-
     fn mutate_recents(
         &self,
+        state: &mut AppState,
         mutate: impl FnOnce(&mut Vec<RecentWorkspace>),
-    ) -> Result<AppResponse, DomainError> {
-        let updated = {
-            let mut state = self.lock_state();
-            let mut next = state.recents.clone();
-            mutate(&mut next);
-            self.recents_store.save_atomic(&next)?;
-            state.recents = next.clone();
-            next
-        };
-        self.emit(AppEvent::RecentsUpdated(updated.clone()));
-        Ok(AppResponse::Recents(updated))
+    ) -> Result<Vec<RecentWorkspace>, DomainError> {
+        let mut next = state.recents.clone();
+        mutate(&mut next);
+        self.recents_store.save_atomic(&next)?;
+        state.recents = next.clone();
+        self.emit(AppEvent::RecentsUpdated(next.clone()));
+        Ok(next)
     }
 
     fn check_trust(&self, source: &TrustSource) -> Result<AppResponse, DomainError> {
@@ -456,7 +569,18 @@ impl App {
         let normalized_source = normalize_trust_source(source.source_kind, &source.source)
             .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
         let updated = self.mutate_trust(|next| {
-            next.retain(|entry| !matches_trust_key(entry, source.source_kind, &normalized_source));
+            let exact = source.source.trim();
+            // The active Course's canonical key can now be an alias to a different source.
+            let key = if source.source_kind == TrustSourceKind::LocalPath
+                && next
+                    .iter()
+                    .any(|entry| matches_trust_key(entry, source.source_kind, exact))
+            {
+                exact
+            } else {
+                &normalized_source
+            };
+            next.retain(|entry| !matches_trust_key(entry, source.source_kind, key));
         })?;
         Ok(AppResponse::TrustEntries(updated))
     }
@@ -465,20 +589,75 @@ impl App {
         &self,
         mutate: impl FnOnce(&mut Vec<TrustEntry>),
     ) -> Result<Vec<TrustEntry>, DomainError> {
-        let updated = {
-            let mut state = self.lock_state();
-            let mut next = state.trust_entries.clone();
-            mutate(&mut next);
-            self.trust_store.save_atomic(&next)?;
-            state.trust_entries = next.clone();
-            next
-        };
-        self.emit(AppEvent::TrustUpdated(updated.clone()));
-        Ok(updated)
+        let mut state = self.lock_state();
+        let mut next = state.trust_entries.clone();
+        mutate(&mut next);
+        self.trust_store.save_atomic(&next)?;
+        state.trust_entries = next.clone();
+
+        let changed = state.active_course.as_mut().and_then(|active| {
+            let trusted = is_course_trusted(&active.course.source, &next);
+            if std::mem::replace(&mut active.course.trusted, trusted) == trusted {
+                return None;
+            }
+            Some(CourseTrustChanged {
+                source: active.course.source.clone(),
+                trusted,
+            })
+        });
+        if let Some(changed) = changed {
+            if let Some(workspace) = &state.active_workspace {
+                workspace.set_trusted(changed.trusted);
+            }
+            self.emit(AppEvent::CourseTrustChanged(changed));
+        }
+        self.emit(AppEvent::TrustUpdated(next.clone()));
+        Ok(next)
     }
 
     fn open_course(&self, request: OpenCourseRequest) -> Result<AppResponse, DomainError> {
-        let opened = course::open_course(&request)?;
+        let mut state = self.lock_state();
+        self.load_course(&mut state, &request)
+    }
+
+    fn reload_active_course(&self) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let request = request_from_source(&state.course()?.course.source);
+        self.load_course(&mut state, &request)
+    }
+
+    fn load_course(
+        &self,
+        state: &mut AppState,
+        request: &OpenCourseRequest,
+    ) -> Result<AppResponse, DomainError> {
+        let opened = self.prepare_course(state, request)?;
+        if state
+            .active_course
+            .as_ref()
+            .is_some_and(|active| active.course.source != opened.course.source)
+        {
+            state.active_workspace = None;
+        }
+        Ok(AppResponse::LoadedCourse(
+            self.activate_course(state, opened),
+        ))
+    }
+
+    fn prepare_course(
+        &self,
+        state: &AppState,
+        request: &OpenCourseRequest,
+    ) -> Result<OpenedCourse, DomainError> {
+        if state.shut_down {
+            return Err(DomainError::new(ErrorCode::NoActiveCourse));
+        }
+        let mut opened = course::open_course(request)?;
+        opened.course.trusted = is_course_trusted(&opened.course.source, &state.trust_entries);
+        Ok(opened)
+    }
+
+    fn activate_course(&self, state: &mut AppState, opened: OpenedCourse) -> LoadedCourse {
         let watcher = if opened.watched_files.is_empty() {
             None
         } else {
@@ -486,57 +665,95 @@ impl App {
             Some(CourseWatcher::start(
                 opened.course.course_id.clone(),
                 opened.watched_files,
-                move |changed| {
-                    emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed));
-                },
+                move |changed| emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed)),
             ))
         };
-
-        let previous = {
-            let mut state = self.lock_state();
-            state.active_course.replace(ActiveCourseState {
-                source: opened.course.source.clone(),
-                watcher,
-            })
-        };
-        if let Some(prev) = previous
-            && let Some(prev_watcher) = prev.watcher
-        {
-            prev_watcher.stop();
-        }
-
-        self.emit(AppEvent::CourseLoaded(opened.course.clone()));
-        Ok(AppResponse::LoadedCourse(opened.course))
+        let course = opened.course;
+        state.active_course = Some(ActiveCourseState {
+            course: course.clone(),
+            starter: opened.starter,
+            _watcher: watcher,
+        });
+        self.emit(AppEvent::CourseLoaded(course.clone()));
+        course
     }
 
-    fn reload_active_course(&self) -> Result<AppResponse, DomainError> {
-        let source = {
-            let state = self.lock_state();
-            state
-                .active_course
-                .as_ref()
-                .map(|active| active.source.clone())
-                .ok_or_else(|| DomainError::new(ErrorCode::NoActiveCourse))?
-        };
-        let request = match source {
-            CourseSource::Builtin { course_id } => OpenCourseRequest::Builtin { course_id },
-            CourseSource::LocalMarkdown { path } => OpenCourseRequest::LocalMarkdown { path },
-            CourseSource::LocalPack { path } => OpenCourseRequest::LocalPack { path },
-        };
-        self.open_course(request)
+    fn close_active_course(&self) -> AppResponse {
+        let mut state = self.lock_state();
+        state.active_workspace = None;
+        state.active_course = None;
+        AppResponse::CourseClosed
     }
 
-    fn close_active_course(&self) -> Result<AppResponse, DomainError> {
-        let previous = {
-            let mut state = self.lock_state();
-            state.active_course.take()
+    fn bind_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let active = state.trusted_course()?;
+        let workspace = self.prepare_workspace(
+            state.next_workspace_id,
+            path,
+            &active.course,
+            active.starter.as_ref(),
+        )?;
+        let recent = workspace_recent(&workspace, &active.course);
+        self.store_recent(&mut state, recent)?;
+        let summary = self.activate_workspace(&mut state, workspace);
+        Ok(AppResponse::WorkspaceBound(summary))
+    }
+
+    fn open_recent_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let normalized = normalize_absolute_path(path)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
+        let recent = state
+            .recents
+            .iter()
+            .find(|recent| recent.workspace_path == path || recent.workspace_path == normalized)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
+        let request = match &recent.course_source {
+            Some(source) => request_from_source(source),
+            None => OpenCourseRequest::Builtin {
+                course_id: recent.course_id.clone(),
+            },
         };
-        if let Some(prev) = previous
-            && let Some(watcher) = prev.watcher
-        {
-            watcher.stop();
-        }
-        Ok(AppResponse::CourseClosed)
+        let opened = self.prepare_course(&state, &request)?;
+        let workspace = if opened.course.trusted {
+            let workspace = self.prepare_workspace(
+                state.next_workspace_id,
+                path,
+                &opened.course,
+                opened.starter.as_ref(),
+            )?;
+            self.store_recent(&mut state, workspace_recent(&workspace, &opened.course))?;
+            Some(self.activate_workspace(&mut state, workspace))
+        } else {
+            state.active_workspace = None;
+            None
+        };
+        let course = self.activate_course(&mut state, opened);
+        Ok(AppResponse::RecentWorkspaceOpened(RecentWorkspaceOpened {
+            course,
+            workspace,
+        }))
+    }
+
+    fn prepare_workspace(
+        &self,
+        id: u64,
+        path: &str,
+        course: &LoadedCourse,
+        starter: Option<&Starter>,
+    ) -> Result<Workspace, DomainError> {
+        let subs = Arc::clone(&self.subscribers);
+        Workspace::bind(id, path, &self.data_dir, course, starter, move |event| {
+            emit_to_subscribers(&subs, AppEvent::WorkspaceFilesChanged(event));
+        })
+    }
+
+    fn activate_workspace(&self, state: &mut AppState, workspace: Workspace) -> WorkspaceSummary {
+        state.next_workspace_id += 1;
+        let summary = workspace.summary.clone();
+        state.active_workspace = Some(workspace);
+        summary
     }
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, AppState> {
@@ -547,6 +764,64 @@ impl App {
 
     fn emit(&self, event: AppEvent) {
         emit_to_subscribers(&self.subscribers, event);
+    }
+}
+
+impl AppState {
+    fn course(&self) -> Result<&ActiveCourseState, DomainError> {
+        self.active_course
+            .as_ref()
+            .ok_or_else(|| DomainError::new(ErrorCode::NoActiveCourse))
+    }
+
+    fn trusted_course(&self) -> Result<&ActiveCourseState, DomainError> {
+        let active = self.course()?;
+        if !active.course.trusted {
+            return Err(DomainError::new(ErrorCode::CourseUntrusted));
+        }
+        Ok(active)
+    }
+
+    fn workspace(&self, id: u64) -> Result<&Workspace, DomainError> {
+        self.trusted_course()?;
+        self.active_workspace
+            .as_ref()
+            .filter(|workspace| workspace.summary.id == id)
+            .ok_or_else(|| DomainError::new(ErrorCode::NoActiveWorkspace))
+    }
+}
+
+fn is_course_trusted(source: &CourseSource, entries: &[TrustEntry]) -> bool {
+    match source {
+        CourseSource::Builtin { .. } => true,
+        CourseSource::LocalMarkdown { path } | CourseSource::LocalPack { path } => entries
+            .iter()
+            .any(|entry| matches_trust_key(entry, TrustSourceKind::LocalPath, path)),
+    }
+}
+
+fn request_from_source(source: &CourseSource) -> OpenCourseRequest {
+    match source {
+        CourseSource::Builtin { course_id } => OpenCourseRequest::Builtin {
+            course_id: course_id.clone(),
+        },
+        CourseSource::LocalMarkdown { path } => {
+            OpenCourseRequest::LocalMarkdown { path: path.clone() }
+        }
+        CourseSource::LocalPack { path } => OpenCourseRequest::LocalPack { path: path.clone() },
+    }
+}
+
+fn workspace_recent(workspace: &Workspace, course: &LoadedCourse) -> RecentWorkspace {
+    RecentWorkspace {
+        workspace_path: workspace.summary.root.clone(),
+        course_id: course.course_id.clone(),
+        course_title: course.title.clone(),
+        language: course.language,
+        course_source: Some(course.source.clone()),
+        completed_exercises: workspace.completed_exercises,
+        total_exercises: course.total_exercises,
+        last_opened_at: Utc::now().to_rfc3339(),
     }
 }
 

@@ -19,3 +19,10 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 sha2 = "0.10"
 tar = "0.4"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+cap-std = "4"
+cap-fs-ext = "4"
+cap-tempfile = "4"
+notify = "9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

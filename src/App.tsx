@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   closeActiveCourse,
   dispatchPreflight,
+  expectResponse,
   fetchBootstrap,
   openCourse,
   reloadActiveCourse,
@@ -23,6 +24,7 @@ import {
   type PreflightReport,
   type RecentWorkspace,
   type UpdateSettingsPatch,
+  type WorkspaceSummary,
 } from "./core/contracts";
 import { AppearanceDrawer } from "./components/AppearanceDrawer";
 import { CourseWorkbench } from "./components/CourseWorkbench";
@@ -35,6 +37,9 @@ import {
 } from "./components/ToastStack";
 import { TopBar } from "./components/TopBar";
 import { WelcomeHome } from "./components/WelcomeHome";
+import { WorkspaceDialog } from "./workspace/WorkspaceDialog";
+import { domainError, WorkspaceEditorSession } from "./workspace/editorSession";
+import { useWorkspaceNavigation } from "./workspace/useWorkspaceNavigation";
 import { formatDomainError, getMessages, interpolate } from "./i18n";
 import {
   applySettingsToDocument,
@@ -72,6 +77,10 @@ export function App({ client }: AppProps) {
   const [builtinCourses, setBuiltinCourses] = useState<CourseSummary[]>([]);
   const [importedCourses, setImportedCourses] = useState<CourseSummary[]>([]);
   const [activeCourse, setActiveCourse] = useState<LoadedCourse | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceEditorSession | null>(null);
+  const [resumePath, setResumePath] = useState<string | null>(null);
+  const [trustPrompt, setTrustPrompt] = useState(false);
+  const workspaceRef = useRef<WorkspaceEditorSession | null>(null);
   const [activeChapterId, setActiveChapterId] = useState<string>("");
   const [focusMode, setFocusMode] = useState(false);
   const [pendingReload, setPendingReload] =
@@ -97,10 +106,6 @@ export function App({ client }: AppProps) {
     localeRef.current = settings.locale;
   }, [settings.locale]);
 
-  useEffect(() => {
-    activeCourseRef.current = activeCourse;
-  }, [activeCourse]);
-
   const pushToast = useCallback((text: string, tone: ToastTone = "info") => {
     const id = nextToastId.current++;
     setToasts((prev) => [...prev.slice(-1), { id, tone, text }]);
@@ -111,8 +116,14 @@ export function App({ client }: AppProps) {
 
   const applyLoadedCourse = useCallback((loaded: LoadedCourse) => {
     const prevCourse = activeCourseRef.current;
-    const isSameCourse = prevCourse?.courseId === loaded.courseId;
+    const isSameCourse = prevCourse && courseSourceKey(prevCourse.source) === courseSourceKey(loaded.source);
 
+    if (!isSameCourse) {
+      workspaceRef.current = null;
+      setWorkspace(null);
+      setResumePath(null);
+    }
+    activeCourseRef.current = loaded;
     setActiveCourse(loaded);
     setPendingReload(null);
     setActiveChapterId((currentId) => {
@@ -167,6 +178,19 @@ export function App({ client }: AppProps) {
             setRecents(event.payload);
           } else if (event.type === "preflightUpdated") {
             acceptPreflight(event.payload);
+          } else if (event.type === "workspaceFilesChanged") {
+            const editor = workspaceRef.current;
+            if (editor?.workspace.id === event.payload.workspaceId) {
+              void editor.refresh(event.payload.paths);
+            }
+          } else if (event.type === "courseTrustChanged") {
+            const course = activeCourseRef.current;
+            if (course && courseSourceKey(course.source) === courseSourceKey(event.payload.source)) {
+              const updated = { ...course, trusted: event.payload.trusted };
+              activeCourseRef.current = updated;
+              setActiveCourse(updated);
+              workspaceRef.current?.setTrusted(updated.trusted);
+            }
           } else if (event.type === "courseSourceChanged") {
             if (activeCourseRef.current?.courseId === event.payload.courseId) {
               setPendingReload(event.payload);
@@ -215,7 +239,7 @@ export function App({ client }: AppProps) {
   useEffect(() => {
     if (!activeCourse) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (importOpen || appearanceOpen || runtimeSettingsOpen) return;
+      if (importOpen || appearanceOpen || runtimeSettingsOpen || event.defaultPrevented || document.querySelector("dialog[open]")) return;
       if (
         (event.metaKey || event.ctrlKey) &&
         !event.altKey &&
@@ -294,8 +318,21 @@ export function App({ client }: AppProps) {
     settings,
   ]);
 
-  const handleOpenCourseRequest = useCallback(
-    async (request: OpenCourseRequest, fromImportModal = false) => {
+  const navigation = useWorkspaceNavigation(workspace, (error) => {
+    pushToast(formatDomainError(domainError(error), localeRef.current), "err");
+  });
+
+  function applyBoundWorkspace(bound: WorkspaceSummary | null) {
+    const editor = bound ? new WorkspaceEditorSession(client, bound) : null;
+    workspaceRef.current = editor;
+    setWorkspace(editor);
+    for (const notice of bound?.recoveryNotices ?? []) {
+      pushToast(formatDomainError({ code: notice.errorCode, details: { store: notice.store } }, settings.locale), "warn");
+    }
+  }
+
+  function handleOpenCourseRequest(request: OpenCourseRequest, fromImportModal = false) {
+    return navigation.navigate(async () => {
       if (fromImportModal) {
         setImportSubmitting(true);
         setImportError(null);
@@ -304,47 +341,79 @@ export function App({ client }: AppProps) {
         const loaded = await openCourse(client, request);
         applyLoadedCourse(loaded);
         setFocusMode(false);
-        if (fromImportModal) {
-          setImportOpen(false);
-        }
-      } catch (err) {
-        if (err instanceof CoreCommandError) {
-          const text = formatDomainError(err.domainError, localeRef.current);
-          if (fromImportModal) {
-            setImportError(text);
-          } else {
-            pushToast(text, "err");
-          }
-        }
+        if (fromImportModal) setImportOpen(false);
+      } catch (error) {
+        if (!fromImportModal) throw error;
+        setImportError(formatDomainError(domainError(error), localeRef.current));
       } finally {
-        if (fromImportModal) {
-          setImportSubmitting(false);
-        }
+        if (fromImportModal) setImportSubmitting(false);
       }
-    },
-    [applyLoadedCourse, client, pushToast]
-  );
+    }, !activeCourse || courseSourceKey(activeCourse.source) !== courseSourceKey(request));
+  }
 
-  const handleSelectCourseSummary = useCallback(
-    (summary: CourseSummary) => {
-      void handleOpenCourseRequest(openRequestFromSource(summary.source), false);
-    },
-    [handleOpenCourseRequest]
-  );
+  function handleSelectCourseSummary(summary: CourseSummary) {
+    void handleOpenCourseRequest(openRequestFromSource(summary.source));
+  }
 
-  const handleGoHome = useCallback(() => {
+  async function bindWorkspace(path: string) {
+    const response = await client.dispatch({ type: "bindWorkspace", payload: { path } });
+    applyBoundWorkspace(expectResponse(response, "workspaceBound").payload);
+    setResumePath(null);
+  }
+
+  async function chooseWorkspace() {
+    try {
+      const course = activeCourseRef.current;
+      const path = await client.pickLocalPath?.("workspaceDir");
+      if (path && course === activeCourseRef.current && path !== workspaceRef.current?.workspace.root) {
+        await navigation.navigate(() => bindWorkspace(path));
+      }
+    } catch (error) {
+      pushToast(formatDomainError(domainError(error), localeRef.current), "err");
+    }
+  }
+
+  function handleOpenRecentWorkspace(path: string) {
+    void navigation.navigate(async () => {
+      const response = await client.dispatch({ type: "openRecentWorkspace", payload: { path } });
+      const opened = expectResponse(response, "recentWorkspaceOpened").payload;
+      applyLoadedCourse(opened.course);
+      applyBoundWorkspace(opened.workspace);
+      setResumePath(opened.workspace ? null : path);
+      setFocusMode(false);
+    });
+  }
+
+  function setCourseTrust(trust: boolean) {
+    const course = activeCourseRef.current;
+    if (!course || course.source.kind === "builtin") return;
+    const source = { sourceKind: "localPath" as const, source: course.source.path };
+    void navigation.navigate(async () => {
+      try {
+        const response = await client.dispatch({ type: trust ? "grantTrust" : "revokeTrust", payload: source });
+        expectResponse(response, trust ? "trustState" : "trustEntries");
+      } finally {
+        setTrustPrompt(false);
+      }
+    }, false);
+  }
+
+  function handleGoHome() {
     if (!activeCourseRef.current) {
       window.scrollTo({ top: 0 });
       return;
     }
-    setActiveCourse(null);
-    setActiveChapterId("");
-    setPendingReload(null);
-    setFocusMode(false);
-    void closeActiveCourse(client).catch(() => {
-      // Closing an active course on return to Home is best-effort.
+    void navigation.navigate(async () => {
+      await closeActiveCourse(client);
+      activeCourseRef.current = null;
+      applyBoundWorkspace(null);
+      setActiveCourse(null);
+      setResumePath(null);
+      setActiveChapterId("");
+      setPendingReload(null);
+      setFocusMode(false);
     });
-  }, [client]);
+  }
 
   const handleReloadCourse = useCallback(async () => {
     setReloadingCourse(true);
@@ -436,6 +505,16 @@ export function App({ client }: AppProps) {
         {activeCourse ? (
           <CourseWorkbench
             course={activeCourse}
+            session={workspace}
+            settings={settings}
+            switching={navigation.switching}
+            recentWorkspacePath={resumePath}
+            onChooseWorkspace={() => void chooseWorkspace()}
+            onResumeWorkspace={() => {
+              if (resumePath) void navigation.navigate(() => bindWorkspace(resumePath));
+            }}
+            onRequestTrust={() => setTrustPrompt(true)}
+            onRevokeTrust={() => setCourseTrust(false)}
             activeChapterId={activeChapterId}
             focusMode={focusMode}
             pendingReload={pendingReload}
@@ -453,6 +532,7 @@ export function App({ client }: AppProps) {
             locale={settings.locale}
             builtinCourses={builtinCourses}
             recents={recents}
+            onOpenRecentWorkspace={handleOpenRecentWorkspace}
             onOpenBuiltinCourse={(courseId) =>
               void handleOpenCourseRequest(
                 { kind: "builtin", courseId },
@@ -481,6 +561,29 @@ export function App({ client }: AppProps) {
         onSubmit={(request) => handleOpenCourseRequest(request, true)}
         onClearError={() => setImportError(null)}
       />
+
+      {navigation.pending && (
+        <WorkspaceDialog title={messages.workspace.switchTitle} cancel={messages.workspace.cancel}
+          busy={navigation.switching} onCancel={navigation.cancel}>
+          <button type="button" className="btn btn--secondary btn--sm" disabled={navigation.switching}
+            onClick={() => navigation.decide(false)}>{messages.workspace.discard}</button>
+          <button type="button" className="btn btn--primary btn--sm" disabled={navigation.switching || !activeCourse?.trusted}
+            onClick={() => navigation.decide(true)}>{messages.workspace.saveAndSwitch}</button>
+        </WorkspaceDialog>
+      )}
+
+      {trustPrompt && activeCourse && (
+        <WorkspaceDialog
+          title={messages.workspace.trustTitle}
+          detail={<>{messages.workspace.trustDetail}<span className="mono workspace-dialog-path">{activeCourse.source.kind !== "builtin" && activeCourse.source.path}</span></>}
+          cancel={messages.workspace.cancel}
+          busy={navigation.switching}
+          onCancel={() => setTrustPrompt(false)}
+        >
+          <button type="button" className="btn btn--primary btn--sm" disabled={navigation.switching}
+            onClick={() => setCourseTrust(true)}>{messages.workspace.trust}</button>
+        </WorkspaceDialog>
+      )}
 
       <AppearanceDrawer
         open={appearanceOpen}

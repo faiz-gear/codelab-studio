@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::course::CourseSummary;
+use crate::course::{CourseSource, CourseSummary};
 use crate::error::ErrorCode;
 
 pub const GLOBAL_DATA_SCHEMA_VERSION: u32 = 1;
@@ -98,7 +98,9 @@ pub struct RecentWorkspace {
     pub workspace_path: String,
     pub course_id: String,
     pub course_title: String,
-    pub language: CourseLanguage,
+    pub language: Option<CourseLanguage>,
+    #[serde(default)]
+    pub course_source: Option<CourseSource>,
     pub completed_exercises: u32,
     pub total_exercises: u32,
     pub last_opened_at: String,
@@ -153,6 +155,9 @@ pub enum StoreKind {
     RuntimePreferences,
     Recents,
     Trust,
+    Workspace,
+    Progress,
+    Metrics,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -47,6 +47,18 @@ export const ERROR_CODES = [
   "COURSE_MANIFEST_INVALID",
   "COURSE_CHECKS_INVALID",
   "NO_ACTIVE_COURSE",
+  "COURSE_UNTRUSTED",
+  "NO_ACTIVE_WORKSPACE",
+  "WORKSPACE_PATH_OUTSIDE_ROOT",
+  "WORKSPACE_BOUND_TO_ANOTHER_COURSE",
+  "WORKSPACE_FILE_NOT_FOUND",
+  "WORKSPACE_FILE_EXISTS",
+  "WORKSPACE_FILE_READ_FAILED",
+  "WORKSPACE_FILE_WRITE_FAILED",
+  "WORKSPACE_FILE_NOT_TEXT",
+  "WORKSPACE_WATCH_FAILED",
+  "WORKSPACE_STARTER_FAILED",
+  "EXTERNAL_IDE_OPEN_FAILED",
   "STORAGE_READ_FAILED",
   "STORAGE_WRITE_FAILED",
   "STORAGE_CORRUPTED",
@@ -94,7 +106,8 @@ export interface RecentWorkspace {
   workspacePath: string;
   courseId: string;
   courseTitle: string;
-  language: CourseLanguage;
+  language: CourseLanguage | null;
+  courseSource?: CourseSource | null;
   completedExercises: number;
   totalExercises: number;
   lastOpenedAt: string;
@@ -185,7 +198,7 @@ export interface PreflightReport {
   installDir: string;
 }
 
-export type StoreKind = "settings" | "runtimePreferences" | "recents" | "trust";
+export type StoreKind = "settings" | "runtimePreferences" | "recents" | "trust" | "workspace" | "progress" | "metrics";
 
 export interface StorageRecoveryNotice {
   store: StoreKind;
@@ -324,6 +337,7 @@ export interface LoadedCourse {
   source: CourseSource;
   entryMarkdownPath: string | null;
   isBuiltin: boolean;
+  trusted: boolean;
   introHtml: string | null;
   totalExercises: number;
   chapters: Chapter[];
@@ -343,6 +357,36 @@ export interface AppBootstrap {
   builtinCourses: CourseSummary[];
 }
 
+export interface WorkspaceSummary {
+  id: number;
+  root: string;
+  recoveryNotices: StorageRecoveryNotice[];
+}
+
+export interface WorkspacePath {
+  workspaceId: number;
+  path: string;
+}
+
+export interface WorkspaceEntry {
+  path: string;
+  name: string;
+  kind: "directory" | "file";
+}
+
+export type WorkspaceFile = {
+  path: string;
+  sizeBytes: number;
+  revision: string | null;
+} & ({ kind: "text"; text: string } | { kind: "binary" | "tooLarge" | "missing" });
+
+export interface WorkspaceFilesChanged {
+  workspaceId: number;
+  paths: string[];
+}
+
+export type ExternalIde = "vsCode" | "cursor" | "goLand" | "intelliJIdea";
+
 export type AppCommand =
   | { type: "bootstrap" }
   | { type: "getSettings" }
@@ -358,6 +402,14 @@ export type AppCommand =
   | { type: "openCourse"; payload: OpenCourseRequest }
   | { type: "reloadActiveCourse" }
   | { type: "closeActiveCourse" }
+  | { type: "bindWorkspace"; payload: { path: string } }
+  | { type: "openRecentWorkspace"; payload: { path: string } }
+  | { type: "listWorkspaceFiles"; payload: WorkspacePath }
+  | { type: "readWorkspaceFile"; payload: WorkspacePath }
+  | { type: "writeWorkspaceFile"; payload: WorkspacePath & { text: string; expectedRevision: string | null } }
+  | { type: "createWorkspaceFile"; payload: WorkspacePath }
+  | { type: "renameWorkspaceFile"; payload: WorkspacePath & { newPath: string } }
+  | { type: "openWorkspaceIde"; payload: WorkspacePath & { ide: ExternalIde } }
   | { type: "getPreflight" }
   | { type: "refreshPreflight" }
   | { type: "setRuntimePreference"; payload: RuntimePreference }
@@ -378,6 +430,12 @@ export type AppResponse =
   | { type: "builtinCourses"; payload: CourseSummary[] }
   | { type: "loadedCourse"; payload: LoadedCourse }
   | { type: "courseClosed" }
+  | { type: "workspaceBound"; payload: WorkspaceSummary }
+  | { type: "recentWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary | null } }
+  | { type: "workspaceEntries"; payload: WorkspaceEntry[] }
+  | { type: "workspaceFile"; payload: WorkspaceFile }
+  | { type: "workspaceFileConflict"; payload: WorkspaceFile }
+  | { type: "workspaceIdeOpened" }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };
 
@@ -387,10 +445,12 @@ export type AppEvent =
   | { type: "trustUpdated"; payload: TrustEntry[] }
   | { type: "courseLoaded"; payload: LoadedCourse }
   | { type: "courseSourceChanged"; payload: CourseSourceChangedEvent }
+  | { type: "courseTrustChanged"; payload: { source: CourseSource; trusted: boolean } }
+  | { type: "workspaceFilesChanged"; payload: WorkspaceFilesChanged }
   | { type: "preflightUpdated"; payload: PreflightReport }
   | { type: "shutdownCompleted"; payload: ShutdownReport };
 
-export type LocalPathPickKind = "markdownFile" | "coursePackDir";
+export type LocalPathPickKind = "markdownFile" | "coursePackDir" | "workspaceDir";
 
 export class CoreCommandError extends Error {
   readonly domainError: DomainError;

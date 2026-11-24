@@ -177,6 +177,7 @@ pub struct LoadedCourse {
     pub source: CourseSource,
     pub entry_markdown_path: Option<String>,
     pub is_builtin: bool,
+    pub trusted: bool,
     pub intro_html: Option<String>,
     pub total_exercises: u32,
     pub chapters: Vec<Chapter>,

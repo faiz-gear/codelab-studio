@@ -10,13 +10,13 @@
 
 在开始练习前，请选择一个本地空目录作为你的学习 Workspace（例如 `~/codelab-workspaces/go-goframe-learning/`）。所有练习代码、数据库迁移和相关文档都将保存在该 Workspace 内。
 
-后续按练习步骤逐步建立以下结构，不必提前创建空目录：
+工作台绑定空目录时会复制 Starter，其中包含两份可运行的 Go 模块、可见测试、迁移文件和需求记录模板。已有目录保留原文件。如果直接阅读 Markdown，可以按练习逐步建立这些文件。
 
 ```text
 <workspace>/
-├── README.md          # 本学习手册（或由工作台左侧只读展示）
-├── task-api/          # 练习 1 中创建：标准库实现
-└── task-api-gf/       # 练习 7 中创建：GoFrame 实现
+├── REQUIREMENTS.md    # 练习 0 的需求记录模板
+├── task-api/          # 练习 1–6：标准库实现
+└── task-api-gf/       # 练习 7–9：GoFrame 实现
 ```
 
 开始练习 1 前，先确认当前位于学习 Workspace 根目录：
@@ -96,7 +96,7 @@ type Task struct {
 
 先理解 HTTP 服务最小需要什么。
 
-在学习工作区中建立项目：
+在学习工作区中建立项目。如果已有 Starter，请直接进入 `task-api`，打开 `main.go` 查看健康检查路由，再用 `go test ./...` 验证。
 
 ```bash
 mkdir task-api
@@ -476,7 +476,7 @@ func (s *Service) Complete(ctx context.Context, id int64) (Task, error)
 
 现在你已经有一个可作为参照的实现。
 
-保留标准库版本，在学习 Workspace 根目录新建 GoFrame 项目：
+保留标准库版本。如果已有 Starter，请进入 `task-api-gf`，用 `go test ./...` 验证空任务列表，再执行 `go run main.go`。如果从头搭建，请在学习 Workspace 根目录新建 GoFrame 项目。
 
 ```bash
 go install github.com/gogf/gf/cmd/gf/v2@latest
