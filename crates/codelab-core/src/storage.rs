@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -146,7 +146,7 @@ where
 
 #[cfg(unix)]
 fn sync_parent_dir(dir: &Path) {
-    if let Ok(handle) = File::open(dir) {
+    if let Ok(handle) = fs::File::open(dir) {
         let _ = handle.sync_all();
     }
 }
