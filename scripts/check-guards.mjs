@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import postcss from "postcss";
+import ts from "typescript";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const failures = [];
@@ -11,6 +13,10 @@ function fail(rule, detail) {
 
 function readText(relPath) {
   return readFileSync(join(ROOT, relPath), "utf8");
+}
+
+function parseTypeScript(relPath) {
+  return ts.createSourceFile(relPath, readText(relPath), ts.ScriptTarget.Latest);
 }
 
 function walkFiles(dirPath) {
@@ -96,11 +102,13 @@ if (/\btauri\b/i.test(coreCargo)) {
 }
 
 // 2. Frontend CoreClient seam: @tauri-apps/* only in src/core/tauriClient.ts, no __tests__ in prod
-for (const file of walkFiles(join(ROOT, "src"))) {
-  const rel = relative(ROOT, file).replaceAll("\\", "/");
+const sourceFiles = walkFiles(join(ROOT, "src")).map((file) =>
+  relative(ROOT, file).replaceAll("\\", "/")
+);
+for (const rel of sourceFiles) {
   if (!rel.endsWith(".ts") && !rel.endsWith(".tsx")) continue;
   if (rel.startsWith("src/__tests__/")) continue;
-  const content = readFileSync(file, "utf8");
+  const content = readText(rel);
 
   if (rel !== "src/core/tauriClient.ts" && /@tauri-apps\//.test(content)) {
     fail(
@@ -120,8 +128,6 @@ for (const file of walkFiles(join(ROOT, "src"))) {
 const rustErrorSrc = readText("crates/codelab-core/src/error.rs");
 const rustAppSrc = readText("crates/codelab-core/src/app.rs");
 const tsContractsSrc = readText("src/core/contracts.ts");
-const zhSrc = readText("src/i18n/zh-CN.ts");
-const enSrc = readText("src/i18n/en-US.ts");
 
 const rustErrorCodes = extractRustEnumVariants(rustErrorSrc, "ErrorCode").map(
   pascalToScreamingSnake
@@ -150,13 +156,6 @@ for (const code of tsErrorCodes) {
       `TypeScript ErrorCode "${code}" is neither in Rust ErrorCode nor allowlisted as frontend-only.`
     );
   }
-  const keyRegex = new RegExp(`\\b${code}:\\s*"`);
-  if (!keyRegex.test(zhSrc)) {
-    fail("i18n-error-coverage", `src/i18n/zh-CN.ts is missing translation for ${code}.`);
-  }
-  if (!keyRegex.test(enSrc)) {
-    fail("i18n-error-coverage", `src/i18n/en-US.ts is missing translation for ${code}.`);
-  }
 }
 
 assertSameSet(
@@ -184,8 +183,157 @@ assertSameSet(
   extractTsUnionTags(tsContractsSrc, "AppEvent")
 );
 
+// 3b. Compare placeholders in the actual locale dictionaries.
+function propertyName(name) {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : undefined;
+}
+
+function readErrorTemplates(relPath, dictionaryName) {
+  const source = parseTypeScript(relPath);
+  const dictionary = source.statements
+    .filter(ts.isVariableStatement)
+    .flatMap((statement) => statement.declarationList.declarations)
+    .find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === dictionaryName)
+    ?.initializer;
+  const templates = new Map();
+  if (!dictionary || !ts.isObjectLiteralExpression(dictionary)) return templates;
+
+  const errors = dictionary.properties
+    .filter(ts.isPropertyAssignment)
+    .find((property) => propertyName(property.name) === "errors")?.initializer;
+  if (!errors || !ts.isObjectLiteralExpression(errors)) return templates;
+
+  for (const property of errors.properties) {
+    if (!ts.isPropertyAssignment(property) || !ts.isStringLiteralLike(property.initializer)) continue;
+    const code = propertyName(property.name);
+    if (code !== undefined) templates.set(code, property.initializer.text);
+  }
+  return templates;
+}
+
+function errorPlaceholders(templates, code, relPath) {
+  const template = templates.get(code);
+  if (template === undefined) {
+    fail("i18n-error-coverage", `${relPath} is missing a string template for ${code}.`);
+    return null;
+  }
+
+  // Match the keys accepted by src/i18n/index.ts#interpolate.
+  const keys = Array.from(template.matchAll(/\{(\w+)\}/g), (match) => match[1]);
+  if (keys.includes("reason")) {
+    fail("i18n-no-raw-reason", `${relPath} ${code} renders {reason}. Use localized text for error reasons.`);
+  }
+  return keys;
+}
+
+const zhPath = "src/i18n/zh-CN.ts";
+const enPath = "src/i18n/en-US.ts";
+const zhTemplates = readErrorTemplates(zhPath, "zhCN");
+const enTemplates = readErrorTemplates(enPath, "enUS");
+for (const code of tsErrorCodes) {
+  const zhKeys = errorPlaceholders(zhTemplates, code, zhPath);
+  const enKeys = errorPlaceholders(enTemplates, code, enPath);
+  if (zhKeys && enKeys) {
+    assertSameSet("i18n-placeholder-parity", `${code} placeholder`, zhPath, zhKeys, enPath, enKeys);
+  }
+}
+
+// 3c. Register every command called by the Tauri CoreClient.
+const invokedCommands = new Set();
+function collectInvokedCommands(node) {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "invoke"
+  ) {
+    const command = node.arguments[0];
+    if (command && ts.isStringLiteralLike(command)) invokedCommands.add(command.text);
+  }
+  ts.forEachChild(node, collectInvokedCommands);
+}
+collectInvokedCommands(parseTypeScript("src/core/tauriClient.ts"));
+
+const shellLibSrc = readText("src-tauri/src/lib.rs").replace(
+  /"(?:[^"\\]|\\.)*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g,
+  " "
+);
+const handlerBlock = /\bgenerate_handler\s*!\s*\[([\s\S]*?)\]/.exec(shellLibSrc);
+if (!handlerBlock) {
+  fail("tauri-invoke-parity", "Could not locate tauri::generate_handler![...] in src-tauri/src/lib.rs.");
+} else {
+  const handlerNames = handlerBlock[1]
+    .split(",")
+    .map((handler) => handler.split("::").at(-1).trim())
+    .filter(Boolean);
+  const registeredHandlers = new Set(handlerNames);
+  for (const command of invokedCommands) {
+    if (!registeredHandlers.has(command)) {
+      fail("tauri-invoke-parity", `src/core/tauriClient.ts calls "${command}" without a registered Tauri handler.`);
+    }
+  }
+}
+
+// 3d. Use gradient tokens in image-capable properties and reserve the hero mesh for .hero-panel.
+const appTokensPath = "src/styles/tokens.css";
+const appTokens = readText(appTokensPath);
+const tokensCss = postcss.parse(appTokens, { from: appTokensPath });
+const gradientTokens = new Set();
+tokensCss.walkDecls(/^--/, (declaration) => {
+  if (/\b(?:linear|radial|conic)-gradient\(/i.test(declaration.value)) {
+    gradientTokens.add(declaration.prop);
+  }
+});
+
+const COLOR_TYPED_PROPERTIES = new Set([
+  "color",
+  "border",
+  "border-top",
+  "border-right",
+  "border-bottom",
+  "border-left",
+  "border-block",
+  "border-block-start",
+  "border-block-end",
+  "border-inline",
+  "border-inline-start",
+  "border-inline-end",
+  "outline",
+  "box-shadow",
+  "text-shadow",
+  "text-decoration",
+  "column-rule",
+  "fill",
+  "stroke",
+]);
+const HERO_MESH_TOKEN = "--arc-hero-bg";
+// Consume quoted text so only actual var() calls contribute references.
+const CSS_VARIABLE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\bvar\(\s*(--[\w-]+)\s*(?=[,)])/gi;
+
+for (const rel of sourceFiles) {
+  if (!rel.endsWith(".css")) continue;
+  const css = rel === appTokensPath ? tokensCss : postcss.parse(readText(rel), { from: rel });
+  css.walkDecls((declaration) => {
+    const property = declaration.prop.toLowerCase();
+    const expectsColor =
+      COLOR_TYPED_PROPERTIES.has(property) ||
+      (!property.startsWith("--") && property.endsWith("-color"));
+    for (const [, token] of declaration.value.matchAll(CSS_VARIABLE)) {
+      if (!token) continue;
+      const location = `${rel}:${declaration.source.start.line}`;
+      if (expectsColor && gradientTokens.has(token)) {
+        fail(
+          "css-gradient-token-misuse",
+          `${location} uses gradient token ${token} in color-typed property "${property}".`
+        );
+      }
+      if (token === HERO_MESH_TOKEN && declaration.parent.selector !== ".hero-panel") {
+        fail("css-hero-mesh-scope", `${location} uses ${token} outside the Welcome Home .hero-panel rule.`);
+      }
+    }
+  });
+}
+
 // 4. Design token sync: src/styles/tokens.css <-> docs/design/tokens.css
-const appTokens = readText("src/styles/tokens.css");
 const docTokens = readText("docs/design/tokens.css");
 if (appTokens !== docTokens) {
   fail(

@@ -1,10 +1,11 @@
 # Coding Standards
 
-Review-time judgement standards for CodeLab Studio. Apply every rule below against the diff. Mechanical invariants (Tauri-free `codelab-core`, `CoreClient` import isolation, Rust↔TS↔i18n contract parity, CSS cascade specificity, and WCAG AA token contrast) are already enforced deterministically by `pnpm run check:all`.
+Apply every rule below when reviewing a diff for CodeLab Studio. `pnpm run check:all` runs the automated checks, including the architecture, contract, and design token guards.
 
 ## Architecture & Seams
 
 - **Single domain authority (`codelab-core`)**: Domain validation, path canonicalization, trust normalization, and state transitions belong exclusively in `crates/codelab-core`. Keep `src/` limited to rendering and transient UI state; avoid duplicating domain validation rules in TypeScript.
+- **Canonical root containment** covers every file read from a Course Pack or Workspace, including `codelab.json`, `.codelab-checks.json`, Markdown entries, Starter files, Reference Solution snapshots, and learner source files. Use a containment helper before opening each file. Verify that the resolved path stays within the canonical root, even when the input contains symlinks or `..` segments.
 - **Zero-logic Tauri shell (`src-tauri`)**: Forward IPC commands, event streams, native dialogs, and lifecycle hooks directly to `codelab_core::App` without wrapper middle-man structs or business branching.
 - **Test at the two primary seams**: Exercise `codelab-core` through its public `App` interface (`crates/codelab-core/tests/`) using real temp directories, loopback servers, and child processes; exercise React UI through the `CoreClient` interface (`src/__tests__/`) using `FakeCoreClient`.
 

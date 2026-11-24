@@ -53,3 +53,5 @@ If your output contradicts an existing ADR, surface it explicitly rather than si
 ## Source precedence
 
 `GLOSSARY.md`, `docs/adr/0001`–`0009`, and active GitHub Spec/Issues (`#5`+) are authoritative. Where earlier artifacts (`PRODUCT.md`, `docs/prd/`, `docs/design/prototype/`) diverge — such as BYOK/Keychain (retired in v1 by ADR-0004) or read-only ACP approval prompts (superseded by ADR-0009) — follow the ADRs and active Spec.
+
+For UI layout, typography, colors, and component geometry, start with `DESIGN.md` and `src/styles/tokens.css`. Search `docs/design/prototype/index.html` when checking a specific legacy interaction.
