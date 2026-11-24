@@ -16,6 +16,7 @@ use crate::model::{
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, TrustEntry,
     TrustSource, TrustSourceKind, TrustState, UpdateSettingsPatch,
 };
+use crate::runtime::{PreflightReport, RuntimeAdapters, RuntimeManager, RuntimePreference};
 use crate::storage::JsonStore;
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,12 @@ pub enum AppCommand {
     OpenCourse(OpenCourseRequest),
     ReloadActiveCourse,
     CloseActiveCourse,
+    GetPreflight,
+    RefreshPreflight,
+    SetRuntimePreference(RuntimePreference),
+    InstallManagedRuntime {
+        language: crate::CourseLanguage,
+    },
     Shutdown,
 }
 
@@ -57,6 +64,7 @@ pub enum AppResponse {
     BuiltinCourses(Vec<CourseSummary>),
     LoadedCourse(LoadedCourse),
     CourseClosed,
+    Preflight(PreflightReport),
     Shutdown(ShutdownReport),
 }
 
@@ -68,6 +76,7 @@ pub enum AppEvent {
     TrustUpdated(Vec<TrustEntry>),
     CourseLoaded(LoadedCourse),
     CourseSourceChanged(CourseSourceChangedEvent),
+    PreflightUpdated(PreflightReport),
     ShutdownCompleted(ShutdownReport),
 }
 
@@ -111,16 +120,26 @@ struct AppState {
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
 
+type Subscribers = Mutex<Vec<mpsc::Sender<AppEvent>>>;
+
 pub struct App {
     settings_store: JsonStore<GlobalSettings>,
     recents_store: JsonStore<Vec<RecentWorkspace>>,
     trust_store: JsonStore<Vec<TrustEntry>>,
     state: Mutex<AppState>,
-    subscribers: Arc<Mutex<Vec<mpsc::Sender<AppEvent>>>>,
+    subscribers: Arc<Subscribers>,
+    runtime: Arc<RuntimeManager>,
 }
 
 impl App {
     pub fn open(config: AppConfig) -> Result<Self, DomainError> {
+        Self::open_with_runtime_adapters(config, RuntimeAdapters::default())
+    }
+
+    pub fn open_with_runtime_adapters(
+        config: AppConfig,
+        adapters: RuntimeAdapters,
+    ) -> Result<Self, DomainError> {
         fs::create_dir_all(&config.data_dir).map_err(|err| {
             DomainError::new(ErrorCode::StorageWriteFailed)
                 .with_detail("store", "dataDir")
@@ -145,16 +164,25 @@ impl App {
                 .all(|item| !item.normalized_source.trim().is_empty())
         })?;
 
+        let builtin_courses = course::list_builtin_courses()?;
+        let subscribers = Arc::new(Subscribers::default());
+        let runtime_subscribers = Arc::downgrade(&subscribers);
+        let (runtime, runtime_recovery) =
+            RuntimeManager::open(&config.data_dir, adapters, move |report| {
+                if let Some(subscribers) = runtime_subscribers.upgrade() {
+                    emit_to_subscribers(&subscribers, AppEvent::PreflightUpdated(report));
+                }
+            })?;
+
         let recovery_notices = [
             settings_loaded.recovery,
             recents_loaded.recovery,
             trust_loaded.recovery,
+            runtime_recovery,
         ]
         .into_iter()
         .flatten()
         .collect();
-
-        let builtin_courses = course::list_builtin_courses()?;
 
         Ok(Self {
             settings_store,
@@ -170,7 +198,8 @@ impl App {
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
             }),
-            subscribers: Arc::new(Mutex::new(Vec::new())),
+            subscribers,
+            runtime,
         })
     }
 
@@ -207,6 +236,15 @@ impl App {
             AppCommand::OpenCourse(request) => self.open_course(request),
             AppCommand::ReloadActiveCourse => self.reload_active_course(),
             AppCommand::CloseActiveCourse => self.close_active_course(),
+            AppCommand::GetPreflight => Ok(AppResponse::Preflight(self.runtime.snapshot())),
+            AppCommand::RefreshPreflight => self.runtime.refresh().map(AppResponse::Preflight),
+            AppCommand::SetRuntimePreference(preference) => self
+                .runtime
+                .set_preference(preference)
+                .map(AppResponse::Preflight),
+            AppCommand::InstallManagedRuntime { language } => {
+                self.runtime.install(language).map(AppResponse::Preflight)
+            }
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
     }
@@ -512,7 +550,7 @@ impl App {
     }
 }
 
-fn emit_to_subscribers(subscribers: &Mutex<Vec<mpsc::Sender<AppEvent>>>, event: AppEvent) {
+fn emit_to_subscribers(subscribers: &Subscribers, event: AppEvent) {
     let mut subs = subscribers
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());

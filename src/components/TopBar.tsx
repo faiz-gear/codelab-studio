@@ -5,6 +5,8 @@ import {
   type LoadedCourse,
 } from "../core/contracts";
 import type { Messages } from "../i18n";
+import { PreflightPopover } from "./PreflightPopover";
+import type { RuntimePanelProps } from "./RuntimePanel";
 import {
   BrandMarkIcon,
   ChevronDownIcon,
@@ -29,7 +31,9 @@ export interface TopBarProps {
   onOpenImportModal: () => void;
   onToggleFocusMode: () => void;
   onOpenAppearance: () => void;
-  onPlaceholderAction: (label: string) => void;
+  runtimePanel: RuntimePanelProps;
+  runtimeSettingsOpen: boolean;
+  onOpenRuntimeSettings: (trigger: HTMLElement) => void;
 }
 
 export function TopBar({
@@ -45,7 +49,9 @@ export function TopBar({
   onOpenImportModal,
   onToggleFocusMode,
   onOpenAppearance,
-  onPlaceholderAction,
+  runtimePanel,
+  runtimeSettingsOpen,
+  onOpenRuntimeSettings,
 }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -251,15 +257,7 @@ export function TopBar({
           </button>
         ) : null}
 
-        <button
-          type="button"
-          className="btn btn--ghost btn--sm btn--pill"
-          title={messages.topbar.envStatusTooltip}
-          onClick={() => onPlaceholderAction(messages.topbar.envStatusLabel)}
-        >
-          <span className="dot dot--muted" aria-hidden="true" />
-          <span>{messages.topbar.envStatusLabel}</span>
-        </button>
+        <PreflightPopover {...runtimePanel} onOpenSettings={onOpenRuntimeSettings} />
 
         <button
           ref={appearanceTriggerRef}
@@ -279,7 +277,9 @@ export function TopBar({
           className="btn btn--ghost btn--icon btn--sm btn--pill"
           aria-label={messages.topbar.settingsLabel}
           title={messages.topbar.settingsTooltip}
-          onClick={() => onPlaceholderAction(messages.topbar.settingsLabel)}
+          aria-haspopup="dialog"
+          aria-expanded={runtimeSettingsOpen}
+          onClick={(event) => onOpenRuntimeSettings(event.currentTarget)}
         >
           <SettingsIcon />
         </button>

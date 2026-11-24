@@ -4,6 +4,10 @@ import type {
   CourseLanguage,
   ErrorCode,
   StoreKind,
+  HostTool,
+  OptionalLsp,
+  ProbeProblem,
+  ProbeStatus,
 } from "../core/contracts";
 
 export interface CoursePlaceholderMeta {
@@ -142,6 +146,34 @@ export interface Messages {
     stageNextMilestoneNote: string;
     checkKinds: Record<CheckKind, string>;
   };
+  runtime: {
+    settingsTab: string;
+    refresh: string;
+    checking: string;
+    readyCount: string;
+    installingCount: string;
+    manage: string;
+    close: string;
+    install: string;
+    installFor: string;
+    retry: string;
+    retryFor: string;
+    preferManaged: string;
+    preferFor: string;
+    system: string;
+    managed: string;
+    installDir: string;
+    optionalLsp: string;
+    progressLabel: string;
+    preparing: string;
+    downloading: string;
+    extracting: string;
+    installed: string;
+    status: Record<ProbeStatus, string>;
+    problems: Record<ProbeProblem, string>;
+    toolNames: Record<HostTool, string>;
+    lspGuidance: Record<OptionalLsp, string>;
+  };
   appearance: {
     dialogLabel: string;
     title: string;
@@ -189,12 +221,12 @@ export const zhCN: Messages = {
     progressLabel: "实战 Exercise 进度",
     focusModeLabel: "专注模式",
     focusModeTooltip: "折叠 / 展开左侧手册（⌘/Ctrl + B）",
-    envStatusLabel: "环境待检测",
+    envStatusLabel: "环境体检",
     envStatusTooltip: "本机环境与四语言 Managed Runtime 状态",
     appearance: "外观",
     appearanceTooltip: "外观定制：双主题、8 组强调色、代码字号与界面语言",
     settingsLabel: "设置",
-    settingsTooltip: "设置（ACP 助教与运行时）",
+    settingsTooltip: "运行时设置",
   },
   welcome: {
     ariaLabel: "课程主页",
@@ -317,6 +349,51 @@ export const zhCN: Messages = {
       selfCheck: "自查 Self-Check",
     },
   },
+  runtime: {
+    settingsTab: "四语言运行时",
+    refresh: "重新探测",
+    checking: "正在探测本机环境…",
+    readyCount: "{ready}/{total}",
+    installingCount: "安装中 · {count}",
+    manage: "管理运行时",
+    close: "关闭",
+    install: "一键安装",
+    installFor: "为 {language} 安装 Managed Runtime",
+    retry: "重试",
+    retryFor: "重试安装 {language} Managed Runtime",
+    preferManaged: "优先托管版",
+    preferFor: "为 {language} 优先使用 Managed Runtime",
+    system: "系统",
+    managed: "Managed Runtime",
+    installDir: "隔离目录",
+    optionalLsp: "可选 LSP",
+    progressLabel: "{language} 安装进度",
+    preparing: "正在准备安装",
+    downloading: "正在下载 {artifact}",
+    extracting: "正在解压 {artifact}",
+    installed: "Managed Runtime 安装完成",
+    status: { ok: "就绪", warn: "需检查", missing: "未找到" },
+    problems: {
+      versionTooOld: "版本过低",
+      timedOut: "探测超时",
+      failed: "探测失败",
+      proxyDisabled: "模块代理已关闭",
+      invalidProxy: "代理配置无效",
+    },
+    toolNames: {
+      bun: "Bun", node: "Node.js", go: "Go", javac: "JDK",
+      python3: "python3", python: "python", uv: "uv", uvPython: "Python（通过 uv）",
+      git: "git", curl: "curl", goProxy: "GOPROXY",
+      typeScriptLanguageServer: "typescript-language-server",
+      gopls: "gopls", jdtls: "jdtls", pyright: "pyright",
+    },
+    lspGuidance: {
+      typeScriptLanguageServer: "如需补全，请安装 typescript-language-server 和 typescript，并将服务加入 PATH。",
+      gopls: "如需补全，可运行 go install golang.org/x/tools/gopls@latest，并将 gopls 加入 PATH。",
+      jdtls: "如需补全，请安装 Eclipse JDT LS，并将 jdtls 启动脚本加入 PATH。",
+      pyright: "如需补全，请安装 Pyright，并将 pyright-langserver 加入 PATH。",
+    },
+  },
   appearance: {
     dialogLabel: "外观定制",
     title: "外观定制",
@@ -350,6 +427,7 @@ export const zhCN: Messages = {
     },
   },
   stores: {
+    runtimePreferences: "运行时偏好",
     settings: "全局偏好（settings）",
     recents: "最近 Workspace（recents）",
     trust: "信任列表（trust）",
@@ -372,6 +450,11 @@ export const zhCN: Messages = {
     STORAGE_READ_FAILED: "读取本地数据（{store}）失败，请检查目录权限后重试。",
     STORAGE_WRITE_FAILED: "保存本地数据（{store}）失败，请检查磁盘空间与写权限。",
     STORAGE_CORRUPTED: "检测到 {store} 配置文件损坏，已自动备份并恢复默认配置。",
+    RUNTIME_TASK_START_FAILED: "无法启动运行时任务，请重试。",
+    RUNTIME_PLATFORM_UNSUPPORTED: "当前平台没有可用的托管运行时。",
+    RUNTIME_DOWNLOAD_FAILED: "运行时下载失败，请检查网络后重试。",
+    RUNTIME_INTEGRITY_FAILED: "运行时校验失败，请重试下载。",
+    RUNTIME_INSTALL_FAILED: "运行时安装失败，请检查磁盘空间与目录权限后重试。",
     SHUTDOWN_FAILED: "退出回收部分后台资源时发生异常：{failures}",
     IPC_UNAVAILABLE: "桌面运行时连接不可用，请在 CodeLab Studio 桌面应用中打开。",
     UNEXPECTED_ERROR: "操作未能完成，请重试。",

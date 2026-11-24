@@ -11,6 +11,7 @@ import {
   type LoadedCourse,
   type LocalPathPickKind,
   type OpenCourseRequest,
+  type PreflightReport,
   type RecentWorkspace,
   type StorageRecoveryNotice,
   type TrustEntry,
@@ -198,6 +199,7 @@ export function summarizeCourse(course: LoadedCourse): CourseSummary {
 }
 
 export interface FakeCoreClientOptions {
+  preflight?: PreflightReport;
   settings?: Partial<GlobalSettings>;
   recents?: RecentWorkspace[];
   trustEntries?: TrustEntry[];
@@ -208,6 +210,7 @@ export interface FakeCoreClientOptions {
 }
 
 export class FakeCoreClient implements CoreClient {
+  private preflight: PreflightReport;
   private settings: GlobalSettings;
   private recents: RecentWorkspace[];
   private trustEntries: TrustEntry[];
@@ -224,6 +227,16 @@ export class FakeCoreClient implements CoreClient {
 
   constructor(options: FakeCoreClientOptions = {}) {
     this.settings = { ...DEFAULT_SETTINGS, ...options.settings };
+    this.preflight = options.preflight ?? {
+      revision: 0,
+      checked: true,
+      probing: false,
+      installingCount: 0,
+      languages: [],
+      tools: [],
+      goProxy: null,
+      installDir: "/codelab/runtimes",
+    };
     this.recents = options.recents ? [...options.recents] : [];
     this.trustEntries = options.trustEntries ? [...options.trustEntries] : [];
     this.recoveryNotices = options.recoveryNotices
@@ -254,6 +267,9 @@ export class FakeCoreClient implements CoreClient {
   }
 
   emitEvent(event: AppEvent): void {
+    if (event.type === "preflightUpdated") {
+      this.preflight = event.payload;
+    }
     for (const listener of this.listeners) {
       listener(event);
     }
@@ -469,6 +485,35 @@ export class FakeCoreClient implements CoreClient {
       case "closeActiveCourse": {
         this.activeCourseKey = null;
         return { type: "courseClosed" };
+      }
+      case "getPreflight":
+      case "refreshPreflight":
+        return { type: "preflight", payload: this.preflight };
+      case "setRuntimePreference":
+      case "installManagedRuntime": {
+        const languages = this.preflight.languages.map((row) => {
+          if (row.language !== command.payload.language) return row;
+          if (command.type === "setRuntimePreference") {
+            return {
+              ...row,
+              preferManaged: command.payload.preferManaged,
+              canInstall: command.payload.preferManaged,
+            };
+          }
+          return { ...row, canInstall: false, install: { phase: "preparing" as const } };
+        });
+        this.emitEvent({
+          type: "preflightUpdated",
+          payload: {
+            ...this.preflight,
+            revision: this.preflight.revision + 1,
+            installingCount: command.type === "installManagedRuntime"
+              ? this.preflight.installingCount + 1
+              : this.preflight.installingCount,
+            languages,
+          },
+        });
+        return { type: "preflight", payload: this.preflight };
       }
       case "shutdown": {
         const report = {

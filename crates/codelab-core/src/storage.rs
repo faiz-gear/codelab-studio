@@ -157,6 +157,7 @@ fn sync_parent_dir(_dir: &Path) {}
 fn store_name(kind: StoreKind) -> &'static str {
     match kind {
         StoreKind::Settings => "settings",
+        StoreKind::RuntimePreferences => "runtimePreferences",
         StoreKind::Recents => "recents",
         StoreKind::Trust => "trust",
     }
