@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::course::CourseSummary;
 use crate::error::ErrorCode;
 
 pub const GLOBAL_DATA_SCHEMA_VERSION: u32 = 1;
@@ -38,7 +39,7 @@ pub enum Locale {
     EnUs,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CourseLanguage {
     #[serde(rename = "Go")]
     Go,
@@ -48,6 +49,18 @@ pub enum CourseLanguage {
     Python,
     #[serde(rename = "Java")]
     Java,
+}
+
+impl CourseLanguage {
+    pub(crate) fn from_token(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "go" | "golang" => Some(Self::Go),
+            "js/ts" | "js" | "jsx" | "ts" | "tsx" | "javascript" | "typescript" => Some(Self::JsTs),
+            "python" | "py" => Some(Self::Python),
+            "java" => Some(Self::Java),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,4 +176,5 @@ pub struct AppBootstrap {
     pub recents: Vec<RecentWorkspace>,
     pub trust_entries: Vec<TrustEntry>,
     pub recovery_notices: Vec<StorageRecoveryNotice>,
+    pub builtin_courses: Vec<CourseSummary>,
 }

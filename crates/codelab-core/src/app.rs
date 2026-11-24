@@ -1,11 +1,15 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::course::{
+    self, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher, LoadedCourse,
+    OpenCourseRequest,
+};
 use crate::error::{DomainError, ErrorCode};
 use crate::model::{
     AppBootstrap, GlobalSettings, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
@@ -35,6 +39,10 @@ pub enum AppCommand {
     CheckTrust(TrustSource),
     GrantTrust(TrustSource),
     RevokeTrust(TrustSource),
+    ListBuiltinCourses,
+    OpenCourse(OpenCourseRequest),
+    ReloadActiveCourse,
+    CloseActiveCourse,
     Shutdown,
 }
 
@@ -46,6 +54,9 @@ pub enum AppResponse {
     Recents(Vec<RecentWorkspace>),
     TrustEntries(Vec<TrustEntry>),
     TrustState(TrustState),
+    BuiltinCourses(Vec<CourseSummary>),
+    LoadedCourse(LoadedCourse),
+    CourseClosed,
     Shutdown(ShutdownReport),
 }
 
@@ -55,6 +66,8 @@ pub enum AppEvent {
     SettingsUpdated(GlobalSettings),
     RecentsUpdated(Vec<RecentWorkspace>),
     TrustUpdated(Vec<TrustEntry>),
+    CourseLoaded(LoadedCourse),
+    CourseSourceChanged(CourseSourceChangedEvent),
     ShutdownCompleted(ShutdownReport),
 }
 
@@ -82,11 +95,18 @@ impl EventSubscription {
 
 pub type CleanupHook = Box<dyn FnOnce() -> Result<(), String> + Send + 'static>;
 
+struct ActiveCourseState {
+    source: CourseSource,
+    watcher: Option<CourseWatcher>,
+}
+
 struct AppState {
     settings: GlobalSettings,
     recents: Vec<RecentWorkspace>,
     trust_entries: Vec<TrustEntry>,
     recovery_notices: Vec<StorageRecoveryNotice>,
+    builtin_courses: Vec<CourseSummary>,
+    active_course: Option<ActiveCourseState>,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
@@ -96,7 +116,7 @@ pub struct App {
     recents_store: JsonStore<Vec<RecentWorkspace>>,
     trust_store: JsonStore<Vec<TrustEntry>>,
     state: Mutex<AppState>,
-    subscribers: Mutex<Vec<mpsc::Sender<AppEvent>>>,
+    subscribers: Arc<Mutex<Vec<mpsc::Sender<AppEvent>>>>,
 }
 
 impl App {
@@ -134,6 +154,8 @@ impl App {
         .flatten()
         .collect();
 
+        let builtin_courses = course::list_builtin_courses()?;
+
         Ok(Self {
             settings_store,
             recents_store,
@@ -143,10 +165,12 @@ impl App {
                 recents: recents_loaded.value,
                 trust_entries: trust_loaded.value,
                 recovery_notices,
+                builtin_courses,
+                active_course: None,
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
             }),
-            subscribers: Mutex::new(Vec::new()),
+            subscribers: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -159,6 +183,7 @@ impl App {
                     recents: state.recents.clone(),
                     trust_entries: state.trust_entries.clone(),
                     recovery_notices: state.recovery_notices.clone(),
+                    builtin_courses: state.builtin_courses.clone(),
                 }))
             }
             AppCommand::GetSettings => {
@@ -176,6 +201,12 @@ impl App {
             AppCommand::CheckTrust(source) => self.check_trust(&source),
             AppCommand::GrantTrust(source) => self.grant_trust(&source),
             AppCommand::RevokeTrust(source) => self.revoke_trust(&source),
+            AppCommand::ListBuiltinCourses => Ok(AppResponse::BuiltinCourses(
+                self.lock_state().builtin_courses.clone(),
+            )),
+            AppCommand::OpenCourse(request) => self.open_course(request),
+            AppCommand::ReloadActiveCourse => self.reload_active_course(),
+            AppCommand::CloseActiveCourse => self.close_active_course(),
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
     }
@@ -206,7 +237,7 @@ impl App {
     }
 
     pub fn shutdown(&self) -> Result<ShutdownReport, DomainError> {
-        let hooks = {
+        let (hooks, active_course) = {
             let mut state = self.lock_state();
             if state.shut_down {
                 return Ok(ShutdownReport {
@@ -215,8 +246,17 @@ impl App {
                 });
             }
             state.shut_down = true;
-            std::mem::take(&mut state.cleanup_hooks)
+            (
+                std::mem::take(&mut state.cleanup_hooks),
+                state.active_course.take(),
+            )
         };
+
+        if let Some(active) = active_course
+            && let Some(watcher) = active.watcher
+        {
+            watcher.stop();
+        }
 
         let mut hooks_executed = 0;
         let mut failures = Vec::new();
@@ -399,6 +439,68 @@ impl App {
         Ok(updated)
     }
 
+    fn open_course(&self, request: OpenCourseRequest) -> Result<AppResponse, DomainError> {
+        let opened = course::open_course(&request)?;
+        let watcher = if opened.watched_files.is_empty() {
+            None
+        } else {
+            let subs = Arc::clone(&self.subscribers);
+            Some(CourseWatcher::start(
+                opened.course.course_id.clone(),
+                opened.watched_files,
+                move |changed| {
+                    emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed));
+                },
+            ))
+        };
+
+        let previous = {
+            let mut state = self.lock_state();
+            state.active_course.replace(ActiveCourseState {
+                source: opened.course.source.clone(),
+                watcher,
+            })
+        };
+        if let Some(prev) = previous
+            && let Some(prev_watcher) = prev.watcher
+        {
+            prev_watcher.stop();
+        }
+
+        self.emit(AppEvent::CourseLoaded(opened.course.clone()));
+        Ok(AppResponse::LoadedCourse(opened.course))
+    }
+
+    fn reload_active_course(&self) -> Result<AppResponse, DomainError> {
+        let source = {
+            let state = self.lock_state();
+            state
+                .active_course
+                .as_ref()
+                .map(|active| active.source.clone())
+                .ok_or_else(|| DomainError::new(ErrorCode::NoActiveCourse))?
+        };
+        let request = match source {
+            CourseSource::Builtin { course_id } => OpenCourseRequest::Builtin { course_id },
+            CourseSource::LocalMarkdown { path } => OpenCourseRequest::LocalMarkdown { path },
+            CourseSource::LocalPack { path } => OpenCourseRequest::LocalPack { path },
+        };
+        self.open_course(request)
+    }
+
+    fn close_active_course(&self) -> Result<AppResponse, DomainError> {
+        let previous = {
+            let mut state = self.lock_state();
+            state.active_course.take()
+        };
+        if let Some(prev) = previous
+            && let Some(watcher) = prev.watcher
+        {
+            watcher.stop();
+        }
+        Ok(AppResponse::CourseClosed)
+    }
+
     fn lock_state(&self) -> std::sync::MutexGuard<'_, AppState> {
         self.state
             .lock()
@@ -406,12 +508,15 @@ impl App {
     }
 
     fn emit(&self, event: AppEvent) {
-        let mut subs = self
-            .subscribers
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        subs.retain(|tx| tx.send(event.clone()).is_ok());
+        emit_to_subscribers(&self.subscribers, event);
     }
+}
+
+fn emit_to_subscribers(subscribers: &Mutex<Vec<mpsc::Sender<AppEvent>>>, event: AppEvent) {
+    let mut subs = subscribers
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    subs.retain(|tx| tx.send(event.clone()).is_ok());
 }
 
 impl Drop for App {

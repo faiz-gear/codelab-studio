@@ -7,6 +7,7 @@ import {
   type AppCommand,
   type AppEvent,
   type AppResponse,
+  type LocalPathPickKind,
 } from "./contracts";
 
 export const CORE_EVENT_CHANNEL = "codelab://core-event";
@@ -53,5 +54,16 @@ export class TauriCoreClient implements CoreClient {
     return () => {
       unlisten();
     };
+  }
+
+  async pickLocalPath(kind: LocalPathPickKind): Promise<string | null> {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+    try {
+      return await invoke<string | null>("pick_local_path", { kind });
+    } catch {
+      return null;
+    }
   }
 }

@@ -3,9 +3,18 @@ use std::sync::Arc;
 use std::thread;
 
 use codelab_core::{App, AppCommand, AppConfig, AppResponse, DomainError};
+use serde::Deserialize;
 use tauri::{Emitter, Manager, RunEvent, State};
+use tauri_plugin_dialog::DialogExt;
 
 pub const CORE_EVENT_CHANNEL: &str = "codelab://core-event";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LocalPathPickKind {
+    MarkdownFile,
+    CoursePackDir,
+}
 
 #[tauri::command]
 fn dispatch_command(
@@ -13,6 +22,26 @@ fn dispatch_command(
     command: AppCommand,
 ) -> Result<AppResponse, DomainError> {
     core.execute(command)
+}
+
+#[tauri::command]
+async fn pick_local_path(app: tauri::AppHandle, kind: LocalPathPickKind) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = match kind {
+            LocalPathPickKind::CoursePackDir => app.dialog().file().blocking_pick_folder(),
+            LocalPathPickKind::MarkdownFile => app
+                .dialog()
+                .file()
+                .add_filter("Markdown", &["md", "markdown"])
+                .blocking_pick_file(),
+        };
+        picked
+            .and_then(|file_path| file_path.into_path().ok())
+            .map(|path| path.to_string_lossy().into_owned())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 fn open_core(data_dir: PathBuf) -> Result<Arc<App>, DomainError> {
@@ -50,6 +79,7 @@ fn spawn_event_bridge(app_handle: tauri::AppHandle, subscription: codelab_core::
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = resolve_data_dir(app)?;
             let core = open_core(data_dir)?;
@@ -58,7 +88,7 @@ pub fn run() {
             spawn_event_bridge(app.handle().clone(), subscription);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![dispatch_command])
+        .invoke_handler(tauri::generate_handler![dispatch_command, pick_local_path])
         .build(tauri::generate_context!())
         .expect("failed to build CodeLab Studio desktop shell");
 

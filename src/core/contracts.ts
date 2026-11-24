@@ -40,6 +40,13 @@ export const ERROR_CODES = [
   "INVALID_COURSE_METADATA",
   "INVALID_PROGRESS_COUNT",
   "INVALID_TRUST_SOURCE",
+  "COURSE_NOT_FOUND",
+  "COURSE_PATH_INVALID",
+  "COURSE_MARKDOWN_TOO_LARGE",
+  "COURSE_MARKDOWN_INVALID",
+  "COURSE_MANIFEST_INVALID",
+  "COURSE_CHECKS_INVALID",
+  "NO_ACTIVE_COURSE",
   "STORAGE_READ_FAILED",
   "STORAGE_WRITE_FAILED",
   "STORAGE_CORRUPTED",
@@ -130,11 +137,149 @@ export interface ShutdownReport {
   hooksExecuted: number;
 }
 
+export type CourseSource =
+  | { kind: "builtin"; courseId: string }
+  | { kind: "localMarkdown"; path: string }
+  | { kind: "localPack"; path: string };
+
+export type OpenCourseRequest =
+  | { kind: "builtin"; courseId: string }
+  | { kind: "localMarkdown"; path: string }
+  | { kind: "localPack"; path: string };
+
+export function courseSourceKey(source: CourseSource): string {
+  return source.kind === "builtin"
+    ? `builtin:${source.courseId}`
+    : `${source.kind}:${source.path}`;
+}
+
+export function courseSourceLocation(source: CourseSource): string {
+  return source.kind === "builtin"
+    ? `builtin://${source.courseId}`
+    : source.path;
+}
+
+export function openRequestFromSource(source: CourseSource): OpenCourseRequest {
+  return source;
+}
+
+export type ChapterKind = "guide" | "exercise";
+
+export type ChapterPresentation = "threeStep" | "linearFallback";
+
+export type CommandMode = "oneshot" | "daemon";
+
+export type ValueOrigin =
+  | "explicit"
+  | "inferred"
+  | "chapterDefault"
+  | "workspaceRoot";
+
+export interface CommandBlock {
+  id: string;
+  shell: string;
+  command: string;
+  cwd: string | null;
+  cwdOrigin: ValueOrigin;
+  mode: CommandMode;
+  modeOrigin: ValueOrigin;
+  label: string | null;
+  port: number | null;
+  isSecondary: boolean;
+}
+
+export type CheckKind =
+  | "httpAssert"
+  | "commandTest"
+  | "testSuite"
+  | "selfCheck";
+
+export interface DaemonRequirement {
+  label: string;
+  port: number;
+  serviceKey: string | null;
+}
+
+export interface CourseCheckSpec {
+  id: string;
+  title: string;
+  kind: CheckKind;
+  required: boolean;
+  cwd: string | null;
+  command: string | null;
+  method: string | null;
+  url: string | null;
+}
+
+export type ContentBlock =
+  | { kind: "prose"; html: string }
+  | { kind: "command"; commandId: string };
+
+export interface ThreeStepProjection {
+  step1IntroHtml: string | null;
+  step1CommandIds: string[];
+  step2EntryFile: string | null;
+  step2Html: string | null;
+  step3IntroHtml: string | null;
+  step3Checks: CourseCheckSpec[];
+  requiresDaemon: DaemonRequirement | null;
+  secondaryCommandIds: string[];
+  reflectionsHtml: string | null;
+}
+
+export interface Chapter {
+  chapterId: string;
+  title: string;
+  kind: ChapterKind;
+  presentation: ChapterPresentation;
+  defaultCwd: string | null;
+  entryFile: string | null;
+  summaryHtml: string | null;
+  blocks: ContentBlock[];
+  commands: CommandBlock[];
+  threeStep: ThreeStepProjection | null;
+  reflectionsHtml: string | null;
+}
+
+export interface CourseSummary {
+  courseId: string;
+  title: string;
+  description: string;
+  language: CourseLanguage | null;
+  source: CourseSource;
+  totalChapters: number;
+  totalExercises: number;
+  isBuiltin: boolean;
+}
+
+export interface LoadedCourse {
+  courseId: string;
+  title: string;
+  description: string;
+  language: CourseLanguage | null;
+  version: string | null;
+  author: string | null;
+  dependencies: string[];
+  source: CourseSource;
+  entryMarkdownPath: string | null;
+  isBuiltin: boolean;
+  introHtml: string | null;
+  totalExercises: number;
+  chapters: Chapter[];
+}
+
+export interface CourseSourceChangedEvent {
+  courseId: string;
+  changedPaths: string[];
+  detectedAt: string;
+}
+
 export interface AppBootstrap {
   settings: GlobalSettings;
   recents: RecentWorkspace[];
   trustEntries: TrustEntry[];
   recoveryNotices: StorageRecoveryNotice[];
+  builtinCourses: CourseSummary[];
 }
 
 export type AppCommand =
@@ -148,6 +293,10 @@ export type AppCommand =
   | { type: "checkTrust"; payload: TrustSource }
   | { type: "grantTrust"; payload: TrustSource }
   | { type: "revokeTrust"; payload: TrustSource }
+  | { type: "listBuiltinCourses" }
+  | { type: "openCourse"; payload: OpenCourseRequest }
+  | { type: "reloadActiveCourse" }
+  | { type: "closeActiveCourse" }
   | { type: "shutdown" };
 
 export type AppResponse =
@@ -156,13 +305,20 @@ export type AppResponse =
   | { type: "recents"; payload: RecentWorkspace[] }
   | { type: "trustEntries"; payload: TrustEntry[] }
   | { type: "trustState"; payload: TrustState }
+  | { type: "builtinCourses"; payload: CourseSummary[] }
+  | { type: "loadedCourse"; payload: LoadedCourse }
+  | { type: "courseClosed" }
   | { type: "shutdown"; payload: ShutdownReport };
 
 export type AppEvent =
   | { type: "settingsUpdated"; payload: GlobalSettings }
   | { type: "recentsUpdated"; payload: RecentWorkspace[] }
   | { type: "trustUpdated"; payload: TrustEntry[] }
+  | { type: "courseLoaded"; payload: LoadedCourse }
+  | { type: "courseSourceChanged"; payload: CourseSourceChangedEvent }
   | { type: "shutdownCompleted"; payload: ShutdownReport };
+
+export type LocalPathPickKind = "markdownFile" | "coursePackDir";
 
 export class CoreCommandError extends Error {
   readonly domainError: DomainError;
@@ -177,7 +333,10 @@ export class CoreCommandError extends Error {
 export function isDomainError(value: unknown): value is DomainError {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as { code?: unknown; details?: unknown };
-  if (typeof candidate.code !== "string" || !KNOWN_ERROR_CODES.has(candidate.code)) {
+  if (
+    typeof candidate.code !== "string" ||
+    !KNOWN_ERROR_CODES.has(candidate.code)
+  ) {
     return false;
   }
   if (

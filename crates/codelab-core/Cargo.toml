@@ -5,7 +5,10 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+ammonia.workspace = true
 chrono.workspace = true
+icu_normalizer.workspace = true
+pulldown-cmark.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

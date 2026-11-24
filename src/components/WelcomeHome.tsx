@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   COURSE_LANGUAGES,
   type CourseLanguage,
+  type CourseSummary,
   type Locale,
   type RecentWorkspace,
 } from "../core/contracts";
@@ -18,18 +19,29 @@ export type LanguageFilter = "all" | CourseLanguage;
 export interface WelcomeHomeProps {
   messages: Messages;
   locale: Locale;
+  builtinCourses: CourseSummary[];
   recents: RecentWorkspace[];
+  onOpenBuiltinCourse: (courseId: string) => void;
+  onOpenImportModal: () => void;
   onPlaceholderAction: (target: string) => void;
 }
 
 export function WelcomeHome({
   messages,
   locale,
+  builtinCourses,
   recents,
+  onOpenBuiltinCourse,
+  onOpenImportModal,
   onPlaceholderAction,
 }: WelcomeHomeProps) {
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
   const latestRecent = recents[0] ?? null;
+
+  const builtinById = new Map<string, CourseSummary>();
+  for (const course of builtinCourses) {
+    builtinById.set(course.courseId, course);
+  }
 
   const progressByCourse = new Map<string, RecentWorkspace>();
   for (const recent of recents) {
@@ -48,6 +60,19 @@ export function WelcomeHome({
       })
     : messages.welcome.primaryCtaStart;
 
+  const handlePrimaryCta = () => {
+    if (latestRecent && builtinById.has(latestRecent.courseId)) {
+      onOpenBuiltinCourse(latestRecent.courseId);
+      return;
+    }
+    const firstBuiltin = builtinCourses[0];
+    if (firstBuiltin) {
+      onOpenBuiltinCourse(firstBuiltin.courseId);
+      return;
+    }
+    onPlaceholderAction(primaryCtaLabel);
+  };
+
   return (
     <section
       className="welcome-scroll"
@@ -62,7 +87,7 @@ export function WelcomeHome({
             <button
               type="button"
               className="btn btn--primary btn--lg"
-              onClick={() => onPlaceholderAction(primaryCtaLabel)}
+              onClick={handlePrimaryCta}
             >
               <PlayIcon />
               <span>{primaryCtaLabel}</span>
@@ -70,9 +95,7 @@ export function WelcomeHome({
             <button
               type="button"
               className="btn btn--secondary btn--lg"
-              onClick={() =>
-                onPlaceholderAction(messages.welcome.secondaryCtaImport)
-              }
+              onClick={onOpenImportModal}
             >
               <FolderDownIcon />
               <span>{messages.welcome.secondaryCtaImport}</span>
@@ -134,11 +157,14 @@ export function WelcomeHome({
 
           <div className="course-grid" data-testid="course-grid">
             {visibleCourses.map((course) => {
+              const builtin = builtinById.get(course.id);
               const copy = messages.welcome.courseTexts[course.id];
               const matchedRecent = progressByCourse.get(course.id);
               const completed = matchedRecent?.completedExercises ?? 0;
               const total =
-                matchedRecent?.totalExercises ?? course.totalExercises;
+                matchedRecent?.totalExercises ??
+                builtin?.totalExercises ??
+                course.totalExercises;
               const pct =
                 total > 0
                   ? Math.min(100, Math.round((completed / total) * 100))
@@ -149,7 +175,13 @@ export function WelcomeHome({
                   key={course.id}
                   type="button"
                   className="course-card"
-                  onClick={() => onPlaceholderAction(copy.title)}
+                  onClick={() => {
+                    if (builtin) {
+                      onOpenBuiltinCourse(builtin.courseId);
+                    } else {
+                      onPlaceholderAction(copy.title);
+                    }
+                  }}
                 >
                   <div className="course-card-top">
                     <span className="lang-tag" data-lang={course.language}>
@@ -202,7 +234,13 @@ export function WelcomeHome({
                   key={item.workspacePath}
                   type="button"
                   className="recent-row"
-                  onClick={() => onPlaceholderAction(item.courseTitle)}
+                  onClick={() => {
+                    if (builtinById.has(item.courseId)) {
+                      onOpenBuiltinCourse(item.courseId);
+                    } else {
+                      onPlaceholderAction(item.courseTitle);
+                    }
+                  }}
                 >
                   <span className="muted" aria-hidden="true">
                     <FolderIcon />
