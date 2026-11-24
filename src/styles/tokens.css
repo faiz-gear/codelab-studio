@@ -1,0 +1,305 @@
+/* ==========================================================================
+   CodeLab Studio — Design Tokens v3.2 (Arc UI Design Language · B Balanced)
+   Three-layer architecture: Primitives (oklch zero-chroma neutrals + cool pastels)
+   -> Semantic -> Component
+   Light (default) / Dark dual themes x 8 Arc accents (data-accent)
+   WCAG 2.1 AA (>= 4.5:1) calibrated + prefers-reduced-motion
+   ========================================================================== */
+
+/* ---------- Layer 1 · Primitives (Arc UI Foundation) ---------- */
+:root {
+  color-scheme: light;
+
+  /* Pure Achromatic Neutral Scale (zero hue tint, oklch L% 0 0) */
+  --neutral-0: oklch(100% 0 0);
+  --neutral-1: oklch(99% 0 0);
+  --neutral-2: oklch(97.8% 0 0);
+  --neutral-3: oklch(95.8% 0 0);
+  --neutral-4: oklch(91.5% 0 0);
+  --neutral-5: oklch(84% 0 0);
+  --neutral-6: oklch(72% 0 0);
+  --neutral-7: oklch(52% 0 0);
+  --neutral-8: oklch(46% 0 0);
+  --neutral-9: oklch(34% 0 0);
+  --neutral-10: oklch(23% 0 0);
+  --neutral-11: oklch(15% 0 0);
+
+  /* Typography — Arc UI Display (Geist) + Body (Inter) + Mono (JetBrains Mono) */
+  --font-display: "Geist", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type Scale (Arc compact ramp) */
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-field: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 2.125rem;
+
+  --tracking-display: -0.03em;
+  --tracking-body: -0.01em;
+  --leading-display: 1.12;
+  --leading-body: 1.48;
+  --leading-read: 1.68;
+  --leading-code: 20px;
+
+  /* Code Font Size (user-customizable in Appearance Drawer) */
+  --code-size: 13.5px;
+  --code-lh: 22px;
+
+  /* Spacing · 4px base */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.125rem;
+  --space-6: 1.25rem;
+  --space-8: 1.5rem;
+  --space-10: 2rem;
+  --space-12: 2.5rem;
+
+  /* Radii — Sculptural Arc Geometry */
+  --radius-xs: 6px;
+  --radius-control: 10px;
+  --radius-control-lg: 14px;
+  --radius-panel: 16px;
+  --radius-card: 18px;
+  --radius-modal: 20px;
+  --radius-drawer: 22px;
+  --radius-surface: 24px;
+  --radius-pill: 9999px;
+
+  /* Motion — Arc Critically Damped Spring & Easing Curves */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: linear(0, 0.0213, 0.0739, 0.1443, 0.2235, 0.305, 0.3849, 0.4606, 0.5305, 0.594, 0.6508, 0.7011, 0.7452, 0.7836, 0.8168, 0.8454, 0.8699, 0.8907, 0.9084, 0.9234, 0.9361, 0.9467, 0.9557, 0.9632, 0.9694, 0.9747, 0.979, 0.9826, 0.9857, 0.9882, 0.9902, 0.992, 0.9934, 0.9946, 0.9955, 0.9963, 1);
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-standard: 220ms;
+  --duration-considered: 360ms;
+  --duration-spring: 440ms;
+
+  /* Workbench Geometry */
+  --topbar-h: 48px;
+  --tabbar-h: 36px;
+  --cmdhead-h: 34px;
+  --tree-w: 204px;
+  --manual-w: 35%;
+  --ai-w: 360px;
+  --term-h: 256px;
+}
+
+/* ---------- Layer 2 · Semantic — Light Mode (Default) ---------- */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: var(--neutral-0);
+  --surface: var(--neutral-0);
+  --surface-raised: var(--neutral-0);
+  --surface-muted: var(--neutral-2);
+  --surface-subtle: var(--neutral-3);
+  --sidebar-fill: color-mix(in oklab, var(--foreground) 2.2%, var(--background));
+  --hover-fill: color-mix(in oklab, var(--foreground) 4.2%, transparent);
+  --active-fill: color-mix(in oklab, var(--foreground) 7%, transparent);
+
+  --foreground: var(--neutral-11);
+  --text-secondary: var(--neutral-8);
+  --text-muted: var(--neutral-7);
+
+  --border: oklch(92.5% 0 0);
+  --border-subtle: oklch(96% 0 0);
+  --border-strong: oklch(81% 0 0);
+
+  /* Default Neutral Monochrome Accent */
+  --accent: oklch(33% 0 0);
+  --accent-strong: oklch(20% 0 0);
+  --accent-subtle: oklch(33% 0 0 / 0.08);
+  --accent-foreground: var(--neutral-0);
+  --control-on: oklch(18% 0 0);
+  --control-glyph: oklch(100% 0 0);
+  --control-track: oklch(89.5% 0 0);
+
+  /* Cool Pastel Categorical & Status Tones (WCAG 2.1 AA calibrated on light) */
+  --tone-teal: oklch(50% 0.095 182);
+  --tone-sky: oklch(51% 0.11 240);
+  --tone-orchid: oklch(52% 0.17 322);
+  --tone-violet: oklch(51% 0.16 290);
+  --tone-rose: oklch(53% 0.18 10);
+  --tone-amber: oklch(50% 0.12 68);
+  --tone-green: oklch(50% 0.12 162);
+
+  --success: var(--tone-green);
+  --warning: var(--tone-amber);
+  --danger: var(--tone-rose);
+  --info: var(--tone-sky);
+  --ai: var(--tone-violet);
+
+  --badge-tint: 10%;
+  --badge-ink: 86%;
+
+  /* Arc Brand Gradient & Atmospheric Hero Mesh (Welcome Home only) */
+  --arc-gradient-from: oklch(91% 0.042 300);
+  --arc-gradient-to: oklch(93% 0.042 65);
+  --arc-gradient: linear-gradient(100deg, var(--arc-gradient-from), var(--arc-gradient-to));
+  --arc-gradient-foreground: oklch(22% 0.01 300);
+  --arc-gradient-soft: linear-gradient(135deg, oklch(97.5% 0.016 300), oklch(98% 0.015 65));
+  --arc-gradient-line: linear-gradient(100deg, oklch(84% 0.055 300), oklch(87% 0.055 65));
+  --arc-hero-bg:
+    radial-gradient(ellipse 36% 48% at 4% 96%, #e9babb 0%, transparent 100%),
+    radial-gradient(ellipse 38% 54% at 96% 4%, #afc7f6 0%, transparent 100%),
+    radial-gradient(ellipse 46% 46% at 50% 112%, #e8d9ad 0%, transparent 100%),
+    #f8f7f5;
+
+  /* Shadows — Quiet resting, floating only on overlays */
+  --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.035);
+  --shadow-raised: 0 6px 18px oklch(0% 0 0 / 0.065), 0 1px 3px oklch(0% 0 0 / 0.035);
+  --shadow-floating: 0 20px 48px oklch(0% 0 0 / 0.105), 0 3px 10px oklch(0% 0 0 / 0.045);
+  --overlay-scrim: oklch(15% 0 0 / 0.22);
+  --focus-outline: 0 0 0 2px var(--background), 0 0 0 4px var(--accent);
+
+  /* Syntax Highlighting (Arc Light Neutral Balance) */
+  --syn-kw: oklch(50% 0.17 12);
+  --syn-fn: oklch(49% 0.16 290);
+  --syn-str: oklch(46% 0.11 162);
+  --syn-num: oklch(49% 0.12 242);
+  --syn-type: oklch(50% 0.12 58);
+  --syn-com: oklch(54% 0 0);
+  --syn-op: oklch(34% 0 0);
+  --editor-active-line: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+
+/* ---------- Layer 2 · Semantic — Dark Mode (Arc Obsidian Neutral) ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: oklch(19% 0 0);
+  --surface: oklch(21.5% 0 0);
+  --surface-raised: oklch(24% 0 0);
+  --surface-muted: oklch(26% 0 0);
+  --surface-subtle: oklch(29% 0 0);
+  --sidebar-fill: oklch(17.8% 0 0);
+  --hover-fill: color-mix(in oklab, var(--foreground) 5.5%, transparent);
+  --active-fill: color-mix(in oklab, var(--foreground) 9%, transparent);
+
+  --foreground: oklch(96% 0 0);
+  --text-secondary: oklch(77% 0 0);
+  --text-muted: oklch(66% 0 0);
+
+  --border: oklch(29% 0 0);
+  --border-subtle: oklch(24.5% 0 0);
+  --border-strong: oklch(40% 0 0);
+
+  --accent: oklch(80% 0 0);
+  --accent-strong: oklch(93% 0 0);
+  --accent-subtle: oklch(80% 0 0 / 0.13);
+  --accent-foreground: oklch(18% 0 0);
+  --control-on: oklch(94% 0 0);
+  --control-glyph: oklch(18% 0 0);
+  --control-track: oklch(33% 0 0);
+
+  /* Luminous Pastel Categorical & Status Tones (WCAG 2.1 AA/AAA on dark) */
+  --tone-teal: oklch(79% 0.13 182);
+  --tone-sky: oklch(79% 0.095 236);
+  --tone-orchid: oklch(76% 0.15 322);
+  --tone-violet: oklch(74% 0.125 290);
+  --tone-rose: oklch(71% 0.155 8);
+  --tone-amber: oklch(83% 0.12 78);
+  --tone-green: oklch(79% 0.14 162);
+
+  --success: var(--tone-green);
+  --warning: var(--tone-amber);
+  --danger: var(--tone-rose);
+  --info: var(--tone-sky);
+  --ai: var(--tone-violet);
+
+  --badge-tint: 14%;
+  --badge-ink: 94%;
+
+  --arc-gradient-from: oklch(38% 0.05 300);
+  --arc-gradient-to: oklch(40% 0.045 60);
+  --arc-gradient: linear-gradient(100deg, var(--arc-gradient-from), var(--arc-gradient-to));
+  --arc-gradient-foreground: oklch(96% 0.005 300);
+  --arc-gradient-soft: linear-gradient(135deg, oklch(24.5% 0.018 300), oklch(25% 0.015 65));
+  --arc-gradient-line: linear-gradient(100deg, oklch(48% 0.06 300), oklch(52% 0.055 65));
+  --arc-hero-bg:
+    radial-gradient(ellipse 36% 48% at 4% 96%, #5b3438 0%, transparent 100%),
+    radial-gradient(ellipse 38% 54% at 96% 4%, #28395b 0%, transparent 100%),
+    radial-gradient(ellipse 46% 46% at 50% 112%, #4a4230 0%, transparent 100%),
+    #1d1e22;
+
+  --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.22);
+  --shadow-raised: 0 8px 22px oklch(0% 0 0 / 0.28);
+  --shadow-floating: 0 22px 55px oklch(0% 0 0 / 0.42);
+  --overlay-scrim: oklch(0% 0 0 / 0.56);
+  --focus-outline: 0 0 0 2px var(--background), 0 0 0 4px var(--accent);
+
+  --syn-kw: oklch(74% 0.14 14);
+  --syn-fn: oklch(78% 0.12 290);
+  --syn-str: oklch(80% 0.11 162);
+  --syn-num: oklch(80% 0.10 236);
+  --syn-type: oklch(83% 0.11 72);
+  --syn-com: oklch(64% 0 0);
+  --syn-op: oklch(82% 0 0);
+  --editor-active-line: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+/* ---------- Arc 8 Built-in Accents (Light & Dark tuned separately, WCAG AA) ---------- */
+:root[data-accent="neutral"] { --accent: oklch(33% 0 0); --accent-strong: oklch(20% 0 0); --accent-subtle: oklch(33% 0 0 / 0.08); --control-on: oklch(18% 0 0); --control-glyph: #ffffff; }
+:root[data-accent="violet"]  { --accent: #6836f5; --accent-strong: #4e22c7; --accent-subtle: rgb(119 71 255 / 0.12); --control-on: #6836f5; --control-glyph: #ffffff; }
+:root[data-accent="blue"]    { --accent: #0562ef; --accent-strong: #074db7; --accent-subtle: rgb(5 98 239 / 0.11);  --control-on: #0562ef; --control-glyph: #ffffff; }
+:root[data-accent="green"]   { --accent: #077e53; --accent-strong: #056643; --accent-subtle: rgb(13 184 121 / 0.13); --control-on: #077e53; --control-glyph: #ffffff; }
+:root[data-accent="amber"]   { --accent: #9c5b00; --accent-strong: #7e4900; --accent-subtle: rgb(243 173 32 / 0.16); --control-on: #9c5b00; --control-glyph: #ffffff; }
+:root[data-accent="orange"]  { --accent: #b84900; --accent-strong: #943a00; --accent-subtle: rgb(244 129 32 / 0.14); --control-on: #b84900; --control-glyph: #ffffff; }
+:root[data-accent="coral"]   { --accent: #c5342b; --accent-strong: #9f251e; --accent-subtle: rgb(241 95 85 / 0.13);  --control-on: #c5342b; --control-glyph: #ffffff; }
+:root[data-accent="rose"]    { --accent: #bc2470; --accent-strong: #961a58; --accent-subtle: rgb(237 78 157 / 0.13); --control-on: #bc2470; --control-glyph: #ffffff; }
+
+:root[data-theme="dark"][data-accent="neutral"] { --accent: oklch(80% 0 0); --accent-strong: oklch(93% 0 0); --accent-subtle: oklch(80% 0 0 / 0.13); --control-on: oklch(94% 0 0); --control-glyph: oklch(18% 0 0); }
+:root[data-theme="dark"][data-accent="violet"]  { --accent: #a78bff; --accent-strong: #c7b7ff; --accent-subtle: rgb(119 71 255 / 0.22); --control-on: #7c56f5; --control-glyph: #ffffff; }
+:root[data-theme="dark"][data-accent="blue"]    { --accent: #6ba3ff; --accent-strong: #a4c7ff; --accent-subtle: rgb(5 98 239 / 0.22);  --control-on: #2563eb; --control-glyph: #ffffff; }
+:root[data-theme="dark"][data-accent="green"]   { --accent: #53dca6; --accent-strong: #93efd0; --accent-subtle: rgb(13 184 121 / 0.20); --control-on: #22b882; --control-glyph: #0a1711; }
+:root[data-theme="dark"][data-accent="amber"]   { --accent: #ffcb62; --accent-strong: #ffe0a1; --accent-subtle: rgb(243 173 32 / 0.20); --control-on: #e8a52a; --control-glyph: #1a1001; }
+:root[data-theme="dark"][data-accent="orange"]  { --accent: #ffad5e; --accent-strong: #ffd0a0; --accent-subtle: rgb(244 129 32 / 0.20); --control-on: #ef873a; --control-glyph: #190e04; }
+:root[data-theme="dark"][data-accent="coral"]   { --accent: #ff9386; --accent-strong: #ffc1ba; --accent-subtle: rgb(241 95 85 / 0.20);  --control-on: #f0746a; --control-glyph: #1d0908; }
+:root[data-theme="dark"][data-accent="rose"]    { --accent: #ff8bc5; --accent-strong: #ffc0df; --accent-subtle: rgb(237 78 157 / 0.20); --control-on: #ea65a9; --control-glyph: #1c0713; }
+
+/* ---------- Layer 3 · Component (B · Balanced density) ---------- */
+:root {
+  --home-max-w: 1080px;
+  --home-section-gap: 24px;
+  --course-gap: 12px;
+  --course-padding: 16px 20px;
+  --manual-padding: 20px 22px 28px;
+  --manual-section-gap: 17px;
+  --editor-docked-min-w: 560px;
+  --btn-h-xs: 26px;
+  --btn-h-sm: 30px;
+  --btn-h-md: 34px;
+  --btn-h-lg: 40px;
+  --input-h: 36px;
+  --tree-row-h: 28px;
+  --float-bar-h: 34px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-standard: 0ms;
+    --duration-considered: 0ms;
+    --duration-spring: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
