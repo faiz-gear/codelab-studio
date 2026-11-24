@@ -34,16 +34,23 @@ export const COURSE_LANGUAGES: readonly CourseLanguage[] = [
 
 export const CODE_FONT_SIZE_PRESETS = [12.5, 13.5, 15] as const;
 
-export type ErrorCode =
-  | "INVALID_CODE_FONT_SIZE"
-  | "INVALID_WORKSPACE_PATH"
-  | "INVALID_COURSE_METADATA"
-  | "INVALID_PROGRESS_COUNT"
-  | "INVALID_TRUST_SOURCE"
-  | "STORAGE_READ_FAILED"
-  | "STORAGE_WRITE_FAILED"
-  | "STORAGE_CORRUPTED"
-  | "SHUTDOWN_FAILED";
+export const ERROR_CODES = [
+  "INVALID_CODE_FONT_SIZE",
+  "INVALID_WORKSPACE_PATH",
+  "INVALID_COURSE_METADATA",
+  "INVALID_PROGRESS_COUNT",
+  "INVALID_TRUST_SOURCE",
+  "STORAGE_READ_FAILED",
+  "STORAGE_WRITE_FAILED",
+  "STORAGE_CORRUPTED",
+  "SHUTDOWN_FAILED",
+  "IPC_UNAVAILABLE",
+  "UNEXPECTED_ERROR",
+] as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+const KNOWN_ERROR_CODES = new Set<string>(ERROR_CODES);
 
 export interface DomainError {
   code: ErrorCode;
@@ -92,13 +99,18 @@ export interface RecordRecentWorkspaceInput {
 
 export type TrustSourceKind = "localPath" | "gitRepo";
 
+export interface TrustSource {
+  sourceKind: TrustSourceKind;
+  source: string;
+}
+
 export interface TrustEntry {
   sourceKind: TrustSourceKind;
   normalizedSource: string;
   trustedAt: string;
 }
 
-export interface TrustStatus {
+export interface TrustState {
   sourceKind: TrustSourceKind;
   normalizedSource: string;
   trusted: boolean;
@@ -133,18 +145,9 @@ export type AppCommand =
   | { type: "recordRecentWorkspace"; payload: RecordRecentWorkspaceInput }
   | { type: "removeRecentWorkspace"; payload: { workspacePath: string } }
   | { type: "listTrustEntries" }
-  | {
-      type: "checkTrust";
-      payload: { sourceKind: TrustSourceKind; source: string };
-    }
-  | {
-      type: "grantTrust";
-      payload: { sourceKind: TrustSourceKind; source: string };
-    }
-  | {
-      type: "revokeTrust";
-      payload: { sourceKind: TrustSourceKind; source: string };
-    }
+  | { type: "checkTrust"; payload: TrustSource }
+  | { type: "grantTrust"; payload: TrustSource }
+  | { type: "revokeTrust"; payload: TrustSource }
   | { type: "shutdown" };
 
 export type AppResponse =
@@ -152,7 +155,7 @@ export type AppResponse =
   | { type: "settings"; payload: GlobalSettings }
   | { type: "recents"; payload: RecentWorkspace[] }
   | { type: "trustEntries"; payload: TrustEntry[] }
-  | { type: "trustStatus"; payload: TrustStatus }
+  | { type: "trustState"; payload: TrustState }
   | { type: "shutdown"; payload: ShutdownReport };
 
 export type AppEvent =
@@ -174,5 +177,14 @@ export class CoreCommandError extends Error {
 export function isDomainError(value: unknown): value is DomainError {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as { code?: unknown; details?: unknown };
-  return typeof candidate.code === "string";
+  if (typeof candidate.code !== "string" || !KNOWN_ERROR_CODES.has(candidate.code)) {
+    return false;
+  }
+  if (
+    candidate.details !== undefined &&
+    (typeof candidate.details !== "object" || candidate.details === null)
+  ) {
+    return false;
+  }
+  return true;
 }

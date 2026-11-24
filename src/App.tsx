@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  fetchBootstrap,
-  updateSettings,
-  type CoreClient,
-} from "./core/client";
+import { fetchBootstrap, updateSettings, type CoreClient } from "./core/client";
 import {
   CoreCommandError,
-  DEFAULT_SETTINGS,
   type GlobalSettings,
   type RecentWorkspace,
   type UpdateSettingsPatch,
 } from "./core/contracts";
 import { AppearanceDrawer } from "./components/AppearanceDrawer";
-import { ToastStack, type ToastMessage, type ToastTone } from "./components/ToastStack";
+import {
+  ToastStack,
+  type ToastMessage,
+  type ToastTone,
+} from "./components/ToastStack";
 import { TopBar } from "./components/TopBar";
 import { WelcomeHome } from "./components/WelcomeHome";
 import { formatDomainError, getMessages, interpolate } from "./i18n";
 import {
   applySettingsToDocument,
   buildThemeConfigSnippet,
+  readCachedSettings,
 } from "./theme/applyTheme";
 
 export interface AppProps {
@@ -28,7 +28,7 @@ export interface AppProps {
 const TOAST_TTL_MS = 3800;
 
 export function App({ client }: AppProps) {
-  const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<GlobalSettings>(readCachedSettings);
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -68,7 +68,9 @@ export function App({ client }: AppProps) {
         if (!active) return;
         setSettings(bootstrap.settings);
         setRecents(bootstrap.recents);
-        applySettingsToDocument(bootstrap.settings);
+        applySettingsToDocument(bootstrap.settings, {
+          disableTransitions: true,
+        });
 
         for (const notice of bootstrap.recoveryNotices) {
           pushToast(

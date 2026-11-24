@@ -93,7 +93,10 @@ function contrastRatio(a: Rgb, b: Rgb): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function extractVarsForBlock(css: string, selectorRegex: RegExp): Record<string, string> {
+function extractVarsForBlock(
+  css: string,
+  selectorRegex: RegExp
+): Record<string, string> {
   const match = selectorRegex.exec(css);
   if (!match) {
     throw new Error(`Missing CSS block for ${selectorRegex}`);
@@ -115,7 +118,10 @@ const lightVars = {
 };
 const darkVars = {
   ...rootBase,
-  ...extractVarsForBlock(tokensCss, /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\}/),
+  ...extractVarsForBlock(
+    tokensCss,
+    /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\}/
+  ),
 };
 
 describe("Arc UI v3.2 design tokens", () => {
@@ -137,7 +143,7 @@ describe("Arc UI v3.2 design tokens", () => {
     }
   });
 
-  it("meets WCAG 2.1 AA (>= 4.5:1) for light and dark text and semantic tones", () => {
+  it("meets WCAG 2.1 AA (>= 4.5:1) for light and dark text, surfaces, semantic tones, and syntax tokens", () => {
     const themes = [
       { name: "light", vars: lightVars },
       { name: "dark", vars: darkVars },
@@ -148,12 +154,18 @@ describe("Arc UI v3.2 design tokens", () => {
       "--text-muted",
       "--tone-teal",
       "--tone-sky",
+      "--tone-orchid",
       "--tone-violet",
       "--tone-rose",
       "--tone-amber",
       "--tone-green",
     ];
-    const surfaces = ["--background", "--surface", "--surface-muted"];
+    const surfaces = [
+      "--background",
+      "--surface",
+      "--surface-raised",
+      "--surface-muted",
+    ];
 
     for (const theme of themes) {
       for (const fg of foregrounds) {
@@ -168,6 +180,64 @@ describe("Arc UI v3.2 design tokens", () => {
           ).toBeGreaterThanOrEqual(4.5);
         }
       }
+
+      // Syntax tokens against editor --surface
+      for (const syn of [
+        "--syn-kw",
+        "--syn-fn",
+        "--syn-str",
+        "--syn-num",
+        "--syn-type",
+        "--syn-com",
+        "--syn-op",
+      ]) {
+        const ratio = contrastRatio(
+          parseColor(theme.vars[syn], theme.vars),
+          parseColor(theme.vars["--surface"], theme.vars)
+        );
+        expect(
+          ratio,
+          `${theme.name} ${syn} on --surface was ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+
+      // --foreground and --text-secondary remain AA even on --surface-subtle
+      for (const fg of ["--foreground", "--text-secondary"]) {
+        const ratio = contrastRatio(
+          parseColor(theme.vars[fg], theme.vars),
+          parseColor(theme.vars["--surface-subtle"], theme.vars)
+        );
+        expect(
+          ratio,
+          `${theme.name} ${fg} on --surface-subtle was ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("meets WCAG 2.1 AA (>= 4.5:1) for hero secondary text across all hero gradient stops", () => {
+    const lightStops = ["#ecd0d1", "#c9daf9", "#efe5c6", "#faf9f7"];
+    for (const stop of lightStops) {
+      const ratio = contrastRatio(
+        parseColor(lightVars["--hero-text-secondary"], lightVars),
+        hexToRgb(stop)
+      );
+      expect(
+        ratio,
+        `light --hero-text-secondary on hero stop ${stop} was ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+
+    const darkStops = ["#543135", "#253654", "#443d2c", "#1c1d20"];
+    for (const stop of darkStops) {
+      const ratio = contrastRatio(
+        parseColor(darkVars["--hero-text-secondary"], darkVars),
+        hexToRgb(stop)
+      );
+      expect(
+        ratio,
+        `dark --hero-text-secondary on hero stop ${stop} was ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5);
     }
   });
 

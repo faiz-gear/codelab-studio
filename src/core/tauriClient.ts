@@ -17,6 +17,9 @@ export function isTauriRuntime(): boolean {
 
 export class TauriCoreClient implements CoreClient {
   async dispatch(command: AppCommand): Promise<AppResponse> {
+    if (!isTauriRuntime()) {
+      throw new CoreCommandError({ code: "IPC_UNAVAILABLE" });
+    }
     try {
       return await invoke<AppResponse>("dispatch_command", { command });
     } catch (err) {
@@ -30,17 +33,20 @@ export class TauriCoreClient implements CoreClient {
             throw new CoreCommandError(parsed);
           }
         } catch {
-          // Non-JSON transport failure falls through to generic storage/read error.
+          // Non-JSON transport failure falls through to UNEXPECTED_ERROR.
         }
       }
       throw new CoreCommandError({
-        code: "STORAGE_READ_FAILED",
+        code: "UNEXPECTED_ERROR",
         details: { reason: String(err) },
       });
     }
   }
 
   async subscribe(listener: CoreEventListener): Promise<Unsubscribe> {
+    if (!isTauriRuntime()) {
+      return () => {};
+    }
     const unlisten = await listen<AppEvent>(CORE_EVENT_CHANNEL, (event) => {
       listener(event.payload);
     });

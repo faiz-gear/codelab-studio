@@ -2,7 +2,9 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
-import { FakeCoreClient } from "../core/fakeClient";
+import { formatDomainError } from "../i18n";
+import { APPEARANCE_CACHE_KEY } from "../theme/applyTheme";
+import { FakeCoreClient } from "./fakeCoreClient";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -123,10 +125,14 @@ describe("CodeLab Studio frontend seam (CoreClient)", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Appearance" })).toHaveFocus();
 
-    // Simulate app restart with same CoreClient persistence
+    // Simulate app restart with same CoreClient persistence (no zh-CN flash on initial render)
     unmount();
     render(<App client={client} />);
 
+    // Synchronously hydrated from appearance cache before async bootstrap settles
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Start today's local practice."
+    );
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
       "Start today's local practice."
     );
@@ -189,6 +195,14 @@ describe("CodeLab Studio frontend seam (CoreClient)", () => {
       )
     ).toBeInTheDocument();
 
+    // Unknown or missing-detail error falls back safely without leaking raw placeholders
+    expect(
+      formatDomainError({ code: "STORAGE_READ_FAILED" }, "en-US")
+    ).toBe("Unable to complete the operation. Please retry.");
+    expect(
+      formatDomainError({ code: "UNKNOWN_FUTURE_CODE" }, "zh-CN")
+    ).toBe("操作未能完成，请重试。");
+
     // Reactive CoreClient event stream updates recent Workspaces live
     await user.keyboard("{Escape}");
     act(() => {
@@ -213,5 +227,34 @@ describe("CodeLab Studio frontend seam (CoreClient)", () => {
       await within(recentList).findByText("/Users/learner/codelab/python-clean")
     ).toBeInTheDocument();
     expect(within(recentList).getByText("3/6")).toBeInTheDocument();
+  });
+
+  it("hydrates persisted en-US locale synchronously from cache without zh-CN first-frame flash", async () => {
+    window.localStorage.setItem(
+      APPEARANCE_CACHE_KEY,
+      JSON.stringify({
+        theme: "dark",
+        accent: "blue",
+        codeFontSize: 12.5,
+        locale: "en-US",
+      })
+    );
+
+    const client = new FakeCoreClient({
+      settings: {
+        theme: "dark",
+        accent: "blue",
+        codeFontSize: 12.5,
+        locale: "en-US",
+      },
+    });
+
+    render(<App client={client} />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Start today's local practice."
+    );
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
+      "Start today's local practice."
+    );
   });
 });

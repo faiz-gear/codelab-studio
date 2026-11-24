@@ -1,4 +1,4 @@
-import type { CoreClient, CoreEventListener, Unsubscribe } from "./client";
+import type { CoreClient, CoreEventListener, Unsubscribe } from "../core/client";
 import {
   CoreCommandError,
   DEFAULT_SETTINGS,
@@ -10,14 +10,13 @@ import {
   type RecentWorkspace,
   type StorageRecoveryNotice,
   type TrustEntry,
-} from "./contracts";
+} from "../core/contracts";
 
 export interface FakeCoreClientOptions {
   settings?: Partial<GlobalSettings>;
   recents?: RecentWorkspace[];
   trustEntries?: TrustEntry[];
   recoveryNotices?: StorageRecoveryNotice[];
-  persistKey?: string;
 }
 
 export class FakeCoreClient implements CoreClient {
@@ -26,25 +25,14 @@ export class FakeCoreClient implements CoreClient {
   private trustEntries: TrustEntry[];
   private recoveryNotices: StorageRecoveryNotice[];
   private shutDown = false;
-  private readonly persistKey?: string;
   private readonly listeners = new Set<CoreEventListener>();
   private nextErrors = new Map<AppCommand["type"], DomainError>();
   readonly commandLog: AppCommand[] = [];
 
   constructor(options: FakeCoreClientOptions = {}) {
-    this.persistKey = options.persistKey;
-    const restored = this.loadPersisted();
-    this.settings = {
-      ...DEFAULT_SETTINGS,
-      ...restored?.settings,
-      ...options.settings,
-    };
-    this.recents = options.recents
-      ? [...options.recents]
-      : restored?.recents ?? [];
-    this.trustEntries = options.trustEntries
-      ? [...options.trustEntries]
-      : restored?.trustEntries ?? [];
+    this.settings = { ...DEFAULT_SETTINGS, ...options.settings };
+    this.recents = options.recents ? [...options.recents] : [];
+    this.trustEntries = options.trustEntries ? [...options.trustEntries] : [];
     this.recoveryNotices = options.recoveryNotices
       ? [...options.recoveryNotices]
       : [];
@@ -104,7 +92,6 @@ export class FakeCoreClient implements CoreClient {
             : {}),
           ...(patch.locale !== undefined ? { locale: patch.locale } : {}),
         };
-        this.savePersisted();
         this.emitEvent({
           type: "settingsUpdated",
           payload: { ...this.settings },
@@ -115,36 +102,21 @@ export class FakeCoreClient implements CoreClient {
         return { type: "recents", payload: [...this.recents] };
       case "recordRecentWorkspace": {
         const input = command.payload;
-        const trimmedPath = input.workspacePath.trim();
-        if (!trimmedPath.startsWith("/")) {
-          throw new CoreCommandError({ code: "INVALID_WORKSPACE_PATH" });
-        }
-        if (input.completedExercises > input.totalExercises) {
-          throw new CoreCommandError({
-            code: "INVALID_PROGRESS_COUNT",
-            details: {
-              completed: String(input.completedExercises),
-              total: String(input.totalExercises),
-            },
-          });
-        }
         const entry: RecentWorkspace = {
           ...input,
-          workspacePath: trimmedPath,
+          workspacePath: input.workspacePath.trim(),
           lastOpenedAt: new Date().toISOString(),
         };
         this.recents = [
           entry,
-          ...this.recents.filter((r) => r.workspacePath !== trimmedPath),
+          ...this.recents.filter((r) => r.workspacePath !== entry.workspacePath),
         ].slice(0, 20);
-        this.savePersisted();
         this.emitEvent({ type: "recentsUpdated", payload: [...this.recents] });
         return { type: "recents", payload: [...this.recents] };
       }
       case "removeRecentWorkspace": {
         const target = command.payload.workspacePath.trim();
         this.recents = this.recents.filter((r) => r.workspacePath !== target);
-        this.savePersisted();
         this.emitEvent({ type: "recentsUpdated", payload: [...this.recents] });
         return { type: "recents", payload: [...this.recents] };
       }
@@ -158,7 +130,7 @@ export class FakeCoreClient implements CoreClient {
             entry.normalizedSource === normalized
         );
         return {
-          type: "trustStatus",
+          type: "trustState",
           payload: {
             sourceKind: command.payload.sourceKind,
             normalizedSource: normalized,
@@ -169,9 +141,6 @@ export class FakeCoreClient implements CoreClient {
       }
       case "grantTrust": {
         const normalized = command.payload.source.trim();
-        if (!normalized) {
-          throw new CoreCommandError({ code: "INVALID_TRUST_SOURCE" });
-        }
         const trustedAt = new Date().toISOString();
         this.trustEntries = [
           {
@@ -187,13 +156,12 @@ export class FakeCoreClient implements CoreClient {
               )
           ),
         ];
-        this.savePersisted();
         this.emitEvent({
           type: "trustUpdated",
           payload: [...this.trustEntries],
         });
         return {
-          type: "trustStatus",
+          type: "trustState",
           payload: {
             sourceKind: command.payload.sourceKind,
             normalizedSource: normalized,
@@ -211,7 +179,6 @@ export class FakeCoreClient implements CoreClient {
               e.normalizedSource === normalized
             )
         );
-        this.savePersisted();
         this.emitEvent({
           type: "trustUpdated",
           payload: [...this.trustEntries],
@@ -223,8 +190,10 @@ export class FakeCoreClient implements CoreClient {
           alreadyShutDown: this.shutDown,
           hooksExecuted: 0,
         };
-        this.shutDown = true;
-        this.emitEvent({ type: "shutdownCompleted", payload: report });
+        if (!this.shutDown) {
+          this.shutDown = true;
+          this.emitEvent({ type: "shutdownCompleted", payload: report });
+        }
         return { type: "shutdown", payload: report };
       }
     }
@@ -235,35 +204,5 @@ export class FakeCoreClient implements CoreClient {
     return () => {
       this.listeners.delete(listener);
     };
-  }
-
-  private loadPersisted(): {
-    settings?: GlobalSettings;
-    recents?: RecentWorkspace[];
-    trustEntries?: TrustEntry[];
-  } | null {
-    if (!this.persistKey || typeof window === "undefined") return null;
-    try {
-      const raw = window.localStorage.getItem(this.persistKey);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private savePersisted(): void {
-    if (!this.persistKey || typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        this.persistKey,
-        JSON.stringify({
-          settings: this.settings,
-          recents: this.recents,
-          trustEntries: this.trustEntries,
-        })
-      );
-    } catch {
-      // Ignore storage quota or private-mode failures.
-    }
   }
 }

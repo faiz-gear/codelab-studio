@@ -1,11 +1,21 @@
 import type { AccentPreset, CourseLanguage, ErrorCode, StoreKind } from "../core/contracts";
 
-export interface CoursePlaceholderCopy {
+export interface CoursePlaceholderMeta {
   id: string;
   language: CourseLanguage;
+  totalExercises: number;
+}
+
+export const COURSE_PLACEHOLDER_META: readonly CoursePlaceholderMeta[] = [
+  { id: "go-goframe-practice", language: "Go", totalExercises: 10 },
+  { id: "ts-data-pipeline", language: "JS/TS", totalExercises: 8 },
+  { id: "python-data-clean", language: "Python", totalExercises: 6 },
+  { id: "java-rate-limiter", language: "Java", totalExercises: 7 },
+] as const;
+
+export interface CoursePlaceholderText {
   title: string;
   description: string;
-  totalExercises: number;
 }
 
 export interface Messages {
@@ -27,7 +37,7 @@ export interface Messages {
     primaryCtaContinue: string;
     primaryCtaStart: string;
     secondaryCtaImport: string;
-    resumeSummary: string;
+    resumeSummaryPrefix: string;
     localFirstSummary: string;
     footerDesktop: string;
     footerLanguages: string;
@@ -35,13 +45,12 @@ export interface Messages {
     coursesHeading: string;
     filterGroupLabel: string;
     filterAll: string;
-    courseCardHint: string;
     recentHeading: string;
     newCoursePack: string;
     recentEmptyTitle: string;
     recentEmptyHint: string;
     placeholderNotice: string;
-    coursePlaceholders: readonly CoursePlaceholderCopy[];
+    courseTexts: Record<string, CoursePlaceholderText>;
   };
   appearance: {
     dialogLabel: string;
@@ -96,7 +105,7 @@ export const zhCN: Messages = {
     primaryCtaContinue: "继续上次 Workspace：{title}",
     primaryCtaStart: "浏览内置 Course Pack",
     secondaryCtaImport: "导入 / 创作 Course Pack",
-    resumeSummary: "最近进度 · {title}（{completed} / {total}）",
+    resumeSummaryPrefix: "最近进度 · {title}",
     localFirstSummary: "本地优先 · 零登录、离线完整可用",
     footerDesktop: "开源本地桌面端",
     footerLanguages: "支持 Go / JS·TS / Python / Java",
@@ -104,43 +113,30 @@ export const zhCN: Messages = {
     coursesHeading: "选择一门 Course 开始",
     filterGroupLabel: "按语言筛选",
     filterAll: "全部",
-    courseCardHint: "即将接入只读手册工作台",
     recentHeading: "最近的 Workspace",
     newCoursePack: "+ 创作新 Course Pack",
     recentEmptyTitle: "暂无最近打开的 Workspace",
     recentEmptyHint:
       "从上方选择内置 Course 或导入本地 Course Pack 后，你的 Workspace 记录将显示在这里。",
     placeholderNotice: "「{target}」将在下一里程碑接入完整工作台流程。",
-    coursePlaceholders: [
-      {
-        id: "go-goframe-practice",
-        language: "Go",
+    courseTexts: {
+      "go-goframe-practice": {
         title: "Go 与 GoFrame 开发实践",
         description: "从标准库 net/http 到并发测试与 GoFrame 工程迁移。",
-        totalExercises: 10,
       },
-      {
-        id: "ts-data-pipeline",
-        language: "JS/TS",
+      "ts-data-pipeline": {
         title: "TypeScript 数据流水线实战",
         description: "多文件函数判题：筛选过滤、去重聚合与并发限流。",
-        totalExercises: 8,
       },
-      {
-        id: "python-data-clean",
-        language: "Python",
+      "python-data-clean": {
         title: "Python 数据清洗与订单统计",
         description: "通过 uv 隔离环境运行多模块 pytest 自动化验收。",
-        totalExercises: 6,
       },
-      {
-        id: "java-rate-limiter",
-        language: "Java",
+      "java-rate-limiter": {
         title: "Java 21 并发限流器实战",
         description: "Temurin JDK 21 与 JUnit 5 多线程安全验收。",
-        totalExercises: 7,
       },
-    ],
+    },
   },
   appearance: {
     dialogLabel: "外观定制",
@@ -189,6 +185,8 @@ export const zhCN: Messages = {
     STORAGE_WRITE_FAILED: "保存本地数据（{store}）失败，请检查磁盘空间与写权限。",
     STORAGE_CORRUPTED: "检测到 {store} 配置文件损坏，已自动备份并恢复默认配置。",
     SHUTDOWN_FAILED: "退出回收部分后台资源时发生异常：{failures}",
+    IPC_UNAVAILABLE: "桌面运行时连接不可用，请在 CodeLab Studio 桌面应用中打开。",
+    UNEXPECTED_ERROR: "操作未能完成，请重试。",
   },
   relativeTime: {
     justNow: "刚刚",

@@ -10,12 +10,9 @@ import "./styles/app.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { FakeCoreClient } from "./core/fakeClient";
-import { isTauriRuntime, TauriCoreClient } from "./core/tauriClient";
+import { TauriCoreClient } from "./core/tauriClient";
 
-const client = isTauriRuntime()
-  ? new TauriCoreClient()
-  : new FakeCoreClient({ persistKey: "codelab.browser-preview.v1" });
+const client = new TauriCoreClient();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

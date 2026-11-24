@@ -165,7 +165,7 @@ p {
 }
 
 .btn--lg {
-  height: 42px;
+  height: var(--btn-h-lg);
   padding: 0 22px;
   font-size: 14px;
   border-radius: var(--radius-pill);
@@ -281,14 +281,6 @@ p {
   border: 1px solid var(--border);
 }
 
-.seg--pill {
-  border-radius: var(--radius-pill);
-}
-
-.seg--pill button {
-  border-radius: var(--radius-pill);
-}
-
 .seg button {
   height: 25px;
   padding: 0 11px;
@@ -317,6 +309,14 @@ p {
   color: var(--foreground);
   border-color: var(--border);
   box-shadow: var(--shadow-resting);
+}
+
+.seg--pill {
+  border-radius: var(--radius-pill);
+}
+
+.seg--pill button {
+  border-radius: var(--radius-pill);
 }
 
 .prog-track {
@@ -441,7 +441,7 @@ p {
 .hero-sub {
   font-size: 14px;
   line-height: 1.55;
-  color: var(--text-secondary);
+  color: var(--hero-text-secondary);
   max-width: 64ch;
   text-wrap: balance;
 }
@@ -475,7 +475,7 @@ p {
   gap: 14px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--hero-text-secondary);
 }
 
 .home-section {
@@ -793,4 +793,18 @@ p {
   .course-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Guarantee universal double-ring keyboard focus visibility above resting/pressed shadows */
+button:focus-visible,
+a:focus-visible,
+.btn:focus-visible,
+.seg button:focus-visible,
+.seg button[aria-pressed="true"]:focus-visible,
+.swatch:focus-visible,
+.swatch[aria-pressed="true"]:focus-visible,
+.course-card:focus-visible,
+.recent-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
 }

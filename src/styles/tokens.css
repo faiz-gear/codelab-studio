@@ -151,10 +151,11 @@
   --arc-gradient-soft: linear-gradient(135deg, oklch(97.5% 0.016 300), oklch(98% 0.015 65));
   --arc-gradient-line: linear-gradient(100deg, oklch(84% 0.055 300), oklch(87% 0.055 65));
   --arc-hero-bg:
-    radial-gradient(ellipse 36% 48% at 4% 96%, #e9babb 0%, transparent 100%),
-    radial-gradient(ellipse 38% 54% at 96% 4%, #afc7f6 0%, transparent 100%),
-    radial-gradient(ellipse 46% 46% at 50% 112%, #e8d9ad 0%, transparent 100%),
-    #f8f7f5;
+    radial-gradient(ellipse 38% 52% at 2% 98%, #ecd0d1 0%, transparent 100%),
+    radial-gradient(ellipse 40% 58% at 98% 2%, #c9daf9 0%, transparent 100%),
+    radial-gradient(ellipse 48% 46% at 54% 114%, #efe5c6 0%, transparent 100%),
+    #faf9f7;
+  --hero-text-secondary: oklch(38% 0 0);
 
   /* Shadows — Quiet resting, floating only on overlays */
   --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.035);
@@ -227,10 +228,11 @@
   --arc-gradient-soft: linear-gradient(135deg, oklch(24.5% 0.018 300), oklch(25% 0.015 65));
   --arc-gradient-line: linear-gradient(100deg, oklch(48% 0.06 300), oklch(52% 0.055 65));
   --arc-hero-bg:
-    radial-gradient(ellipse 36% 48% at 4% 96%, #5b3438 0%, transparent 100%),
-    radial-gradient(ellipse 38% 54% at 96% 4%, #28395b 0%, transparent 100%),
-    radial-gradient(ellipse 46% 46% at 50% 112%, #4a4230 0%, transparent 100%),
-    #1d1e22;
+    radial-gradient(ellipse 38% 52% at 2% 98%, #543135 0%, transparent 100%),
+    radial-gradient(ellipse 40% 58% at 98% 2%, #253654 0%, transparent 100%),
+    radial-gradient(ellipse 48% 46% at 54% 114%, #443d2c 0%, transparent 100%),
+    #1c1d20;
+  --hero-text-secondary: oklch(82% 0 0);
 
   --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.22);
   --shadow-raised: 0 8px 22px oklch(0% 0 0 / 0.28);
@@ -279,7 +281,7 @@
   --btn-h-xs: 26px;
   --btn-h-sm: 30px;
   --btn-h-md: 34px;
-  --btn-h-lg: 40px;
+  --btn-h-lg: 42px;
   --input-h: 36px;
   --tree-row-h: 28px;
   --float-bar-h: 34px;

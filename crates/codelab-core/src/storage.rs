@@ -6,11 +6,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
 use crate::error::{DomainError, ErrorCode};
 use crate::model::{GLOBAL_DATA_SCHEMA_VERSION, StorageRecoveryNotice, StoreKind};
 
-static TEMP_SEQ: AtomicU64 = AtomicU64::new(1);
+static BACKUP_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,13 +55,15 @@ where
             });
         }
 
-        let raw = fs::read_to_string(&self.path).map_err(|err| {
+        // Read raw bytes so invalid UTF-8 corruption triggers quarantine & recovery
+        // instead of aborting startup with a read error.
+        let bytes = fs::read(&self.path).map_err(|err| {
             DomainError::new(ErrorCode::StorageReadFailed)
                 .with_detail("store", store_name(self.kind))
                 .with_detail("reason", err.to_string())
         })?;
 
-        match serde_json::from_str::<VersionedEnvelope<T>>(&raw) {
+        match serde_json::from_slice::<VersionedEnvelope<T>>(&bytes) {
             Ok(envelope)
                 if envelope.schema_version == GLOBAL_DATA_SCHEMA_VERSION
                     && is_valid(&envelope.data) =>
@@ -87,92 +90,58 @@ where
     }
 
     pub(crate) fn save_atomic(&self, value: &T) -> Result<(), DomainError> {
-        let parent = self.path.parent().ok_or_else(|| {
-            DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-        })?;
-
-        fs::create_dir_all(parent).map_err(|err| {
-            DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-                .with_detail("reason", err.to_string())
-        })?;
+        let parent = self.parent_dir()?;
+        fs::create_dir_all(parent).map_err(|err| self.write_error(err))?;
 
         let envelope = VersionedEnvelope {
             schema_version: GLOBAL_DATA_SCHEMA_VERSION,
             data: value,
         };
-        let bytes = serde_json::to_vec_pretty(&envelope).map_err(|err| {
-            DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-                .with_detail("reason", err.to_string())
-        })?;
+        let bytes = serde_json::to_vec_pretty(&envelope).map_err(|err| self.write_error(err))?;
 
-        let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
-        let file_name = self
-            .path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("store.json");
-        let tmp_path = parent.join(format!(".{file_name}.tmp.{}.{seq}", std::process::id()));
+        let mut tmp = NamedTempFile::new_in(parent).map_err(|err| self.write_error(err))?;
+        tmp.write_all(&bytes).map_err(|err| self.write_error(err))?;
+        tmp.write_all(b"\n").map_err(|err| self.write_error(err))?;
+        tmp.as_file()
+            .sync_all()
+            .map_err(|err| self.write_error(err))?;
 
-        let write_result = (|| -> std::io::Result<()> {
-            let mut file = File::create(&tmp_path)?;
-            file.write_all(&bytes)?;
-            file.write_all(b"\n")?;
-            file.sync_all()?;
-            Ok(())
-        })();
-
-        if let Err(err) = write_result {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-                .with_detail("reason", err.to_string()));
-        }
-
-        if let Err(err) = replace_file_atomic(&tmp_path, &self.path) {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-                .with_detail("reason", err.to_string()));
-        }
+        // NamedTempFile::persist performs atomic replacement on both Unix (rename)
+        // and Windows (MoveFileExW MOVEFILE_REPLACE_EXISTING) without deleting first.
+        tmp.persist(&self.path)
+            .map_err(|err| self.write_error(err.error))?;
 
         sync_parent_dir(parent);
         Ok(())
     }
 
     fn quarantine_corrupt_file(&self) -> Result<PathBuf, DomainError> {
-        let parent = self.path.parent().ok_or_else(|| {
-            DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-        })?;
+        let parent = self.parent_dir()?;
         let file_name = self
             .path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("store.json");
-        let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let seq = BACKUP_SEQ.fetch_add(1, Ordering::Relaxed);
         let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ");
         let backup_path = parent.join(format!("{file_name}.corrupt.{timestamp}.{seq}"));
 
-        fs::rename(&self.path, &backup_path).map_err(|err| {
-            DomainError::new(ErrorCode::StorageWriteFailed)
-                .with_detail("store", store_name(self.kind))
-                .with_detail("reason", err.to_string())
-        })?;
+        fs::rename(&self.path, &backup_path).map_err(|err| self.write_error(err))?;
         Ok(backup_path)
     }
-}
 
-fn replace_file_atomic(tmp_path: &Path, target_path: &Path) -> std::io::Result<()> {
-    #[cfg(windows)]
-    {
-        if target_path.exists() {
-            fs::remove_file(target_path)?;
-        }
+    fn parent_dir(&self) -> Result<&Path, DomainError> {
+        self.path.parent().ok_or_else(|| {
+            DomainError::new(ErrorCode::StorageWriteFailed)
+                .with_detail("store", store_name(self.kind))
+        })
     }
-    fs::rename(tmp_path, target_path)
+
+    fn write_error(&self, err: impl std::fmt::Display) -> DomainError {
+        DomainError::new(ErrorCode::StorageWriteFailed)
+            .with_detail("store", store_name(self.kind))
+            .with_detail("reason", err.to_string())
+    }
 }
 
 #[cfg(unix)]

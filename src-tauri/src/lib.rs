@@ -2,46 +2,27 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
-use codelab_core::{
-    App, AppCommand, AppConfig, AppResponse, CleanupHook, DomainError, ShutdownReport,
-};
+use codelab_core::{App, AppCommand, AppConfig, AppResponse, DomainError};
 use tauri::{Emitter, Manager, RunEvent, State};
 
 pub const CORE_EVENT_CHANNEL: &str = "codelab://core-event";
 
-pub struct ShellState {
-    core: Arc<App>,
-}
-
-impl ShellState {
-    pub fn open(data_dir: PathBuf) -> Result<Self, DomainError> {
-        let core = Arc::new(App::open(AppConfig { data_dir })?);
-        Ok(Self { core })
-    }
-
-    pub fn dispatch(&self, command: AppCommand) -> Result<AppResponse, DomainError> {
-        self.core.execute(command)
-    }
-
-    pub fn register_cleanup_hook(&self, name: impl Into<String>, hook: CleanupHook) {
-        self.core.register_cleanup_hook(name, hook);
-    }
-
-    pub fn on_exit(&self) -> Result<ShutdownReport, DomainError> {
-        self.core.shutdown()
-    }
-
-    fn subscribe(&self) -> codelab_core::EventSubscription {
-        self.core.subscribe()
-    }
-}
-
 #[tauri::command]
 fn dispatch_command(
-    state: State<'_, ShellState>,
+    core: State<'_, Arc<App>>,
     command: AppCommand,
 ) -> Result<AppResponse, DomainError> {
-    state.dispatch(command)
+    core.execute(command)
+}
+
+fn open_core(data_dir: PathBuf) -> Result<Arc<App>, DomainError> {
+    Ok(Arc::new(App::open(AppConfig { data_dir })?))
+}
+
+fn handle_run_event(core: &App, event: &RunEvent) {
+    if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+        let _ = core.shutdown();
+    }
 }
 
 fn resolve_data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -71,9 +52,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
             let data_dir = resolve_data_dir(app)?;
-            let shell = ShellState::open(data_dir)?;
-            let subscription = shell.subscribe();
-            app.manage(shell);
+            let core = open_core(data_dir)?;
+            let subscription = core.subscribe();
+            app.manage(core);
             spawn_event_bridge(app.handle().clone(), subscription);
             Ok(())
         })
@@ -82,10 +63,8 @@ pub fn run() {
         .expect("failed to build CodeLab Studio desktop shell");
 
     app.run(|app_handle, event| {
-        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit)
-            && let Some(shell) = app_handle.try_state::<ShellState>()
-        {
-            let _ = shell.on_exit();
+        if let Some(core) = app_handle.try_state::<Arc<App>>() {
+            handle_run_event(&core, &event);
         }
     });
 }
@@ -98,18 +77,19 @@ mod tests {
     };
 
     use codelab_core::{AppCommand, AppResponse, Locale, ThemeMode, UpdateSettingsPatch};
+    use tauri::RunEvent;
     use tempfile::TempDir;
 
-    use super::ShellState;
+    use super::{handle_run_event, open_core};
 
     #[test]
-    fn shell_forwards_commands_and_runs_exit_cleanup_hook_idempotently() {
+    fn shell_manages_core_and_exit_run_event_triggers_cleanup_idempotently() {
         let dir = TempDir::new().expect("temp dir");
-        let shell = ShellState::open(dir.path().to_path_buf()).expect("open shell");
+        let core = open_core(dir.path().to_path_buf()).expect("open core");
 
         let cleaned = Arc::new(AtomicUsize::new(0));
         let cleaned_clone = Arc::clone(&cleaned);
-        shell.register_cleanup_hook(
+        core.register_cleanup_hook(
             "desktop-smoke-child",
             Box::new(move || {
                 cleaned_clone.fetch_add(1, Ordering::SeqCst);
@@ -117,13 +97,13 @@ mod tests {
             }),
         );
 
-        let updated = shell
-            .dispatch(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        let updated = core
+            .execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
                 theme: Some(ThemeMode::Dark),
                 locale: Some(Locale::EnUs),
                 ..Default::default()
             }))
-            .expect("dispatch updateSettings");
+            .expect("execute updateSettings");
 
         match updated {
             AppResponse::Settings(settings) => {
@@ -133,14 +113,10 @@ mod tests {
             other => panic!("expected Settings, got {other:?}"),
         }
 
-        let first_exit = shell.on_exit().expect("first exit cleanup");
-        assert!(!first_exit.already_shut_down);
-        assert_eq!(first_exit.hooks_executed, 1);
+        handle_run_event(&core, &RunEvent::Exit);
         assert_eq!(cleaned.load(Ordering::SeqCst), 1);
 
-        let second_exit = shell.on_exit().expect("idempotent second exit cleanup");
-        assert!(second_exit.already_shut_down);
-        assert_eq!(second_exit.hooks_executed, 0);
+        handle_run_event(&core, &RunEvent::Exit);
         assert_eq!(cleaned.load(Ordering::SeqCst), 1);
     }
 }

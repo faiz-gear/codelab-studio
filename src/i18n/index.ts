@@ -1,6 +1,6 @@
 import type { DomainError, Locale, StoreKind } from "../core/contracts";
 import { enUS } from "./en-US";
-import { zhCN, type Messages } from "./zh-CN";
+import { COURSE_PLACEHOLDER_META, zhCN, type Messages } from "./zh-CN";
 
 const DICTIONARIES: Record<Locale, Messages> = {
   "zh-CN": zhCN,
@@ -22,17 +22,23 @@ export function interpolate(
 }
 
 export function formatDomainError(
-  error: DomainError,
+  error: { code: string; details?: Record<string, string> },
   locale: Locale
 ): string {
   const messages = getMessages(locale);
-  const template = messages.errors[error.code];
+  const template =
+    messages.errors[error.code as DomainError["code"]] ??
+    messages.errors.UNEXPECTED_ERROR;
   const rawDetails = error.details ?? {};
   const localizedDetails: Record<string, string> = { ...rawDetails };
   if (rawDetails.store && rawDetails.store in messages.stores) {
     localizedDetails.store = messages.stores[rawDetails.store as StoreKind];
   }
-  return interpolate(template, localizedDetails);
+  const rendered = interpolate(template, localizedDetails);
+  if (/\{\w+\}/.test(rendered)) {
+    return messages.errors.UNEXPECTED_ERROR;
+  }
+  return rendered;
 }
 
 export function formatRelativeTime(
@@ -54,4 +60,5 @@ export function formatRelativeTime(
   return interpolate(t.daysAgo, { n: diffDays });
 }
 
+export { COURSE_PLACEHOLDER_META };
 export type { Messages };

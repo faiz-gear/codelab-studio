@@ -10,7 +10,7 @@ use crate::error::{DomainError, ErrorCode};
 use crate::model::{
     AppBootstrap, GlobalSettings, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, TrustEntry,
-    TrustSourceKind, TrustStatus, UpdateSettingsPatch,
+    TrustSource, TrustSourceKind, TrustState, UpdateSettingsPatch,
 };
 use crate::storage::JsonStore;
 
@@ -32,21 +32,9 @@ pub enum AppCommand {
         workspace_path: String,
     },
     ListTrustEntries,
-    CheckTrust {
-        #[serde(rename = "sourceKind")]
-        source_kind: TrustSourceKind,
-        source: String,
-    },
-    GrantTrust {
-        #[serde(rename = "sourceKind")]
-        source_kind: TrustSourceKind,
-        source: String,
-    },
-    RevokeTrust {
-        #[serde(rename = "sourceKind")]
-        source_kind: TrustSourceKind,
-        source: String,
-    },
+    CheckTrust(TrustSource),
+    GrantTrust(TrustSource),
+    RevokeTrust(TrustSource),
     Shutdown,
 }
 
@@ -57,7 +45,7 @@ pub enum AppResponse {
     Settings(GlobalSettings),
     Recents(Vec<RecentWorkspace>),
     TrustEntries(Vec<TrustEntry>),
-    TrustStatus(TrustStatus),
+    TrustState(TrustState),
     Shutdown(ShutdownReport),
 }
 
@@ -137,16 +125,14 @@ impl App {
                 .all(|item| !item.normalized_source.trim().is_empty())
         })?;
 
-        let mut recovery_notices = Vec::new();
-        if let Some(notice) = settings_loaded.recovery {
-            recovery_notices.push(notice);
-        }
-        if let Some(notice) = recents_loaded.recovery {
-            recovery_notices.push(notice);
-        }
-        if let Some(notice) = trust_loaded.recovery {
-            recovery_notices.push(notice);
-        }
+        let recovery_notices = [
+            settings_loaded.recovery,
+            recents_loaded.recovery,
+            trust_loaded.recovery,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
 
         Ok(Self {
             settings_store,
@@ -176,177 +162,20 @@ impl App {
                 }))
             }
             AppCommand::GetSettings => {
-                let state = self.lock_state();
-                Ok(AppResponse::Settings(state.settings.clone()))
+                Ok(AppResponse::Settings(self.lock_state().settings.clone()))
             }
-            AppCommand::UpdateSettings(patch) => {
-                if let Some(size) = patch.code_font_size
-                    && !is_valid_code_font_size(size)
-                {
-                    return Err(DomainError::new(ErrorCode::InvalidCodeFontSize)
-                        .with_detail("min", MIN_CODE_FONT_SIZE.to_string())
-                        .with_detail("max", MAX_CODE_FONT_SIZE.to_string()));
-                }
-
-                let updated = {
-                    let mut state = self.lock_state();
-                    let mut next = state.settings.clone();
-                    if let Some(theme) = patch.theme {
-                        next.theme = theme;
-                    }
-                    if let Some(accent) = patch.accent {
-                        next.accent = accent;
-                    }
-                    if let Some(size) = patch.code_font_size {
-                        next.code_font_size = size;
-                    }
-                    if let Some(locale) = patch.locale {
-                        next.locale = locale;
-                    }
-                    self.settings_store.save_atomic(&next)?;
-                    state.settings = next.clone();
-                    next
-                };
-
-                self.emit(AppEvent::SettingsUpdated(updated.clone()));
-                Ok(AppResponse::Settings(updated))
-            }
-            AppCommand::ListRecents => {
-                let state = self.lock_state();
-                Ok(AppResponse::Recents(state.recents.clone()))
-            }
-            AppCommand::RecordRecentWorkspace(input) => {
-                let normalized_path = normalize_absolute_path(&input.workspace_path)
-                    .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-                let course_id = input.course_id.trim();
-                let course_title = input.course_title.trim();
-                if course_id.is_empty() || course_title.is_empty() {
-                    return Err(DomainError::new(ErrorCode::InvalidCourseMetadata));
-                }
-                if input.completed_exercises > input.total_exercises {
-                    return Err(DomainError::new(ErrorCode::InvalidProgressCount)
-                        .with_detail("completed", input.completed_exercises.to_string())
-                        .with_detail("total", input.total_exercises.to_string()));
-                }
-
-                let entry = RecentWorkspace {
-                    workspace_path: normalized_path,
-                    course_id: course_id.to_string(),
-                    course_title: course_title.to_string(),
-                    language: input.language,
-                    completed_exercises: input.completed_exercises,
-                    total_exercises: input.total_exercises,
-                    last_opened_at: Utc::now().to_rfc3339(),
-                };
-
-                let updated = {
-                    let mut state = self.lock_state();
-                    let mut next = state.recents.clone();
-                    next.retain(|item| item.workspace_path != entry.workspace_path);
-                    next.insert(0, entry);
-                    next.truncate(MAX_RECENT_WORKSPACES);
-                    self.recents_store.save_atomic(&next)?;
-                    state.recents = next.clone();
-                    next
-                };
-
-                self.emit(AppEvent::RecentsUpdated(updated.clone()));
-                Ok(AppResponse::Recents(updated))
-            }
+            AppCommand::UpdateSettings(patch) => self.update_settings(patch),
+            AppCommand::ListRecents => Ok(AppResponse::Recents(self.lock_state().recents.clone())),
+            AppCommand::RecordRecentWorkspace(input) => self.record_recent_workspace(input),
             AppCommand::RemoveRecentWorkspace { workspace_path } => {
-                let normalized_path = normalize_absolute_path(&workspace_path)
-                    .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-
-                let updated = {
-                    let mut state = self.lock_state();
-                    let mut next = state.recents.clone();
-                    next.retain(|item| item.workspace_path != normalized_path);
-                    self.recents_store.save_atomic(&next)?;
-                    state.recents = next.clone();
-                    next
-                };
-
-                self.emit(AppEvent::RecentsUpdated(updated.clone()));
-                Ok(AppResponse::Recents(updated))
+                self.remove_recent_workspace(&workspace_path)
             }
-            AppCommand::ListTrustEntries => {
-                let state = self.lock_state();
-                Ok(AppResponse::TrustEntries(state.trust_entries.clone()))
-            }
-            AppCommand::CheckTrust {
-                source_kind,
-                source,
-            } => {
-                let normalized_source = normalize_trust_source(source_kind, &source)
-                    .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
-                let state = self.lock_state();
-                let matched = state.trust_entries.iter().find(|entry| {
-                    entry.source_kind == source_kind && entry.normalized_source == normalized_source
-                });
-                Ok(AppResponse::TrustStatus(TrustStatus {
-                    source_kind,
-                    normalized_source,
-                    trusted: matched.is_some(),
-                    trusted_at: matched.map(|entry| entry.trusted_at.clone()),
-                }))
-            }
-            AppCommand::GrantTrust {
-                source_kind,
-                source,
-            } => {
-                let normalized_source = normalize_trust_source(source_kind, &source)
-                    .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
-                let trusted_at = Utc::now().to_rfc3339();
-                let (updated, status) = {
-                    let mut state = self.lock_state();
-                    let mut next = state.trust_entries.clone();
-                    next.retain(|entry| {
-                        !(entry.source_kind == source_kind
-                            && entry.normalized_source == normalized_source)
-                    });
-                    next.insert(
-                        0,
-                        TrustEntry {
-                            source_kind,
-                            normalized_source: normalized_source.clone(),
-                            trusted_at: trusted_at.clone(),
-                        },
-                    );
-                    self.trust_store.save_atomic(&next)?;
-                    state.trust_entries = next.clone();
-                    (
-                        next,
-                        TrustStatus {
-                            source_kind,
-                            normalized_source,
-                            trusted: true,
-                            trusted_at: Some(trusted_at),
-                        },
-                    )
-                };
-                self.emit(AppEvent::TrustUpdated(updated));
-                Ok(AppResponse::TrustStatus(status))
-            }
-            AppCommand::RevokeTrust {
-                source_kind,
-                source,
-            } => {
-                let normalized_source = normalize_trust_source(source_kind, &source)
-                    .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
-                let updated = {
-                    let mut state = self.lock_state();
-                    let mut next = state.trust_entries.clone();
-                    next.retain(|entry| {
-                        !(entry.source_kind == source_kind
-                            && entry.normalized_source == normalized_source)
-                    });
-                    self.trust_store.save_atomic(&next)?;
-                    state.trust_entries = next.clone();
-                    next
-                };
-                self.emit(AppEvent::TrustUpdated(updated.clone()));
-                Ok(AppResponse::TrustEntries(updated))
-            }
+            AppCommand::ListTrustEntries => Ok(AppResponse::TrustEntries(
+                self.lock_state().trust_entries.clone(),
+            )),
+            AppCommand::CheckTrust(source) => self.check_trust(&source),
+            AppCommand::GrantTrust(source) => self.grant_trust(&source),
+            AppCommand::RevokeTrust(source) => self.revoke_trust(&source),
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
     }
@@ -412,6 +241,164 @@ impl App {
         Ok(report)
     }
 
+    fn update_settings(&self, patch: UpdateSettingsPatch) -> Result<AppResponse, DomainError> {
+        if let Some(size) = patch.code_font_size
+            && !is_valid_code_font_size(size)
+        {
+            return Err(DomainError::new(ErrorCode::InvalidCodeFontSize)
+                .with_detail("min", MIN_CODE_FONT_SIZE.to_string())
+                .with_detail("max", MAX_CODE_FONT_SIZE.to_string()));
+        }
+
+        let updated = {
+            let mut state = self.lock_state();
+            let mut next = state.settings.clone();
+            if let Some(theme) = patch.theme {
+                next.theme = theme;
+            }
+            if let Some(accent) = patch.accent {
+                next.accent = accent;
+            }
+            if let Some(size) = patch.code_font_size {
+                next.code_font_size = size;
+            }
+            if let Some(locale) = patch.locale {
+                next.locale = locale;
+            }
+            self.settings_store.save_atomic(&next)?;
+            state.settings = next.clone();
+            next
+        };
+
+        self.emit(AppEvent::SettingsUpdated(updated.clone()));
+        Ok(AppResponse::Settings(updated))
+    }
+
+    fn record_recent_workspace(
+        &self,
+        input: RecordRecentWorkspaceInput,
+    ) -> Result<AppResponse, DomainError> {
+        let normalized_path = normalize_absolute_path(&input.workspace_path)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
+        let course_id = input.course_id.trim();
+        let course_title = input.course_title.trim();
+        if course_id.is_empty() || course_title.is_empty() {
+            return Err(DomainError::new(ErrorCode::InvalidCourseMetadata));
+        }
+        if input.completed_exercises > input.total_exercises {
+            return Err(DomainError::new(ErrorCode::InvalidProgressCount)
+                .with_detail("completed", input.completed_exercises.to_string())
+                .with_detail("total", input.total_exercises.to_string()));
+        }
+
+        let entry = RecentWorkspace {
+            workspace_path: normalized_path,
+            course_id: course_id.to_string(),
+            course_title: course_title.to_string(),
+            language: input.language,
+            completed_exercises: input.completed_exercises,
+            total_exercises: input.total_exercises,
+            last_opened_at: Utc::now().to_rfc3339(),
+        };
+
+        self.mutate_recents(|next| {
+            next.retain(|item| item.workspace_path != entry.workspace_path);
+            next.insert(0, entry);
+            next.truncate(MAX_RECENT_WORKSPACES);
+        })
+    }
+
+    fn remove_recent_workspace(&self, workspace_path: &str) -> Result<AppResponse, DomainError> {
+        let normalized_path = normalize_absolute_path(workspace_path)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
+        self.mutate_recents(|next| {
+            next.retain(|item| item.workspace_path != normalized_path);
+        })
+    }
+
+    fn mutate_recents(
+        &self,
+        mutate: impl FnOnce(&mut Vec<RecentWorkspace>),
+    ) -> Result<AppResponse, DomainError> {
+        let updated = {
+            let mut state = self.lock_state();
+            let mut next = state.recents.clone();
+            mutate(&mut next);
+            self.recents_store.save_atomic(&next)?;
+            state.recents = next.clone();
+            next
+        };
+        self.emit(AppEvent::RecentsUpdated(updated.clone()));
+        Ok(AppResponse::Recents(updated))
+    }
+
+    fn check_trust(&self, source: &TrustSource) -> Result<AppResponse, DomainError> {
+        let normalized_source = normalize_trust_source(source.source_kind, &source.source)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
+        let state = self.lock_state();
+        let matched = state
+            .trust_entries
+            .iter()
+            .find(|entry| matches_trust_key(entry, source.source_kind, &normalized_source));
+        Ok(AppResponse::TrustState(TrustState {
+            source_kind: source.source_kind,
+            normalized_source,
+            trusted: matched.is_some(),
+            trusted_at: matched.map(|entry| entry.trusted_at.clone()),
+        }))
+    }
+
+    fn grant_trust(&self, source: &TrustSource) -> Result<AppResponse, DomainError> {
+        let normalized_source = normalize_trust_source(source.source_kind, &source.source)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
+        let trusted_at = Utc::now().to_rfc3339();
+        let status = TrustState {
+            source_kind: source.source_kind,
+            normalized_source: normalized_source.clone(),
+            trusted: true,
+            trusted_at: Some(trusted_at.clone()),
+        };
+
+        self.mutate_trust(|next| {
+            next.retain(|entry| !matches_trust_key(entry, source.source_kind, &normalized_source));
+            next.insert(
+                0,
+                TrustEntry {
+                    source_kind: source.source_kind,
+                    normalized_source,
+                    trusted_at,
+                },
+            );
+        })?;
+
+        Ok(AppResponse::TrustState(status))
+    }
+
+    fn revoke_trust(&self, source: &TrustSource) -> Result<AppResponse, DomainError> {
+        let normalized_source = normalize_trust_source(source.source_kind, &source.source)
+            .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
+        let updated = self.mutate_trust(|next| {
+            next.retain(|entry| !matches_trust_key(entry, source.source_kind, &normalized_source));
+        })?;
+        Ok(AppResponse::TrustEntries(updated))
+    }
+
+    fn mutate_trust(
+        &self,
+        mutate: impl FnOnce(&mut Vec<TrustEntry>),
+    ) -> Result<Vec<TrustEntry>, DomainError> {
+        let updated = {
+            let mut state = self.lock_state();
+            let mut next = state.trust_entries.clone();
+            mutate(&mut next);
+            self.trust_store.save_atomic(&next)?;
+            state.trust_entries = next.clone();
+            next
+        };
+        self.emit(AppEvent::TrustUpdated(updated.clone()));
+        Ok(updated)
+    }
+
     fn lock_state(&self) -> std::sync::MutexGuard<'_, AppState> {
         self.state
             .lock()
@@ -434,6 +421,10 @@ impl Drop for App {
 }
 
 const MAX_RECENT_WORKSPACES: usize = 20;
+
+fn matches_trust_key(entry: &TrustEntry, kind: TrustSourceKind, normalized: &str) -> bool {
+    entry.source_kind == kind && entry.normalized_source == normalized
+}
 
 fn is_valid_code_font_size(size: f32) -> bool {
     size.is_finite() && (MIN_CODE_FONT_SIZE..=MAX_CODE_FONT_SIZE).contains(&size)
@@ -491,31 +482,28 @@ fn normalize_git_url(raw: &str) -> Option<String> {
         if !matches!(lower_scheme.as_str(), "https" | "http" | "ssh") {
             return None;
         }
-        let (host, path) = rest.split_once('/')?;
-        let lower_host = host.trim().to_ascii_lowercase();
-        let clean_path = strip_git_suffix(path.trim_matches('/'));
-        if lower_host.is_empty() || clean_path.is_empty() {
-            return None;
-        }
-        return Some(format!("{lower_scheme}://{lower_host}/{clean_path}"));
+        let (host, path) = split_and_clean_git_host_path(rest, '/')?;
+        return Some(format!("{lower_scheme}://{host}/{path}"));
     }
 
     if let Some(after_user) = trimmed.strip_prefix("git@") {
-        let (host, path) = after_user.split_once(':')?;
-        let lower_host = host.trim().to_ascii_lowercase();
-        let clean_path = strip_git_suffix(path.trim_matches('/'));
-        if lower_host.is_empty() || clean_path.is_empty() {
-            return None;
-        }
-        return Some(format!("git@{lower_host}:{clean_path}"));
+        let (host, path) = split_and_clean_git_host_path(after_user, ':')?;
+        return Some(format!("git@{host}:{path}"));
     }
 
     None
 }
 
-fn strip_git_suffix(path: &str) -> &str {
-    path.trim_end_matches('/')
+fn split_and_clean_git_host_path(input: &str, separator: char) -> Option<(String, String)> {
+    let (host, raw_path) = input.split_once(separator)?;
+    let lower_host = host.trim().to_ascii_lowercase();
+    let trimmed_path = raw_path.trim_matches('/');
+    let clean_path = trimmed_path
         .strip_suffix(".git")
-        .unwrap_or(path.trim_end_matches('/'))
-        .trim_end_matches('/')
+        .unwrap_or(trimmed_path)
+        .trim_end_matches('/');
+    if lower_host.is_empty() || clean_path.is_empty() {
+        return None;
+    }
+    Some((lower_host, clean_path.to_string()))
 }

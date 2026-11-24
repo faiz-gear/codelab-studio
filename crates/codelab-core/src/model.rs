@@ -111,6 +111,13 @@ pub enum TrustSourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TrustSource {
+    pub source_kind: TrustSourceKind,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TrustEntry {
     pub source_kind: TrustSourceKind,
     pub normalized_source: String,
@@ -119,7 +126,7 @@ pub struct TrustEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TrustStatus {
+pub struct TrustState {
     pub source_kind: TrustSourceKind,
     pub normalized_source: String,
     pub trusted: bool,

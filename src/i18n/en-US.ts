@@ -20,7 +20,7 @@ export const enUS: Messages = {
     primaryCtaContinue: "Resume Workspace: {title}",
     primaryCtaStart: "Explore Built-in Course Packs",
     secondaryCtaImport: "Import / Author Course Pack",
-    resumeSummary: "Last progress · {title} ({completed} / {total})",
+    resumeSummaryPrefix: "Last progress · {title}",
     localFirstSummary: "Local-first · Zero sign-in, fully functional offline",
     footerDesktop: "Open-source local desktop",
     footerLanguages: "Supports Go / JS·TS / Python / Java",
@@ -28,43 +28,30 @@ export const enUS: Messages = {
     coursesHeading: "Choose a Course to begin",
     filterGroupLabel: "Filter by language",
     filterAll: "All",
-    courseCardHint: "Workbench integration arrives in the next milestone",
     recentHeading: "Recent Workspaces",
     newCoursePack: "+ Author Course Pack",
     recentEmptyTitle: "No recent Workspaces yet",
     recentEmptyHint:
       "Open a built-in Course or import a local Course Pack above to see your local Workspaces here.",
     placeholderNotice: "\"{target}\" will connect to the full workbench in the next milestone.",
-    coursePlaceholders: [
-      {
-        id: "go-goframe-practice",
-        language: "Go",
+    courseTexts: {
+      "go-goframe-practice": {
         title: "Go & GoFrame Engineering Practice",
         description: "From stdlib net/http to concurrent tests and GoFrame migration.",
-        totalExercises: 10,
       },
-      {
-        id: "ts-data-pipeline",
-        language: "JS/TS",
+      "ts-data-pipeline": {
         title: "TypeScript Data Pipeline Lab",
         description: "Multi-file test verification: filtering, dedup aggregation, and rate limits.",
-        totalExercises: 8,
       },
-      {
-        id: "python-data-clean",
-        language: "Python",
+      "python-data-clean": {
         title: "Python Data Cleaning & Order Analytics",
         description: "Isolated uv environment running multi-module pytest verification.",
-        totalExercises: 6,
       },
-      {
-        id: "java-rate-limiter",
-        language: "Java",
+      "java-rate-limiter": {
         title: "Java 21 Concurrent Rate Limiter Lab",
         description: "Temurin JDK 21 and JUnit 5 concurrency verification suite.",
-        totalExercises: 7,
       },
-    ],
+    },
   },
   appearance: {
     dialogLabel: "Appearance customization",
@@ -118,6 +105,8 @@ export const enUS: Messages = {
     STORAGE_CORRUPTED:
       "Detected corrupted {store} file; backed up original data and restored defaults.",
     SHUTDOWN_FAILED: "Failed to clean up some background resources on exit: {failures}",
+    IPC_UNAVAILABLE: "Desktop runtime bridge is unavailable. Launch inside CodeLab Studio desktop.",
+    UNEXPECTED_ERROR: "Unable to complete the operation. Please retry.",
   },
   relativeTime: {
     justNow: "Just now",

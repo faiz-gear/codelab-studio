@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use codelab_core::{
     AccentPreset, App, AppCommand, AppConfig, AppEvent, AppResponse, CourseLanguage, ErrorCode,
     GlobalSettings, Locale, RecordRecentWorkspaceInput, ShutdownReport, StoreKind, ThemeMode,
-    TrustSourceKind, UpdateSettingsPatch,
+    TrustSource, TrustSourceKind, UpdateSettingsPatch,
 };
 use tempfile::TempDir;
 
@@ -276,27 +276,27 @@ fn trust_registry_normalizes_sources_persists_and_revokes() {
 
     // Untrusted by default
     match app
-        .execute(AppCommand::CheckTrust {
+        .execute(AppCommand::CheckTrust(TrustSource {
             source_kind: TrustSourceKind::GitRepo,
             source: "https://GitHub.com/faiz-gear/sample-pack.git/".into(),
-        })
+        }))
         .expect("check untrusted")
     {
-        AppResponse::TrustStatus(status) => {
-            assert!(!status.trusted);
+        AppResponse::TrustState(state) => {
+            assert!(!state.trusted);
             assert_eq!(
-                status.normalized_source,
+                state.normalized_source,
                 "https://github.com/faiz-gear/sample-pack"
             );
         }
-        other => panic!("expected TrustStatus, got {other:?}"),
+        other => panic!("expected TrustState, got {other:?}"),
     }
 
     // Grant git trust with uppercase host + .git suffix
-    app.execute(AppCommand::GrantTrust {
+    app.execute(AppCommand::GrantTrust(TrustSource {
         source_kind: TrustSourceKind::GitRepo,
         source: "https://GitHub.com/faiz-gear/sample-pack.git".into(),
-    })
+    }))
     .expect("grant git trust");
     assert!(matches!(
         events.try_recv().expect("trust event"),
@@ -305,10 +305,10 @@ fn trust_registry_normalizes_sources_persists_and_revokes() {
 
     // Grant local path trust with unnormalized segment
     let messy_local = format!("{}/./", course_dir.display());
-    app.execute(AppCommand::GrantTrust {
+    app.execute(AppCommand::GrantTrust(TrustSource {
         source_kind: TrustSourceKind::LocalPath,
         source: messy_local,
-    })
+    }))
     .expect("grant local trust");
     let _ = events.try_recv().expect("second trust event");
 
@@ -320,32 +320,32 @@ fn trust_registry_normalizes_sources_persists_and_revokes() {
     .expect("reopen app");
 
     match restarted
-        .execute(AppCommand::CheckTrust {
+        .execute(AppCommand::CheckTrust(TrustSource {
             source_kind: TrustSourceKind::GitRepo,
             source: "https://github.com/faiz-gear/sample-pack/".into(),
-        })
+        }))
         .expect("check git trust after restart")
     {
-        AppResponse::TrustStatus(status) => assert!(status.trusted),
-        other => panic!("expected TrustStatus, got {other:?}"),
+        AppResponse::TrustState(state) => assert!(state.trusted),
+        other => panic!("expected TrustState, got {other:?}"),
     }
 
     match restarted
-        .execute(AppCommand::CheckTrust {
+        .execute(AppCommand::CheckTrust(TrustSource {
             source_kind: TrustSourceKind::LocalPath,
             source: course_dir.to_string_lossy().into_owned(),
-        })
+        }))
         .expect("check local trust after restart")
     {
-        AppResponse::TrustStatus(status) => assert!(status.trusted),
-        other => panic!("expected TrustStatus, got {other:?}"),
+        AppResponse::TrustState(state) => assert!(state.trusted),
+        other => panic!("expected TrustState, got {other:?}"),
     }
 
     restarted
-        .execute(AppCommand::RevokeTrust {
+        .execute(AppCommand::RevokeTrust(TrustSource {
             source_kind: TrustSourceKind::GitRepo,
             source: "https://github.com/faiz-gear/sample-pack".into(),
-        })
+        }))
         .expect("revoke trust");
 
     match restarted
@@ -369,32 +369,32 @@ fn trust_commands_reject_invalid_sources_with_domain_error() {
     .expect("open app");
 
     let bad_local = app
-        .execute(AppCommand::GrantTrust {
+        .execute(AppCommand::GrantTrust(TrustSource {
             source_kind: TrustSourceKind::LocalPath,
             source: "relative/course".into(),
-        })
+        }))
         .expect_err("relative local path must fail");
     assert_eq!(bad_local.code, ErrorCode::InvalidTrustSource);
 
     let bad_git = app
-        .execute(AppCommand::GrantTrust {
+        .execute(AppCommand::GrantTrust(TrustSource {
             source_kind: TrustSourceKind::GitRepo,
             source: "not-a-git-url".into(),
-        })
+        }))
         .expect_err("invalid git url must fail");
     assert_eq!(bad_git.code, ErrorCode::InvalidTrustSource);
 }
 
 #[test]
-fn corrupted_global_stores_recover_to_defaults_and_quarantine_backups() {
+fn corrupted_global_stores_recover_including_invalid_utf8_bytes() {
     let dir = TempDir::new().expect("temp dir");
 
-    // 1. Out-of-bounds domain value inside valid JSON envelope for settings
+    // 1. Non-UTF-8 binary corruption for settings
     std::fs::write(
         dir.path().join("settings.json"),
-        r#"{"schemaVersion":1,"data":{"theme":"dark","accent":"blue","codeFontSize":99.0,"locale":"en-US"}}"#,
+        [0xff_u8, 0xfe, 0x00, 0x80],
     )
-    .expect("write invalid settings");
+    .expect("write non-utf8 settings");
 
     // 2. Truncated / broken JSON for recents
     std::fs::write(dir.path().join("recents.json"), "{broken json").expect("write corrupt recents");
@@ -439,13 +439,39 @@ fn corrupted_global_stores_recover_to_defaults_and_quarantine_backups() {
 
     drop(app);
 
-    // Subsequent restart should open cleanly with zero recovery notices
-    let restarted = App::open(AppConfig {
+    // Out-of-bounds domain value inside valid JSON envelope also recovers
+    std::fs::write(
+        dir.path().join("settings.json"),
+        r#"{"schemaVersion":1,"data":{"theme":"dark","accent":"blue","codeFontSize":99.0,"locale":"en-US"}}"#,
+    )
+    .expect("write out-of-range settings");
+
+    let recovered_again = App::open(AppConfig {
+        data_dir: dir.path().to_path_buf(),
+    })
+    .expect("reopen with domain validation recovery");
+
+    match recovered_again
+        .execute(AppCommand::Bootstrap)
+        .expect("bootstrap")
+    {
+        AppResponse::Bootstrap(bootstrap) => {
+            assert_eq!(bootstrap.settings, GlobalSettings::default());
+            assert_eq!(bootstrap.recovery_notices.len(), 1);
+            assert_eq!(bootstrap.recovery_notices[0].store, StoreKind::Settings);
+        }
+        other => panic!("expected Bootstrap, got {other:?}"),
+    }
+
+    drop(recovered_again);
+
+    // Subsequent clean restart yields zero recovery notices
+    let clean = App::open(AppConfig {
         data_dir: dir.path().to_path_buf(),
     })
     .expect("reopen clean");
 
-    match restarted.execute(AppCommand::Bootstrap).expect("bootstrap") {
+    match clean.execute(AppCommand::Bootstrap).expect("bootstrap") {
         AppResponse::Bootstrap(bootstrap) => {
             assert!(bootstrap.recovery_notices.is_empty());
         }

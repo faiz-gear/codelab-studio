@@ -22,6 +22,53 @@ const ACCENT_SWATCH_COLOR: Record<AccentPreset, string> = {
   rose: "#bc2470",
 };
 
+interface SegmentedOption<T extends string | number> {
+  value: T;
+  label: string;
+}
+
+interface SegmentedGroupProps<T extends string | number> {
+  label: string;
+  groupLabel: string;
+  options: readonly SegmentedOption<T>[];
+  isSelected: (value: T) => boolean;
+  onSelect: (value: T) => void;
+  buttonHeight?: string;
+}
+
+function SegmentedGroup<T extends string | number>({
+  label,
+  groupLabel,
+  options,
+  isSelected,
+  onSelect,
+  buttonHeight = "30px",
+}: SegmentedGroupProps<T>) {
+  return (
+    <div>
+      <span className="drawer-label">{label}</span>
+      <div
+        className="seg"
+        style={{ display: "flex", width: "100%" }}
+        role="group"
+        aria-label={groupLabel}
+      >
+        {options.map((option) => (
+          <button
+            key={String(option.value)}
+            type="button"
+            aria-pressed={isSelected(option.value)}
+            style={{ flex: 1, height: buttonHeight }}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export interface AppearanceDrawerProps {
   open: boolean;
   settings: GlobalSettings;
@@ -57,18 +104,18 @@ export function AppearanceDrawer({
 
   if (!open) return null;
 
-  const sizeOptions: Array<{ value: number; label: string }> = [
+  const sizeOptions: readonly SegmentedOption<number>[] = [
     { value: CODE_FONT_SIZE_PRESETS[0], label: messages.appearance.sizeCompact },
     { value: CODE_FONT_SIZE_PRESETS[1], label: messages.appearance.sizeStandard },
     { value: CODE_FONT_SIZE_PRESETS[2], label: messages.appearance.sizeLarge },
   ];
 
-  const themeOptions: Array<{ value: ThemeMode; label: string }> = [
+  const themeOptions: readonly SegmentedOption<ThemeMode>[] = [
     { value: "light", label: messages.appearance.themeLight },
     { value: "dark", label: messages.appearance.themeDark },
   ];
 
-  const localeOptions: Array<{ value: Locale; label: string }> = [
+  const localeOptions: readonly SegmentedOption<Locale>[] = [
     { value: "zh-CN", label: "简体中文" },
     { value: "en-US", label: "English" },
   ];
@@ -100,27 +147,13 @@ export function AppearanceDrawer({
         </div>
 
         <div className="drawer-body">
-          <div>
-            <span className="drawer-label">{messages.appearance.themeLabel}</span>
-            <div
-              className="seg"
-              style={{ display: "flex", width: "100%" }}
-              role="group"
-              aria-label={messages.appearance.themeGroupLabel}
-            >
-              {themeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={settings.theme === option.value}
-                  style={{ flex: 1, height: "30px" }}
-                  onClick={() => onUpdateSettings({ theme: option.value })}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SegmentedGroup
+            label={messages.appearance.themeLabel}
+            groupLabel={messages.appearance.themeGroupLabel}
+            options={themeOptions}
+            isSelected={(value) => settings.theme === value}
+            onSelect={(theme) => onUpdateSettings({ theme })}
+          />
 
           <div>
             <span className="drawer-label">{messages.appearance.accentLabel}</span>
@@ -159,25 +192,14 @@ export function AppearanceDrawer({
           </div>
 
           <div>
-            <span className="drawer-label">{messages.appearance.codeSizeLabel}</span>
-            <div
-              className="seg"
-              style={{ display: "flex", width: "100%" }}
-              role="group"
-              aria-label={messages.appearance.codeSizeGroupLabel}
-            >
-              {sizeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={Math.abs(settings.codeFontSize - option.value) < 0.01}
-                  style={{ flex: 1, height: "28px" }}
-                  onClick={() => onUpdateSettings({ codeFontSize: option.value })}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <SegmentedGroup
+              label={messages.appearance.codeSizeLabel}
+              groupLabel={messages.appearance.codeSizeGroupLabel}
+              options={sizeOptions}
+              buttonHeight="28px"
+              isSelected={(value) => Math.abs(settings.codeFontSize - value) < 0.01}
+              onSelect={(codeFontSize) => onUpdateSettings({ codeFontSize })}
+            />
             <pre
               className="code-preview"
               aria-label={messages.appearance.codePreviewLabel}
@@ -186,27 +208,13 @@ export function AppearanceDrawer({
             </pre>
           </div>
 
-          <div>
-            <span className="drawer-label">{messages.appearance.localeLabel}</span>
-            <div
-              className="seg"
-              style={{ display: "flex", width: "100%" }}
-              role="group"
-              aria-label={messages.appearance.localeGroupLabel}
-            >
-              {localeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={settings.locale === option.value}
-                  style={{ flex: 1, height: "30px" }}
-                  onClick={() => onUpdateSettings({ locale: option.value })}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SegmentedGroup
+            label={messages.appearance.localeLabel}
+            groupLabel={messages.appearance.localeGroupLabel}
+            options={localeOptions}
+            isSelected={(value) => settings.locale === value}
+            onSelect={(locale) => onUpdateSettings({ locale })}
+          />
         </div>
       </div>
     </div>

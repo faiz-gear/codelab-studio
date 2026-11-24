@@ -5,7 +5,12 @@ import {
   type Locale,
   type RecentWorkspace,
 } from "../core/contracts";
-import { formatRelativeTime, interpolate, type Messages } from "../i18n";
+import {
+  COURSE_PLACEHOLDER_META,
+  formatRelativeTime,
+  interpolate,
+  type Messages,
+} from "../i18n";
 import { FolderDownIcon, FolderIcon, PlayIcon } from "./Icons";
 
 export type LanguageFilter = "all" | CourseLanguage;
@@ -33,7 +38,7 @@ export function WelcomeHome({
     }
   }
 
-  const visibleCourses = messages.welcome.coursePlaceholders.filter(
+  const visibleCourses = COURSE_PLACEHOLDER_META.filter(
     (course) => languageFilter === "all" || course.language === languageFilter
   );
 
@@ -42,14 +47,6 @@ export function WelcomeHome({
         title: latestRecent.courseTitle,
       })
     : messages.welcome.primaryCtaStart;
-
-  const heroStatusLabel = latestRecent
-    ? interpolate(messages.welcome.resumeSummary, {
-        title: latestRecent.courseTitle,
-        completed: latestRecent.completedExercises,
-        total: latestRecent.totalExercises,
-      })
-    : messages.welcome.localFirstSummary;
 
   return (
     <section
@@ -84,7 +81,18 @@ export function WelcomeHome({
 
           <div className="hero-status">
             <span className="dot dot--ok" aria-hidden="true" />
-            <span>{heroStatusLabel}</span>
+            {latestRecent ? (
+              <span>
+                {interpolate(messages.welcome.resumeSummaryPrefix, {
+                  title: latestRecent.courseTitle,
+                })}{" "}
+                <span className="mono">
+                  ({latestRecent.completedExercises} / {latestRecent.totalExercises})
+                </span>
+              </span>
+            ) : (
+              <span>{messages.welcome.localFirstSummary}</span>
+            )}
           </div>
 
           <div className="hero-foot">
@@ -126,19 +134,22 @@ export function WelcomeHome({
 
           <div className="course-grid" data-testid="course-grid">
             {visibleCourses.map((course) => {
+              const copy = messages.welcome.courseTexts[course.id];
               const matchedRecent = progressByCourse.get(course.id);
               const completed = matchedRecent?.completedExercises ?? 0;
               const total =
                 matchedRecent?.totalExercises ?? course.totalExercises;
               const pct =
-                total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+                total > 0
+                  ? Math.min(100, Math.round((completed / total) * 100))
+                  : 0;
 
               return (
                 <button
                   key={course.id}
                   type="button"
                   className="course-card"
-                  onClick={() => onPlaceholderAction(course.title)}
+                  onClick={() => onPlaceholderAction(copy.title)}
                 >
                   <div className="course-card-top">
                     <span className="lang-tag" data-lang={course.language}>
@@ -148,14 +159,11 @@ export function WelcomeHome({
                       {completed} / {total}
                     </span>
                   </div>
-                  <h3>{course.title}</h3>
-                  <p>{course.description}</p>
+                  <h3>{copy.title}</h3>
+                  <p>{copy.description}</p>
                   <div className="course-card-foot">
                     <div className="prog-track" aria-hidden="true">
-                      <div
-                        className="prog-fill"
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className="prog-fill" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 </button>
