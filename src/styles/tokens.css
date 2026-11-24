@@ -85,7 +85,7 @@
   --duration-considered: 360ms;
   --duration-spring: 440ms;
 
-  /* Workbench Geometry */
+  /* Workbench & Component Geometry (B · Balanced density) */
   --topbar-h: 48px;
   --tabbar-h: 36px;
   --cmdhead-h: 34px;
@@ -93,6 +93,20 @@
   --manual-w: 35%;
   --ai-w: 360px;
   --term-h: 256px;
+  --home-max-w: 1080px;
+  --home-section-gap: 24px;
+  --course-gap: 12px;
+  --course-padding: 16px 20px;
+  --manual-padding: 20px 22px 28px;
+  --manual-section-gap: 17px;
+  --editor-docked-min-w: 560px;
+  --btn-h-xs: 26px;
+  --btn-h-sm: 30px;
+  --btn-h-md: 34px;
+  --btn-h-lg: 42px;
+  --input-h: 36px;
+  --tree-row-h: 28px;
+  --float-bar-h: 34px;
 }
 
 /* ---------- Layer 2 · Semantic — Light Mode (Default) ---------- */
@@ -268,24 +282,6 @@
 :root[data-theme="dark"][data-accent="orange"]  { --accent: #ffad5e; --accent-strong: #ffd0a0; --accent-subtle: rgb(244 129 32 / 0.20); --control-on: #ef873a; --control-glyph: #190e04; }
 :root[data-theme="dark"][data-accent="coral"]   { --accent: #ff9386; --accent-strong: #ffc1ba; --accent-subtle: rgb(241 95 85 / 0.20);  --control-on: #f0746a; --control-glyph: #1d0908; }
 :root[data-theme="dark"][data-accent="rose"]    { --accent: #ff8bc5; --accent-strong: #ffc0df; --accent-subtle: rgb(237 78 157 / 0.20); --control-on: #ea65a9; --control-glyph: #1c0713; }
-
-/* ---------- Layer 3 · Component (B · Balanced density) ---------- */
-:root {
-  --home-max-w: 1080px;
-  --home-section-gap: 24px;
-  --course-gap: 12px;
-  --course-padding: 16px 20px;
-  --manual-padding: 20px 22px 28px;
-  --manual-section-gap: 17px;
-  --editor-docked-min-w: 560px;
-  --btn-h-xs: 26px;
-  --btn-h-sm: 30px;
-  --btn-h-md: 34px;
-  --btn-h-lg: 42px;
-  --input-h: 36px;
-  --tree-row-h: 28px;
-  --float-bar-h: 34px;
-}
 
 @media (prefers-reduced-motion: reduce) {
   :root {

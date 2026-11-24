@@ -1,0 +1,24 @@
+# Coding Standards
+
+Review-time judgement standards for CodeLab Studio. Apply every rule below against the diff. Mechanical invariants (Tauri-free `codelab-core`, `CoreClient` import isolation, Rust↔TS↔i18n contract parity, CSS cascade specificity, and WCAG AA token contrast) are already enforced deterministically by `pnpm run check:all`.
+
+## Architecture & Seams
+
+- **Single domain authority (`codelab-core`)**: Domain validation, path canonicalization, trust normalization, and state transitions belong exclusively in `crates/codelab-core`. Keep `src/` limited to rendering and transient UI state; avoid duplicating domain validation rules in TypeScript.
+- **Zero-logic Tauri shell (`src-tauri`)**: Forward IPC commands, event streams, native dialogs, and lifecycle hooks directly to `codelab_core::App` without wrapper middle-man structs or business branching.
+- **Test at the two primary seams**: Exercise `codelab-core` through its public `App` interface (`crates/codelab-core/tests/`) using real temp directories, loopback servers, and child processes; exercise React UI through the `CoreClient` interface (`src/__tests__/`) using `FakeCoreClient`.
+
+## Crash-Safe Persistence
+
+- **Raw-byte corruption recovery**: Read persisted JSON stores (`settings`, `recents`, `trust`, and workspace `.codelab/*.json`) via `fs::read` + `serde_json::from_slice` plus domain-invariant validation so invalid UTF-8, truncated JSON, unsupported `schemaVersion`, and out-of-range values all quarantine to `.corrupt.*` backups and recover cleanly rather than aborting startup.
+- **Cross-platform atomic replacement**: Persist JSON stores via `tempfile::NamedTempFile::new_in` + `sync_all` + `persist` (plus parent directory sync on Unix) so replacement stays atomic on both POSIX and Windows without a delete-before-rename window.
+
+## Errors & Localization
+
+- **Code-only `DomainError` across IPC**: Return structured `DomainError { code, details }` from Rust with zero hardcoded display prose.
+- **Safe bilingual rendering (`zh-CN` / `en-US`)**: Render every `DomainError` through `formatDomainError`, falling back to `UNEXPECTED_ERROR` whenever an error code is unrecognized or a `{placeholder}` lacks its detail so raw codes and unresolved `{key}` tokens never surface in UI.
+
+## Domain Language & UI Craft
+
+- **Glossary & ADR fidelity**: Name types, commands, events, and UI concepts with `GLOSSARY.md` vocabulary (`Course`, `Course Pack`, `Workspace`, `Exercise`, `Trust State`, `Tutor Session`). Follow `docs/adr/0001`–`0009` where legacy `PRODUCT.md`, `docs/prd/`, or `docs/design/prototype/` differ (notably ADR-0004 ACP-only tutor and ADR-0009 `guided_readonly`).
+- **Arc UI v3.2 craft**: Keep neutral surfaces zero-chroma (`oklch(L% 0 0)`), render live ratios/counters/paths in tabular `.mono`, preserve visible double-ring `:focus-visible` states over resting or pressed shadows, and hydrate cached appearance state synchronously to prevent theme or locale startup flash.

@@ -198,7 +198,7 @@ Pure zero-chroma neutrals form the structural canvas in both Light and Dark them
 ### Primary
 
 - **Carbon Control** (`carbon-control` in Light; **Chalk Control Dark** `chalk-control-dark` in Dark): High-contrast monochrome fill for primary call-to-action buttons, active progress bar fills, and active switch states, achieving 19.67:1 contrast in Light and 15.59:1 in Dark.
-- **Graphite Accent** (`graphite-accent` in Light; **Silver Accent Dark** `silver-accent-dark` in Dark): Default focus rings, active pane splitters, editor dirty-file dots, and active text selection washes. When a learner customizes the Appearance drawer (`data-accent`), this accent pair swaps cleanly across 8 separately calibrated Light/Dark presets (`neutral`, `violet #7747ff`, `blue #0562ef`, `green #0a8f5f`, `amber #b86e00`, `orange #c85200`, `coral #cf3d34`, `rose #c52a78`).
+- **Graphite Accent** (`graphite-accent` in Light; **Silver Accent Dark** `silver-accent-dark` in Dark): Default focus rings, active pane splitters, editor dirty-file dots, and active text selection washes. When a learner customizes the Appearance drawer (`data-accent`), this accent pair swaps cleanly across 8 separately calibrated Light/Dark presets (`neutral`, `violet #6836f5`, `blue #0562ef`, `green #077e53`, `amber #9c5b00`, `orange #b84900`, `coral #c5342b`, `rose #bc2470`).
 
 ### Secondary
 

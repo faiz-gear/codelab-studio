@@ -49,3 +49,7 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+
+## Source precedence
+
+`GLOSSARY.md`, `docs/adr/0001`–`0009`, and active GitHub Spec/Issues (`#5`+) are authoritative. Where earlier artifacts (`PRODUCT.md`, `docs/prd/`, `docs/design/prototype/`) diverge — such as BYOK/Keychain (retired in v1 by ADR-0004) or read-only ACP approval prompts (superseded by ADR-0009) — follow the ADRs and active Spec.

@@ -36,7 +36,10 @@ export function App({ client }: AppProps) {
   const appearanceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const nextToastId = useRef(1);
   const localeRef = useRef(settings.locale);
-  localeRef.current = settings.locale;
+
+  useEffect(() => {
+    localeRef.current = settings.locale;
+  }, [settings.locale]);
 
   const pushToast = useCallback((text: string, tone: ToastTone = "info") => {
     const id = nextToastId.current++;

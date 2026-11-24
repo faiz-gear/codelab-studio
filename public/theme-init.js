@@ -40,7 +40,7 @@
     if (parsed && VALID_LOCALES[parsed.locale]) {
       root.lang = parsed.locale;
     }
-  } catch (_) {
+  } catch {
     // Ignore storage access or parse errors and fall back to default tokens.
   }
 })();

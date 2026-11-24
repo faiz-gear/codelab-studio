@@ -139,13 +139,13 @@ p {
     transform var(--duration-instant) var(--ease-standard);
 }
 
-.btn:active:not(:disabled) {
-  transform: scale(0.975);
-}
-
 .btn:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.975);
 }
 
 .btn--xs {
@@ -190,6 +190,10 @@ p {
   box-shadow: var(--shadow-resting);
 }
 
+.btn--primary:focus-visible {
+  box-shadow: var(--focus-outline);
+}
+
 .btn--primary:hover:not(:disabled) {
   opacity: 0.88;
 }
@@ -199,6 +203,10 @@ p {
   color: var(--foreground);
   border-color: var(--border);
   box-shadow: var(--shadow-resting);
+}
+
+.btn--secondary:focus-visible {
+  box-shadow: var(--focus-outline);
 }
 
 .btn--secondary:hover:not(:disabled) {
@@ -300,6 +308,14 @@ p {
     border-color var(--duration-fast) var(--ease-standard);
 }
 
+.seg--pill {
+  border-radius: var(--radius-pill);
+}
+
+.seg--pill button {
+  border-radius: var(--radius-pill);
+}
+
 .seg button:hover {
   color: var(--foreground);
 }
@@ -311,12 +327,8 @@ p {
   box-shadow: var(--shadow-resting);
 }
 
-.seg--pill {
-  border-radius: var(--radius-pill);
-}
-
-.seg--pill button {
-  border-radius: var(--radius-pill);
+.seg button[aria-pressed="true"]:focus-visible {
+  box-shadow: var(--focus-outline);
 }
 
 .prog-track {
@@ -633,7 +645,7 @@ p {
   display: flex;
   justify-content: flex-end;
   padding: 12px;
-  animation: fadeIn var(--duration-fast) var(--ease-enter);
+  animation: fade-in var(--duration-fast) var(--ease-enter);
 }
 
 .appearance-drawer {
@@ -646,10 +658,10 @@ p {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: drawerIn 260ms var(--ease-drawer);
+  animation: drawer-in 260ms var(--ease-drawer);
 }
 
-@keyframes fadeIn {
+@keyframes fade-in {
   from {
     opacity: 0;
   }
@@ -658,7 +670,7 @@ p {
   }
 }
 
-@keyframes drawerIn {
+@keyframes drawer-in {
   from {
     transform: translateX(32px);
     opacity: 0;
@@ -730,6 +742,10 @@ p {
   color: #ffffff;
 }
 
+.swatch[aria-pressed="true"]:focus-visible {
+  box-shadow: var(--focus-outline);
+}
+
 .code-preview {
   margin-top: 10px;
   padding: 10px 12px;
@@ -771,10 +787,10 @@ p {
   font-weight: 500;
   color: var(--foreground);
   max-width: min(560px, calc(100vw - 32px));
-  animation: popIn var(--duration-standard) var(--ease-enter);
+  animation: pop-in var(--duration-standard) var(--ease-enter);
 }
 
-@keyframes popIn {
+@keyframes pop-in {
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.985);
@@ -793,18 +809,4 @@ p {
   .course-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* Guarantee universal double-ring keyboard focus visibility above resting/pressed shadows */
-button:focus-visible,
-a:focus-visible,
-.btn:focus-visible,
-.seg button:focus-visible,
-.seg button[aria-pressed="true"]:focus-visible,
-.swatch:focus-visible,
-.swatch[aria-pressed="true"]:focus-visible,
-.course-card:focus-visible,
-.recent-row:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-outline);
 }

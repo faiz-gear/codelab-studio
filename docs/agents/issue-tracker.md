@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and specs for this repo live as GitHub issues in the private repo `faiz-gear/codelab-studio`. Run the `gh` CLI directly for all operations — external MCP issue tools (`read_issue`, `link_issue`) cannot access this private repo and return not-found.
 
 ## Conventions
 
