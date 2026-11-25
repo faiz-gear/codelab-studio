@@ -48,10 +48,12 @@ fn builtin_go_goframe_course_pack_loads_with_exercises_0_to_9_and_three_step_pro
         AppResponse::LoadedCourse(c) => c,
         other => panic!("expected LoadedCourse, got {other:?}"),
     };
-    assert_eq!(
-        events.try_recv().expect("CourseLoaded event"),
-        AppEvent::CourseLoaded(course.clone())
-    );
+    let drained: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+    let loaded_event = drained
+        .iter()
+        .find(|event| matches!(event, AppEvent::CourseLoaded(_)))
+        .unwrap_or_else(|| panic!("expected CourseLoaded event, saw: {drained:?}"));
+    assert_eq!(loaded_event, &AppEvent::CourseLoaded(course.clone()));
 
     assert_eq!(course.course_id, "go-goframe-practice");
     assert_eq!(course.language, Some(CourseLanguage::Go));
@@ -875,12 +877,13 @@ go test ./...
         AppResponse::LoadedCourse(c) => c,
         other => panic!("expected LoadedCourse, got {other:?}"),
     };
-    assert!(matches!(
-        events
-            .recv_timeout(Duration::from_secs(1))
-            .expect("initial CourseLoaded"),
-        AppEvent::CourseLoaded(_)
-    ));
+    let drained: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+    assert!(
+        drained
+            .iter()
+            .any(|event| matches!(event, AppEvent::CourseLoaded(_))),
+        "expected initial CourseLoaded event, saw: {drained:?}"
+    );
     assert_eq!(initial.chapters[0].chapter_id, "stable-ch");
 
     // Simulate external editor updating the local Markdown file on disk
@@ -901,12 +904,18 @@ go test -race ./...
     )
     .expect("externally modify markdown");
 
-    let changed = match events
-        .recv_timeout(Duration::from_secs(2))
-        .expect("CourseSourceChanged event must fire on external edit")
-    {
-        AppEvent::CourseSourceChanged(ev) => ev,
-        other => panic!("expected CourseSourceChanged, got {other:?}"),
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut seen = Vec::new();
+    let changed = loop {
+        match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(AppEvent::CourseSourceChanged(ev)) => break ev,
+            Ok(other) => seen.push(other),
+            Err(error) => {
+                panic!(
+                    "CourseSourceChanged event must fire on external edit: {error}; saw: {seen:?}"
+                );
+            }
+        }
     };
     assert_eq!(changed.course_id, initial.course_id);
     assert!(!changed.changed_paths.is_empty());

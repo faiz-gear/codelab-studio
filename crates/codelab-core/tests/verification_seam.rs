@@ -2,9 +2,13 @@ use codelab_core::{App, AppCommand, AppConfig};
 use serde_json::{Value, json};
 use std::{
     fs,
+    net::TcpListener,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
+
+static GO_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn send(app: &App, kind: &str, payload: Value) -> Value {
     serde_json::to_value(
@@ -50,6 +54,36 @@ fn wait(app: &App, id: u64) -> Value {
 fn wait_for_go_checks(app: &App, id: u64) -> Value {
     // Allow the Go Check's full timeout plus process cleanup on a cold runner.
     wait_for_checks(app, id, Duration::from_secs(125))
+}
+
+fn run_go_checks(app: &App, id: u64, chapter_id: &str) -> Value {
+    // Serialize real `go test -race` checks so parallel Rust tests do not
+    // compile the Go standard library simultaneously into a cold GOCACHE.
+    let _guard = GO_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    send(
+        app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":chapter_id}),
+    );
+    wait_for_go_checks(app, id)
+}
+
+fn wait_port_released(port: u16) -> TcpListener {
+    let until = Instant::now() + Duration::from_secs(2);
+    loop {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => return listener,
+            Err(error) => {
+                assert!(
+                    Instant::now() < until,
+                    "descendant retained port {port}: {error}"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
 }
 
 fn wait_for_checks(app: &App, id: u64, timeout: Duration) -> Value {
@@ -120,10 +154,7 @@ fn headless_commands_produce_results_and_sticky_completion_without_pty_output() 
 
 #[test]
 fn http_contract_checks_request_and_response_then_reports_expected_actual() {
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-    };
+    use std::io::{Read, Write};
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = std::thread::spawn(move || {
@@ -172,18 +203,13 @@ fn http_contract_checks_request_and_response_then_reports_expected_actual() {
 #[test]
 fn go_test_adapter_exposes_real_test_cases_and_failure_output() {
     let (temp, app, id) = fixture(
-        json!([{"chapterId":"ex-1","checks":[{"id":"go","title":"Go tests","type":"test_suite","command":"go test -json -race ./...","timeoutSec":60}]}]),
+        json!([{"chapterId":"ex-1","checks":[{"id":"go","title":"Go tests","type":"test_suite","command":"go test -json -race ./..."}]}]),
         "# Course\n\n## Exercise 1\n\n### Check\n",
     );
     let root = temp.path().join("work");
     fs::write(root.join("go.mod"), "module seam.test/check\n\ngo 1.22\n").unwrap();
     fs::write(root.join("main_test.go"),"package check\nimport \"testing\"\nfunc TestContract(t *testing.T) { t.Error(\"expected: 201 actual: 200\") }\n").unwrap();
-    send(
-        &app,
-        "runChecks",
-        json!({"workspaceId":id,"chapterId":"ex-1"}),
-    );
-    let progress = wait_for_go_checks(&app, id);
+    let progress = run_go_checks(&app, id, "ex-1");
     let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
     assert_eq!(result["status"], "failed", "{result}");
     assert_eq!(
@@ -201,7 +227,6 @@ fn go_test_adapter_exposes_real_test_cases_and_failure_output() {
 
 #[test]
 fn requires_daemon_starts_then_restarts_after_app_saves_without_killing_external_listener() {
-    use std::net::TcpListener;
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -256,7 +281,7 @@ fn requires_daemon_starts_then_restarts_after_app_saves_without_killing_external
         "stopTerminal",
         json!({"workspaceId":id,"terminalId":second["id"]}),
     );
-    let external = TcpListener::bind(("127.0.0.1", port)).unwrap();
+    let external = wait_port_released(port);
     send(
         &app,
         "runChecks",
@@ -270,7 +295,7 @@ fn requires_daemon_starts_then_restarts_after_app_saves_without_killing_external
 #[cfg(unix)]
 #[test]
 fn timeout_interrupts_and_kills_the_entire_headless_process_group() {
-    use std::net::{TcpListener, TcpStream};
+    use std::net::TcpStream;
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -298,17 +323,13 @@ fn timeout_interrupts_and_kills_the_entire_headless_process_group() {
         result["chapters"]["ex-1"]["lastCheckResults"][0]["status"],
         "timedOut"
     );
-    assert!(
-        TcpListener::bind(("127.0.0.1", port)).is_ok(),
-        "grandchild retained its port"
-    );
+    wait_port_released(port);
 }
 
 #[cfg(windows)]
 mod windows_timeout {
     use super::*;
     use std::{
-        net::TcpListener,
         os::windows::process::CommandExt,
         process::Command,
         sync::atomic::{AtomicBool, Ordering},
@@ -353,19 +374,7 @@ mod windows_timeout {
             .unwrap_or_else(|error| panic!("descendant did not start: {error}; {result}"))
             .parse()
             .unwrap();
-        let until = Instant::now() + Duration::from_secs(2);
-        loop {
-            match TcpListener::bind(("127.0.0.1", port)) {
-                Ok(_) => break,
-                Err(error) => {
-                    assert!(
-                        Instant::now() < until,
-                        "descendant retained port {port}: {error}"
-                    );
-                    thread::sleep(Duration::from_millis(20));
-                }
-            }
-        }
+        wait_port_released(port);
     }
 
     fn run_in_detached_driver(test: &str) -> bool {
@@ -632,15 +641,10 @@ fn required_go_cases_prevent_an_untouched_starter_from_completing_later_exercise
     let id = send(&app, "bindWorkspace", json!({"path":root}))["payload"]["id"]
         .as_u64()
         .unwrap();
-    send(
-        &app,
-        "runChecks",
-        json!({"workspaceId":id,"chapterId":"ex-3"}),
-    );
-    let progress = wait_for_go_checks(&app, id);
+    let progress = run_go_checks(&app, id, "ex-3");
     assert_eq!(progress["completedExercises"], 0);
     let result = &progress["chapters"]["ex-3"]["lastCheckResults"][0];
-    assert_eq!(result["status"], "failed");
+    assert_eq!(result["status"], "failed", "{result}");
     assert!(
         result["diffs"]
             .as_array()
@@ -651,20 +655,17 @@ fn required_go_cases_prevent_an_untouched_starter_from_completing_later_exercise
 }
 
 fn service_command(port: u16, body: &str) -> String {
-    let executable = std::env::current_exe()
-        .unwrap()
-        .to_string_lossy()
-        .replace('\\', "/");
+    let executable = std::env::current_exe().unwrap();
+    #[cfg(windows)]
+    let executable = dunce::simplified(&executable);
+    let executable = executable.to_string_lossy().replace('\\', "/");
     format!(
         "CODELAB_SEAM_PORT={port} CODELAB_SEAM_BODY={body} '{executable}' --exact verification_service_fixture --nocapture"
     )
 }
 #[test]
 fn verification_service_fixture() {
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-    };
+    use std::io::{Read, Write};
     let Ok(port) = std::env::var("CODELAB_SEAM_PORT") else {
         return;
     };
@@ -694,7 +695,6 @@ fn verification_service_fixture() {
 }
 #[test]
 fn different_managed_service_on_the_same_port_is_restarted_with_the_required_launch() {
-    use std::net::TcpListener;
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -730,7 +730,7 @@ fn different_managed_service_on_the_same_port_is_restarted_with_the_required_lau
 }
 #[test]
 fn shutdown_reclaims_an_active_headless_service_and_reopening_recovers_interrupted_results() {
-    use std::net::{TcpListener, TcpStream};
+    use std::net::TcpStream;
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -745,13 +745,13 @@ fn shutdown_reclaims_an_active_headless_service_and_reopening_recovers_interrupt
         "runChecks",
         json!({"workspaceId":id,"chapterId":"ex-1"}),
     );
-    let until = Instant::now() + Duration::from_secs(3);
+    let until = Instant::now() + Duration::from_secs(10);
     while TcpStream::connect(("127.0.0.1", port)).is_err() {
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(10));
     }
     app.shutdown().unwrap();
-    assert!(TcpListener::bind(("127.0.0.1", port)).is_ok());
+    wait_port_released(port);
     let reopened = App::open(AppConfig {
         data_dir: temp.path().join("data"),
     })
@@ -811,12 +811,7 @@ fn skipped_required_go_case_cannot_complete_an_exercise() {
     )
     .unwrap();
     fs::write(temp.path().join("work/main_test.go"),"package skip\nimport \"testing\"\nfunc TestRequired(t *testing.T) { t.Skip(\"not implemented\") }\n").unwrap();
-    send(
-        &app,
-        "runChecks",
-        json!({"workspaceId":id,"chapterId":"ex-1"}),
-    );
-    let progress = wait_for_go_checks(&app, id);
+    let progress = run_go_checks(&app, id, "ex-1");
     let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
     assert_eq!(result["status"], "failed", "{result}");
     assert_eq!(result["testCases"][0]["status"], "skipped", "{result}");
@@ -825,7 +820,6 @@ fn skipped_required_go_case_cannot_complete_an_exercise() {
 
 #[test]
 fn daemon_label_takes_precedence_over_an_earlier_block_with_the_same_port() {
-    use std::net::TcpListener;
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()

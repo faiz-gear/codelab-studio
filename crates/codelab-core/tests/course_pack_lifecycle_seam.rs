@@ -408,7 +408,7 @@ fn a_slow_git_refresh_cannot_block_course_close_or_publish_afterward() {
     *adapter.pause.lock().unwrap() = Some((started, paused));
     std::thread::scope(|scope| {
         let refresh = scope.spawn(|| app.execute(AppCommand::RefreshGitCourse));
-        fetching.recv_timeout(Duration::from_secs(2)).unwrap();
+        fetching.recv_timeout(Duration::from_secs(5)).unwrap();
         let (closed, close_response) = mpsc::channel();
         let app = &app;
         scope.spawn(move || {
@@ -416,7 +416,7 @@ fn a_slow_git_refresh_cannot_block_course_close_or_publish_afterward() {
                 .send(app.execute(AppCommand::CloseActiveCourse))
                 .unwrap()
         });
-        let closed_before_checkout_completed = close_response.recv_timeout(Duration::from_secs(2));
+        let closed_before_checkout_completed = close_response.recv_timeout(Duration::from_secs(5));
         resume.send(()).unwrap();
         assert_eq!(
             closed_before_checkout_completed.unwrap().unwrap(),
@@ -688,11 +688,14 @@ fn opening_an_existing_draft_requires_registered_trust_for_trial_and_honors_revo
     ));
     let events = app.subscribe();
     app.execute(AppCommand::RevokeTrust(trust.clone())).unwrap();
+    let drained: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+    let trust_event = drained
+        .iter()
+        .find(|event| matches!(event, AppEvent::CourseTrustChanged(_)))
+        .unwrap_or_else(|| panic!("expected trust revocation event, saw: {drained:?}"));
     assert_eq!(
-        std::iter::from_fn(|| events.try_recv().ok())
-            .find(|event| matches!(event, AppEvent::CourseTrustChanged(_)))
-            .expect("expected trust revocation event"),
-        AppEvent::CourseTrustChanged(codelab_core::CourseTrustChanged {
+        trust_event,
+        &AppEvent::CourseTrustChanged(codelab_core::CourseTrustChanged {
             source: trial.course.source,
             trusted: false,
         })

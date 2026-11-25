@@ -74,6 +74,10 @@ impl Workspace {
         };
         let files = WorkspacePaths::open(root.clone(), protected).map_err(|_| invalid())?;
         let root_label = root.to_str().ok_or_else(invalid)?.to_owned();
+        // Finish metadata initialization and Starter instantiation before starting
+        // the filesystem watcher so freshly bound Workspaces do not emit spurious
+        // external-change events for their own Starter files.
+        let metadata = WorkspaceMetadata::bind(&files, course, starter)?;
 
         let events_enabled = Arc::new(AtomicBool::new(true));
         let enabled = Arc::clone(&events_enabled);
@@ -130,7 +134,6 @@ impl Workspace {
                 .with_detail("path", &root_label)
                 .with_detail("reason", err.to_string())
         })?;
-        let metadata = WorkspaceMetadata::bind(&files, course, starter)?;
 
         Ok(Self {
             summary: WorkspaceSummary {
