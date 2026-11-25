@@ -12,8 +12,8 @@ use crate::course::authoring::{
 };
 use crate::course::git_pack::{self, GitCli, normalize_git_url};
 use crate::course::{
-    self, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher, GitFetchAdapter,
-    LoadedCourse, OpenCourseRequest, OpenedCourse, Starter,
+    self, ChapterReferences, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher,
+    GitFetchAdapter, LoadedCourse, OpenCourseRequest, OpenedCourse, Starter,
 };
 use crate::error::{DomainError, ErrorCode};
 use crate::model::{
@@ -24,8 +24,9 @@ use crate::model::{
 use crate::runtime::{PreflightReport, RuntimeAdapters, RuntimeManager, RuntimePreference};
 use crate::storage::JsonStore;
 use crate::workspace::{
-    Workspace, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename, WorkspaceFileWrite,
-    WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
+    Workspace, WorkspaceComparison, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename,
+    WorkspaceFileWrite, WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath,
+    WorkspaceSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -88,6 +89,18 @@ pub enum AppCommand {
     ListWorkspaceFiles(WorkspacePath),
     ReadWorkspaceFile(WorkspacePath),
     WriteWorkspaceFile(WorkspaceFileWrite),
+    PreviewChapterSolution {
+        #[serde(rename = "workspaceId")]
+        workspace_id: u64,
+        #[serde(rename = "chapterId")]
+        chapter_id: String,
+    },
+    ListStarterFiles {
+        #[serde(rename = "workspaceId")]
+        workspace_id: u64,
+    },
+    PreviewStarterFile(WorkspacePath),
+    ApplyWorkspaceComparison(WorkspaceFileWrite),
     CreateWorkspaceFile(WorkspacePath),
     RenameWorkspaceFile(WorkspaceFileRename),
     OpenWorkspaceIde(WorkspaceIdeRequest),
@@ -119,6 +132,8 @@ pub enum AppResponse {
     WorkspaceEntries(Vec<WorkspaceEntry>),
     WorkspaceFile(WorkspaceFile),
     WorkspaceFileConflict(WorkspaceFile),
+    WorkspaceComparisons(Vec<WorkspaceComparison>),
+    StarterFiles(Vec<String>),
     WorkspaceIdeOpened,
     Preflight(PreflightReport),
     Shutdown(ShutdownReport),
@@ -165,6 +180,7 @@ pub type CleanupHook = Box<dyn FnOnce() -> Result<(), String> + Send + 'static>;
 struct ActiveCourseState {
     course: LoadedCourse,
     starter: Option<Starter>,
+    references: ChapterReferences,
     _watcher: Option<CourseWatcher>,
 }
 
@@ -298,6 +314,7 @@ impl App {
     }
 
     pub fn execute(&self, command: AppCommand) -> Result<AppResponse, DomainError> {
+        let applying_comparison = matches!(command, AppCommand::ApplyWorkspaceComparison(_));
         match command {
             AppCommand::Bootstrap => {
                 let state = self.lock_state();
@@ -347,6 +364,7 @@ impl App {
                     &request.target.path,
                     &request.text,
                     request.expected_revision.as_deref(),
+                    false,
                 )?;
                 Ok(match result {
                     Ok(file) => AppResponse::WorkspaceFile(file),
@@ -374,12 +392,47 @@ impl App {
                 .files
                 .read(&target.path)
                 .map(AppResponse::WorkspaceFile),
-            AppCommand::WriteWorkspaceFile(request) => {
+            AppCommand::PreviewChapterSolution {
+                workspace_id,
+                chapter_id,
+            } => {
+                let state = self.lock_state();
+                let active = state.course()?;
+                state
+                    .workspace(workspace_id)?
+                    .files
+                    .preview_chapter(
+                        &active.course,
+                        active.starter.as_ref(),
+                        &active.references,
+                        &chapter_id,
+                    )
+                    .map(AppResponse::WorkspaceComparisons)
+            }
+            AppCommand::ListStarterFiles { workspace_id } => {
+                let state = self.lock_state();
+                state
+                    .workspace(workspace_id)?
+                    .files
+                    .list_starter(state.course()?.starter.as_ref())
+                    .map(AppResponse::StarterFiles)
+            }
+            AppCommand::PreviewStarterFile(target) => {
+                let state = self.lock_state();
+                let comparison = state
+                    .workspace(target.workspace_id)?
+                    .files
+                    .preview_starter(state.course()?.starter.as_ref(), &target.path)?;
+                Ok(AppResponse::WorkspaceComparisons(vec![comparison]))
+            }
+            AppCommand::WriteWorkspaceFile(request)
+            | AppCommand::ApplyWorkspaceComparison(request) => {
                 let state = self.lock_state();
                 let result = state.workspace(request.target.workspace_id)?.files.write(
                     &request.target.path,
                     &request.text,
                     request.expected_revision.as_deref(),
+                    applying_comparison,
                 )?;
                 Ok(match result {
                     Ok(file) => AppResponse::WorkspaceFile(file),
@@ -773,6 +826,7 @@ impl App {
         state.active_course = Some(ActiveCourseState {
             course: course.clone(),
             starter: opened.starter,
+            references: opened.references,
             _watcher: watcher,
         });
         self.emit(AppEvent::CourseLoaded(course.clone()));

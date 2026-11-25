@@ -412,3 +412,54 @@
   margin: 4px 0 0;
   padding-inline-start: 20px;
 }
+
+.workspace-snapshot-dialog {
+  width: min(960px, 94vw);
+  max-width: none;
+}
+
+.workspace-snapshot-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 16px 16px;
+  overflow: auto;
+}
+
+.workspace-snapshot-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.workspace-snapshot-select {
+  min-width: 0;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.workspace-snapshot-select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
+}
+
+.workspace-snapshot-diff {
+  min-height: 160px;
+  height: min(52vh, 480px);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.workspace-snapshot-note {
+  display: block;
+  color: var(--muted);
+}
+
+.workspace-snapshot-diff pre {
+  padding: 8px;
+  margin: 0;
+}

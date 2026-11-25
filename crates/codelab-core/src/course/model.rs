@@ -148,6 +148,8 @@ pub struct Chapter {
     pub title: String,
     pub kind: ChapterKind,
     pub presentation: ChapterPresentation,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_reference_hint: bool,
     pub default_cwd: Option<String>,
     pub entry_file: Option<String>,
     pub summary_html: Option<String>,

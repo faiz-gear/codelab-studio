@@ -79,7 +79,7 @@ impl CreatedEntry {
     }
 }
 
-fn checked_relative(path: &Path) -> io::Result<PathBuf> {
+pub(super) fn checked_relative(path: &Path) -> io::Result<PathBuf> {
     let relative = relative_path(path)?;
     if relative.as_os_str().is_empty() || relative.iter().any(is_metadata) {
         return Err(invalid_path());

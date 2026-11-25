@@ -120,6 +120,23 @@ export interface Messages {
     draftConflict: string;
     diagnosticReasons: Record<string, string>;
   };
+  comparison: {
+    referenceTrigger: string;
+    replaceFile: string;
+    starterTrigger: string;
+    referenceTitle: string;
+    starterTitle: string;
+    currentFile: string;
+    starter: string;
+    chooseFile: string;
+    selectFile: string;
+    referenceEmpty: string;
+    starterEmpty: string;
+    referenceApply: string;
+    starterApply: string;
+    stale: string;
+    draft: string;
+  };
   workspace: {
     choose: string;
     change: string;
@@ -388,6 +405,23 @@ export const zhCN: Messages = {
       EMPTY_CHAPTER_ID: "必须填写章节 ID。",
       DUPLICATE_ID: "此标识符已被使用。",
     },
+  },
+  comparison: {
+    referenceTrigger: "查看参考提示与 Diff",
+    starterTrigger: "对比 Starter 恢复",
+    referenceTitle: "Reference Solution",
+    starterTitle: "从 Starter 恢复文件",
+    currentFile: "当前 Workspace 文件",
+    starter: "Starter",
+    chooseFile: "要对比的文件",
+    selectFile: "选择 Starter 文件",
+    referenceEmpty: "当前章节没有 Reference Solution 文件。",
+    starterEmpty: "当前课程没有可以恢复的 Starter 文件。",
+    referenceApply: "应用 Reference Solution",
+    starterApply: "恢复此文件",
+    stale: "对比期间文件已更改。请关闭并重新打开对比，查看最新版本。",
+    replaceFile: "确认后将用右侧版本替换所选文件。",
+    draft: "包含未保存的草稿。",
   },
   workspace: {
     choose: "选择 Workspace",

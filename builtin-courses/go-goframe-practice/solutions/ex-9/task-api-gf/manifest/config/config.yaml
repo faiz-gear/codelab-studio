@@ -1,0 +1,7 @@
+server:
+  address: "127.0.0.1:8000"
+  readHeaderTimeout: "5s"
+logger:
+  level: "info"
+database:
+  path: "tasks.db"

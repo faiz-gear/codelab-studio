@@ -197,16 +197,18 @@ fn git_import_trust_and_refresh_keep_the_learner_workspace() {
         fs::read_to_string(learner.join("main.go")).unwrap(),
         "learner edit"
     );
-    assert_eq!(
-        fs::read_to_string(
-            PathBuf::from(refreshed.entry_markdown_path.unwrap())
-                .parent()
-                .unwrap()
-                .join("solutions/stable/main.go")
-        )
-        .unwrap(),
-        "After"
-    );
+    let AppResponse::WorkspaceComparisons(comparisons) = app
+        .execute(AppCommand::PreviewChapterSolution {
+            workspace_id: workspace.id,
+            chapter_id: "stable".into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected refreshed Reference Solution")
+    };
+    assert_eq!(comparisons.len(), 1);
+    assert_eq!(comparisons[0].current.path, "main.go");
+    assert_eq!(comparisons[0].proposed, "After");
     assert!(matches!(
         app.execute(AppCommand::ReadWorkspaceFile(WorkspacePath {
             workspace_id: workspace.id,

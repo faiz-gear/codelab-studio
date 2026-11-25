@@ -3,6 +3,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use cap_fs_ext::DirExt;
 use cap_std::fs::{Dir, OpenOptions};
 use cap_tempfile::TempFile;
 use sha2::{Digest, Sha256};
@@ -115,11 +116,12 @@ impl WorkspacePaths {
         raw: &str,
         text: &str,
         expected: Option<&str>,
+        comparison: bool,
     ) -> Result<Result<WorkspaceFile, WorkspaceFile>, DomainError> {
         if text.len() > MAX_WORKSPACE_TEXT_BYTES || !is_text(text) {
             return Err(DomainError::new(ErrorCode::WorkspaceFileNotText).with_detail("path", raw));
         }
-        self.write_file(raw, text, expected)
+        self.write_file(raw, text, expected, comparison)
             .map_err(|err| file_error(&err, raw, ErrorCode::WorkspaceFileWriteFailed))
     }
 
@@ -128,8 +130,12 @@ impl WorkspacePaths {
         raw: &str,
         text: &str,
         expected: Option<&str>,
+        comparison: bool,
     ) -> io::Result<Result<WorkspaceFile, WorkspaceFile>> {
         let before = self.read_file(raw)?;
+        if comparison && raw != before.path {
+            return Err(invalid_path());
+        }
         if before.revision.as_deref() != expected {
             return Ok(Err(before));
         }
@@ -139,7 +145,18 @@ impl WorkspacePaths {
         ) {
             return Err(io::Error::from(io::ErrorKind::InvalidData));
         }
-        let (dir, path) = self.parent(Path::new(&before.path))?;
+        let target = Path::new(&before.path);
+        if comparison && before.revision.is_none() {
+            self.create_missing_parents(target)?;
+            let latest = self.read_file(raw)?;
+            if latest.path != before.path || latest.revision.is_some() {
+                return Ok(Err(latest));
+            }
+        }
+        let (dir, path) = self.parent(target)?;
+        if comparison && path != target {
+            return Err(invalid_path());
+        }
         let name = path.file_name().ok_or_else(invalid_path)?;
         if before.revision.is_none() {
             match create_file(&dir, Path::new(name), text.as_bytes()) {
@@ -171,6 +188,19 @@ impl WorkspacePaths {
             size_bytes: text.len() as u64,
             contents: WorkspaceFileContents::Text { text: text.into() },
         }))
+    }
+
+    fn create_missing_parents(&self, path: &Path) -> io::Result<()> {
+        let mut directory = self.dir.try_clone()?;
+        for name in path.parent().ok_or_else(invalid_path)? {
+            match directory.create_dir(name) {
+                Ok(()) => (),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
+                Err(error) => return Err(error),
+            }
+            directory = directory.open_dir_nofollow(name)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn create(&self, raw: &str) -> Result<WorkspaceFile, DomainError> {
@@ -252,7 +282,7 @@ fn file_revision(path: &str, bytes: &[u8]) -> String {
     format!("{:x}", hash.finalize())
 }
 
-fn is_text(text: &str) -> bool {
+pub(super) fn is_text(text: &str) -> bool {
     !text
         .bytes()
         .any(|byte| byte.is_ascii_control() && !matches!(byte, b'\t' | b'\r' | b'\n' | 12))

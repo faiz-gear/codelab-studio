@@ -140,9 +140,16 @@ export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdi
   return <div className="monaco-surface" ref={host} />;
 }
 
-export function MonacoDiffSurface({ leftPath, rightPath, left, right, settings }: {
+export function MonacoDiffSurface({
+  leftPath, rightPath, left, right, settings,
+  leftLabel = leftPath, rightLabel = rightPath, showWhitespace = false, onReady,
+}: {
   leftPath: string;
   rightPath: string;
+  leftLabel?: string;
+  rightLabel?: string;
+  showWhitespace?: boolean;
+  onReady?: (path: string) => void;
   left: string;
   right: string;
   settings: GlobalSettings;
@@ -171,23 +178,30 @@ export function MonacoDiffSurface({ leftPath, rightPath, left, right, settings }
     const original = monaco.editor.createModel(left, language(leftPath));
     const modified = monaco.editor.createModel(right, language(rightPath));
     let cancelled = false;
+    const subscription = instance.onDidUpdateDiff(() => {
+      if (instance.getModel()?.original === original && instance.getLineChanges() !== null) {
+        onReady?.(leftPath);
+      }
+    });
     // StrictMode may clean up this setup before Monaco's worker can read its models.
     queueMicrotask(() => {
       if (!cancelled) instance.setModel({ original, modified });
     });
     return () => {
       cancelled = true;
+      subscription.dispose();
       if (diff.current === instance) instance.setModel(null);
       original.dispose();
       modified.dispose();
     };
-  }, [left, leftPath, right, rightPath]);
+  }, [left, leftPath, onReady, right, rightPath]);
 
   useEffect(() => {
     monaco.editor.setTheme(settings.theme === "dark" ? "arc-dark" : "arc-light");
-    diff.current?.getOriginalEditor().updateOptions({ ariaLabel: leftPath, fontSize: settings.codeFontSize });
-    diff.current?.getModifiedEditor().updateOptions({ ariaLabel: rightPath, fontSize: settings.codeFontSize });
-  }, [leftPath, rightPath, settings.codeFontSize, settings.theme]);
+    diff.current?.getOriginalEditor().updateOptions({ ariaLabel: leftLabel, fontSize: settings.codeFontSize });
+    diff.current?.getModifiedEditor().updateOptions({ ariaLabel: rightLabel, fontSize: settings.codeFontSize });
+    diff.current?.updateOptions({ ignoreTrimWhitespace: !showWhitespace });
+  }, [leftLabel, rightLabel, settings.codeFontSize, settings.theme, showWhitespace]);
 
   return <div className="monaco-surface" ref={host} />;
 }

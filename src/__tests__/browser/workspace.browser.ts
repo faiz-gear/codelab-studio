@@ -43,3 +43,23 @@ test("Monaco preserves a draft after a disk change and renders a side-by-side di
   await expect(diff.locator(".line-insert").first()).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
+
+test("shows the reviewed Reference Solution in Monaco before enabling confirmation", async ({ page }) => {
+  await page.goto("/src/__tests__/browser/workspace.html");
+  await page.getByRole("button", { name: "Start Built-in Go / GoFrame Lab" }).click();
+  await page.getByRole("button", { name: "Choose Workspace" }).click();
+  const trigger = page.getByRole("button", { name: "View reference hints and diff" });
+  await trigger.click();
+
+  const dialog = page.getByRole("dialog", { name: "Reference Solution" });
+  const diff = dialog.locator(".monaco-diff-editor.side-by-side");
+  await expect(diff.getByText("package main", { exact: true }).first()).toBeVisible();
+  await expect(diff.getByText("// reference implementation", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.workspaceSmoke.readMainFile())).toBe("package main\n");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+
+  await dialog.getByRole("button", { name: "Apply Reference Solution" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("tabpanel").getByText("// reference implementation", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.workspaceSmoke.readMainFile())).toBe("package main\n// reference implementation\n");
+});

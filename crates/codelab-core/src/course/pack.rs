@@ -157,6 +157,7 @@ pub(crate) fn load_local_markdown_file(raw_path: &str) -> Result<OpenedCourse, D
         course,
         watched_files: vec![canonical],
         starter: None,
+        references: parsed.references,
     })
 }
 
@@ -248,7 +249,7 @@ pub(super) fn load_pack(
             .clone()
             .unwrap_or_else(|| "starter".into()),
     };
-    let course = build_course_with_checks(
+    let (course, references) = build_course_with_checks(
         manifest,
         &markdown,
         checks_by_chapter,
@@ -264,6 +265,7 @@ pub(super) fn load_pack(
         course,
         watched_files,
         starter: Some(starter),
+        references,
     })
 }
 
@@ -274,7 +276,7 @@ pub(crate) fn build_course_from_pack_parts(
     source: CourseSource,
     entry_markdown_path: Option<String>,
     is_builtin: bool,
-) -> Result<LoadedCourse, DomainError> {
+) -> Result<(LoadedCourse, super::ChapterReferences), DomainError> {
     let checks_by_chapter = match checks_bytes {
         Some(bytes) => parse_checks_bytes(bytes)?,
         None => HashMap::new(),
@@ -296,7 +298,7 @@ fn build_course_with_checks(
     source: CourseSource,
     entry_markdown_path: Option<String>,
     is_builtin: bool,
-) -> Result<LoadedCourse, DomainError> {
+) -> Result<(LoadedCourse, super::ChapterReferences), DomainError> {
     if markdown.len() > MAX_MARKDOWN_BYTES {
         return Err(DomainError::new(ErrorCode::CourseMarkdownTooLarge)
             .with_detail("maxMb", "5")
@@ -360,22 +362,25 @@ fn build_course_with_checks(
         .filter(|ch| ch.kind == ChapterKind::Exercise)
         .count() as u32;
 
-    Ok(LoadedCourse {
-        course_id: manifest.course_id.trim().to_string(),
-        title: manifest.title.trim().to_string(),
-        description: manifest.description.trim().to_string(),
-        language,
-        version: manifest.version,
-        author: manifest.author,
-        dependencies: manifest.dependencies,
-        source,
-        entry_markdown_path,
-        is_builtin,
-        trusted: is_builtin,
-        intro_html: parsed.intro_html,
-        total_exercises,
-        chapters: parsed.chapters,
-    })
+    Ok((
+        LoadedCourse {
+            course_id: manifest.course_id.trim().to_string(),
+            title: manifest.title.trim().to_string(),
+            description: manifest.description.trim().to_string(),
+            language,
+            version: manifest.version,
+            author: manifest.author,
+            dependencies: manifest.dependencies,
+            source,
+            entry_markdown_path,
+            is_builtin,
+            trusted: is_builtin,
+            intro_html: parsed.intro_html,
+            total_exercises,
+            chapters: parsed.chapters,
+        },
+        parsed.references,
+    ))
 }
 
 pub(crate) fn parse_manifest_bytes(bytes: &[u8]) -> Result<RawCourseManifest, DomainError> {

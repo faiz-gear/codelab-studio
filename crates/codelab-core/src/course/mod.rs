@@ -1,5 +1,6 @@
 pub(crate) mod authoring;
 mod builtin;
+mod builtin_solutions;
 mod chapter_id;
 pub(crate) mod git_pack;
 mod model;
@@ -9,8 +10,12 @@ mod sanitize;
 mod shell;
 mod watcher;
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
+pub(crate) use builtin::builtin_solution;
 pub use git_pack::GitFetchAdapter;
 pub use model::{
     Chapter, ChapterKind, ChapterPresentation, CheckKind, CommandBlock, CommandMode, ContentBlock,
@@ -21,14 +26,19 @@ pub(crate) use watcher::CourseWatcher;
 
 use crate::error::{DomainError, ErrorCode};
 
+pub(crate) type ChapterReferences = HashMap<String, Vec<(String, String)>>;
+
 pub(crate) struct OpenedCourse {
     pub course: LoadedCourse,
     pub watched_files: Vec<PathBuf>,
     pub starter: Option<Starter>,
+    pub references: ChapterReferences,
 }
 
+pub(crate) type EmbeddedFiles = &'static [(&'static str, &'static [u8])];
+
 pub(crate) enum Starter {
-    Builtin(&'static [(&'static str, &'static [u8])]),
+    Builtin(EmbeddedFiles),
     Local { root: PathBuf, directory: String },
 }
 
