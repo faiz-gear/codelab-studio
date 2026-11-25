@@ -53,6 +53,12 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Setup Go for verification tests
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.4'
+          cache: false
+
       - name: Setup Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

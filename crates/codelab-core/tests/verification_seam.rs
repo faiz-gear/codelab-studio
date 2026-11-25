@@ -44,7 +44,16 @@ fn fixture(checks: Value, manual: &str) -> (TempDir, App, u64) {
     (temp, app, id)
 }
 fn wait(app: &App, id: u64) -> Value {
-    let until = Instant::now() + Duration::from_secs(20);
+    wait_for_checks(app, id, Duration::from_secs(20))
+}
+
+fn wait_for_go_checks(app: &App, id: u64) -> Value {
+    // Allow the Go Check's full timeout plus process cleanup on a cold runner.
+    wait_for_checks(app, id, Duration::from_secs(125))
+}
+
+fn wait_for_checks(app: &App, id: u64, timeout: Duration) -> Value {
+    let until = Instant::now() + timeout;
     loop {
         let status = send(app, "getProgress", json!({"workspaceId":id}))["payload"].clone();
         if status["runningChapterId"].is_null() {
@@ -174,12 +183,12 @@ fn go_test_adapter_exposes_real_test_cases_and_failure_output() {
         "runChecks",
         json!({"workspaceId":id,"chapterId":"ex-1"}),
     );
-    let progress = wait(&app, id);
+    let progress = wait_for_go_checks(&app, id);
     let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
-    assert_eq!(result["status"], "failed");
+    assert_eq!(result["status"], "failed", "{result}");
     assert_eq!(
-        result["testCases"][0]["name"],
-        "seam.test/check/TestContract"
+        result["testCases"][0]["name"], "seam.test/check/TestContract",
+        "{result}"
     );
     assert_eq!(result["testCases"][0]["status"], "failed");
     assert!(
@@ -628,7 +637,7 @@ fn required_go_cases_prevent_an_untouched_starter_from_completing_later_exercise
         "runChecks",
         json!({"workspaceId":id,"chapterId":"ex-3"}),
     );
-    let progress = wait(&app, id);
+    let progress = wait_for_go_checks(&app, id);
     assert_eq!(progress["completedExercises"], 0);
     let result = &progress["chapters"]["ex-3"]["lastCheckResults"][0];
     assert_eq!(result["status"], "failed");
@@ -807,10 +816,10 @@ fn skipped_required_go_case_cannot_complete_an_exercise() {
         "runChecks",
         json!({"workspaceId":id,"chapterId":"ex-1"}),
     );
-    let progress = wait(&app, id);
+    let progress = wait_for_go_checks(&app, id);
     let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
-    assert_eq!(result["status"], "failed");
-    assert_eq!(result["testCases"][0]["status"], "skipped");
+    assert_eq!(result["status"], "failed", "{result}");
+    assert_eq!(result["testCases"][0]["status"], "skipped", "{result}");
     assert_eq!(progress["completedExercises"], 0);
 }
 
