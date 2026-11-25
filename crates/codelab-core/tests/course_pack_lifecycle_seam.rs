@@ -21,9 +21,12 @@ impl GitFetchAdapter for LocalGit {
     fn checkout(&self, url: &str, destination: &Path) -> io::Result<()> {
         assert_eq!(url, REMOTE);
         let status = isolated_git()
+            // Match the production Git adapter. Git for Windows appends `/` to
+            // destination arguments, which breaks verbatim Windows paths.
+            .current_dir(destination)
             .args(["clone", "--quiet", "--no-local", "--"])
             .arg(&self.0)
-            .arg(destination)
+            .arg(".")
             .status()?;
         if !status.success() {
             return Err(io::Error::other("fixture checkout failed"));
