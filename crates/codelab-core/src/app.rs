@@ -1,3 +1,4 @@
+mod activation;
 mod verification;
 use crate::execution::verification::{VerificationTask, model::*};
 use std::fs;
@@ -247,6 +248,7 @@ pub struct App {
     subscribers: Arc<Subscribers>,
     runtime: Arc<RuntimeManager>,
     git: Arc<dyn GitFetchAdapter>,
+    activation: activation::CourseWorkspaceActivation,
 }
 
 impl App {
@@ -323,6 +325,7 @@ impl App {
         .flatten()
         .collect();
 
+        let activation = activation::CourseWorkspaceActivation::new(&data_dir, &subscribers);
         Ok(Self {
             data_dir,
             settings_store,
@@ -349,6 +352,7 @@ impl App {
             subscribers,
             runtime,
             git,
+            activation,
         })
     }
 
@@ -967,7 +971,7 @@ impl App {
             .map(|workspace| workspace.prepare_progress_for_course(&opened.course))
             .transpose()?
             .unwrap_or(false);
-        let course = self.activate_course(&mut state, opened)?;
+        let course = self.activation.activate_course(&mut state, opened)?;
         if recovered {
             self.emit(AppEvent::ProgressUpdated(verification::progress_snapshot(
                 &state,
@@ -995,7 +999,7 @@ impl App {
             state.deactivate_workspace();
         }
         Ok(AppResponse::LoadedCourse(
-            self.activate_course(&mut state, opened)?,
+            self.activation.activate_course(&mut state, opened)?,
         ))
     }
 
@@ -1030,45 +1034,6 @@ impl App {
         Ok((state, opened))
     }
 
-    fn activate_course(
-        &self,
-        state: &mut AppState,
-        opened: OpenedCourse,
-    ) -> Result<LoadedCourse, DomainError> {
-        let watcher = if opened.watched_files.is_empty() {
-            None
-        } else {
-            let subs = Arc::clone(&self.subscribers);
-            Some(CourseWatcher::start(
-                opened.course.course_id.clone(),
-                opened.watched_files,
-                move |changed| emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed)),
-            ))
-        };
-        state.verification = None;
-        state.execution.invalidate_confirmation();
-        let recovered = state
-            .active_workspace
-            .as_mut()
-            .map(|workspace| workspace.prepare_progress_for_course(&opened.course))
-            .transpose()?
-            .unwrap_or(false);
-        let course = opened.course;
-        state.active_course = Some(ActiveCourseState {
-            course: course.clone(),
-            starter: opened.starter,
-            references: opened.references,
-            _watcher: watcher,
-        });
-        if recovered {
-            self.emit(AppEvent::ProgressUpdated(verification::progress_snapshot(
-                state,
-            )));
-        }
-        self.emit(AppEvent::CourseLoaded(course.clone()));
-        Ok(course)
-    }
-
     fn close_active_course(&self) -> AppResponse {
         let mut state = self.lock_state();
         state.course_load_generation += 1;
@@ -1085,7 +1050,7 @@ impl App {
             return Err(DomainError::new(ErrorCode::InvalidWorkspacePath));
         }
         state.protect_draft_path(path)?;
-        let workspace = self.prepare_workspace(
+        let workspace = self.activation.prepare_workspace(
             state.next_workspace_id,
             path,
             &active.course,
@@ -1093,7 +1058,7 @@ impl App {
         )?;
         let recent = workspace_recent(&workspace, &active.course);
         self.store_recent(&mut state, recent)?;
-        let summary = self.activate_workspace(&mut state, workspace);
+        let summary = self.activation.activate_workspace(&mut state, workspace);
         Ok(AppResponse::WorkspaceBound(summary))
     }
 
@@ -1115,20 +1080,20 @@ impl App {
         let (mut state, opened) = self.prepare_course(state, &request, false)?;
         let workspace = if opened.course.trusted {
             state.protect_draft_path(path)?;
-            let workspace = self.prepare_workspace(
+            let workspace = self.activation.prepare_workspace(
                 state.next_workspace_id,
                 path,
                 &opened.course,
                 opened.starter.as_ref(),
             )?;
             self.store_recent(&mut state, workspace_recent(&workspace, &opened.course))?;
-            Some(self.activate_workspace(&mut state, workspace))
+            Some(self.activation.activate_workspace(&mut state, workspace))
         } else {
             state.deactivate_workspace();
             None
         };
         state.trial_workspace = None;
-        let course = self.activate_course(&mut state, opened)?;
+        let course = self.activation.activate_course(&mut state, opened)?;
         Ok(AppResponse::RecentWorkspaceOpened(RecentWorkspaceOpened {
             course,
             workspace,
@@ -1178,33 +1143,20 @@ impl App {
             .prefix("codelab-trial-")
             .tempdir()
             .map_err(|_| DomainError::new(ErrorCode::TrialWorkspaceFailed))?;
-        let workspace = self.prepare_workspace(
+        let workspace = self.activation.prepare_workspace(
             state.next_workspace_id,
             &trial.path().to_string_lossy(),
             &opened.course,
             opened.starter.as_ref(),
         )?;
-        let workspace = self.activate_workspace(&mut state, workspace);
+        let workspace = self.activation.activate_workspace(&mut state, workspace);
         state.course_load_generation += 1;
         state.trial_workspace = Some(trial);
-        let course = self.activate_course(&mut state, opened)?;
+        let course = self.activation.activate_course(&mut state, opened)?;
         Ok(AppResponse::TrialWorkspaceOpened(TrialWorkspaceOpened {
             course,
             workspace,
         }))
-    }
-
-    fn prepare_workspace(
-        &self,
-        id: u64,
-        path: &str,
-        course: &LoadedCourse,
-        starter: Option<&Starter>,
-    ) -> Result<Workspace, DomainError> {
-        let subs = Arc::clone(&self.subscribers);
-        Workspace::bind(id, path, &self.data_dir, course, starter, move |event| {
-            emit_to_subscribers(&subs, AppEvent::WorkspaceFilesChanged(event));
-        })
     }
 
     fn workspace_starter(
@@ -1220,15 +1172,6 @@ impl App {
             return git_pack::snapshot_starter(&self.data_dir, url, key);
         }
         Ok(active.starter.clone())
-    }
-
-    fn activate_workspace(&self, state: &mut AppState, workspace: Workspace) -> WorkspaceSummary {
-        state.verification = None;
-        state.execution.clear();
-        state.next_workspace_id += 1;
-        let summary = workspace.summary.clone();
-        state.active_workspace = Some(workspace);
-        summary
     }
 
     fn lock_state(&self) -> std::sync::MutexGuard<'_, AppState> {
