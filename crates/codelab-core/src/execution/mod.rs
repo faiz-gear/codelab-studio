@@ -1,7 +1,7 @@
 mod daemon;
-pub(crate) mod editors;
 pub(crate) mod model;
 mod output;
+pub(crate) mod preparation;
 mod process;
 mod risk;
 #[cfg(unix)]
@@ -94,7 +94,7 @@ impl Terminal {
 pub(crate) struct Execution {
     terminals: BTreeMap<u64, Terminal>,
     next_id: u64,
-    confirmation: Option<(u64, CommandLaunch)>,
+    confirmation: Option<(u64, preparation::ConfirmationTarget)>,
     errors: ErrorLog,
 }
 
@@ -107,48 +107,6 @@ impl Execution {
 
     pub fn invalidate_confirmation(&mut self) {
         self.confirmation = None;
-    }
-
-    pub fn approve(
-        &mut self,
-        launch: CommandLaunch,
-        token: Option<u64>,
-    ) -> Result<CommandLaunch, CommandConfirmation> {
-        let high_risk = risk::is_high_risk(&launch.block.command);
-        self.approve_risk(launch, token, high_risk)
-    }
-
-    pub fn approve_checks(
-        &mut self,
-        launch: CommandLaunch,
-        token: Option<u64>,
-        commands: &[String],
-    ) -> Result<CommandLaunch, CommandConfirmation> {
-        let high_risk = commands.iter().any(|command| risk::is_high_risk(command));
-        self.approve_risk(launch, token, high_risk)
-    }
-
-    fn approve_risk(
-        &mut self,
-        launch: CommandLaunch,
-        token: Option<u64>,
-        high_risk: bool,
-    ) -> Result<CommandLaunch, CommandConfirmation> {
-        let pending = self.confirmation.take();
-        if pending.is_some_and(|(id, expected)| token == Some(id) && expected == launch)
-            || (token.is_none() && !high_risk)
-        {
-            return Ok(launch);
-        }
-
-        self.next_id += 1;
-        let confirmation = CommandConfirmation {
-            token: self.next_id,
-            cwd: label(&launch.cwd),
-            command: launch.block.command.clone(),
-        };
-        self.confirmation = Some((confirmation.token, launch));
-        Err(confirmation)
     }
 
     pub fn start(

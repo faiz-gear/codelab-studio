@@ -87,7 +87,19 @@ fn structured_high_risk_commands_require_exact_single_use_confirmation() {
     let (temp, app, id) = fixture(&format!("# Local\n\n```sh\n{command}\n```\n"));
     trust(&temp, &app);
     let workspace = bind(&temp, &app, "work");
-    let request = serde_json::json!({"workspaceId":workspace,"commandId":id});
+    let draft_path = temp.path().join("work/draft.txt");
+    fs::write(&draft_path, "original").unwrap();
+    let draft = send(
+        &app,
+        "readWorkspaceFile",
+        serde_json::json!({"workspaceId":workspace,"path":"draft.txt"}),
+    )["payload"]
+        .clone();
+    let request = serde_json::json!({
+        "workspaceId":workspace,
+        "commandId":id,
+        "drafts":[{"path":"draft.txt","text":"confirmed draft","expectedRevision":draft["revision"]}]
+    });
     let pending = send(&app, "runCommandBlock", request.clone());
     assert_eq!(pending["type"], "commandConfirmationRequired");
     assert_eq!(pending["payload"]["command"], command);
@@ -95,6 +107,7 @@ fn structured_high_risk_commands_require_exact_single_use_confirmation() {
         pending["payload"]["cwd"],
         path(&temp.path().join("work").canonicalize().unwrap())
     );
+    assert_eq!(fs::read_to_string(&draft_path).unwrap(), "original");
     assert_eq!(
         send(
             &app,
@@ -105,10 +118,10 @@ fn structured_high_risk_commands_require_exact_single_use_confirmation() {
     );
     let mut confirmed = request;
     confirmed["confirmation"] = pending["payload"]["token"].clone();
-    assert_eq!(
-        send(&app, "runCommandBlock", confirmed.clone())["type"],
-        "commandStarted"
-    );
+    let started = send(&app, "runCommandBlock", confirmed.clone());
+    assert_eq!(started["type"], "commandStarted");
+    assert_eq!(started["payload"]["saved"][0]["text"], "confirmed draft");
+    assert_eq!(fs::read_to_string(&draft_path).unwrap(), "confirmed draft");
     assert_eq!(
         send(&app, "runCommandBlock", confirmed)["type"],
         "commandConfirmationRequired"

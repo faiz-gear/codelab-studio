@@ -1,4 +1,5 @@
 use super::*;
+use crate::execution::preparation::CommandInvocation;
 use crate::execution::verification::{self, VerificationTask};
 use crate::{Chapter, ChapterKind, CheckKind, CheckResult, CheckStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -105,59 +106,43 @@ impl App {
             .iter()
             .filter_map(|(_, prepared)| {
                 let (check, directory) = prepared.as_ref().ok()?;
-                Some((check.command()?.to_owned(), directory.path.clone()))
+                check.invocation(directory)
             })
             .collect::<Vec<_>>();
-        if let Some((_, launch, directory)) = &daemon {
-            commands.push((launch.block.command.clone(), directory.path.clone()));
+        if let Some((_, launch, _)) = &daemon {
+            commands.push(CommandInvocation::from_block(launch));
         }
-        let block = crate::CommandBlock {
-            id: format!("verification:{}", chapter.chapter_id),
-            shell: "sh".into(),
-            command: commands
-                .iter()
-                .map(|(script, _)| script.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            cwd: Some(workspace.summary.root.clone()),
-            cwd_origin: crate::ValueOrigin::Explicit,
-            mode: crate::CommandMode::Oneshot,
-            mode_origin: crate::ValueOrigin::Explicit,
-            label: Some(chapter.title.clone()),
-            port: None,
-            is_secondary: false,
+        let target = ConfirmationTarget::Checks {
+            chapter_id: chapter.chapter_id.clone(),
+            workspace_root: workspace.files.root.clone(),
+            commands,
         };
-        let launch = crate::execution::CommandLaunch {
-            cwd: workspace.files.root.clone(),
-            script: serde_json::to_string(&commands)
-                .map_err(|_| DomainError::new(ErrorCode::CourseChecksInvalid))?,
-            block,
-            restart_terminal_id: None,
-            cwd_key: chapter.chapter_id.clone(),
-        };
-        let scripts = commands
-            .into_iter()
-            .map(|(command, _)| command)
-            .collect::<Vec<_>>();
-        if let Err(confirmation) =
-            state
-                .execution
-                .approve_checks(launch, request.confirmation, &scripts)
-        {
-            return Ok(AppResponse::CommandConfirmationRequired(confirmation));
-        }
-        let mut saved = Vec::new();
-        let save_result = editors::save(state.workspace(id)?, request.drafts, &mut saved);
-        let conflict = match save_result {
-            Ok(conflict) => conflict,
-            Err(error) => return Ok(AppResponse::CommandFailed(CommandFailed { error, saved })),
-        };
-        if let Some(file) = conflict {
-            return Ok(AppResponse::CommandSaveConflict(CommandSaveConflict {
-                file,
+        let AppState {
+            execution,
+            active_workspace,
+            ..
+        } = &mut *state;
+        let saved = match execution.prepare_command(
+            active_workspace.as_ref().unwrap(),
+            target,
+            request.confirmation,
+            request.drafts,
+        ) {
+            CommandPreparation::Ready {
+                target: ConfirmationTarget::Checks { chapter_id, .. },
                 saved,
-            }));
-        }
+            } if chapter_id == chapter.chapter_id => saved,
+            CommandPreparation::Ready { .. } => {
+                unreachable!("Check preparation target")
+            }
+            CommandPreparation::ConfirmationRequired(prompt) => {
+                return Ok(AppResponse::CommandConfirmationRequired(prompt));
+            }
+            CommandPreparation::SaveConflict(conflict) => {
+                return Ok(AppResponse::CommandSaveConflict(conflict));
+            }
+            CommandPreparation::Failed(failed) => return Ok(AppResponse::CommandFailed(failed)),
+        };
         let workspace = state.active_workspace.as_mut().unwrap();
         if let Err(error) =
             workspace.start_checks(&chapter, plan.iter().map(|(check_id, _)| check_id.as_str()))
