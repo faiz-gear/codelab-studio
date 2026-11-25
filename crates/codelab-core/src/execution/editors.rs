@@ -17,7 +17,7 @@ pub(crate) fn save(
         }
     }
     for draft in drafts {
-        match workspace.files.write(
+        match workspace.write_file(
             &draft.path,
             &draft.text,
             draft.expected_revision.as_deref(),
