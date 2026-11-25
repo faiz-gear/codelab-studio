@@ -333,6 +333,44 @@ fn reports_non_text_and_conflicts_without_overwriting_new_disk_content() {
     assert_eq!(fs::read_to_string(root.join("text.txt")).unwrap(), "kept");
 }
 
+#[cfg(unix)]
+#[test]
+fn saving_a_revision_conflicts_when_the_path_resolves_to_a_different_file_with_the_same_bytes() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("work");
+    fs::create_dir(&root).unwrap();
+    let original = root.join("original.txt");
+    let moved_original = root.join("moved-original.txt");
+    let other = root.join("other.txt");
+    let shared_text = "same file contents";
+    fs::write(&original, shared_text).unwrap();
+    fs::write(&other, shared_text).unwrap();
+    let app = open_app(&temp.path().join("app-data"));
+    open_course(&app, builtin());
+    let id = workspace_id(&app, &root);
+    let opened = read_file(&app, id, "original.txt");
+
+    fs::rename(&original, &moved_original).unwrap();
+    symlink("other.txt", &original).unwrap();
+
+    let result = app
+        .execute(write_file(
+            id,
+            &opened.path,
+            "learner draft",
+            opened.revision,
+        ))
+        .unwrap();
+    let AppResponse::WorkspaceFileConflict(disk) = result else {
+        panic!("expected a save conflict after the path changed targets, got {result:?}");
+    };
+    assert_eq!(disk.path, "other.txt");
+    assert_eq!(fs::read_to_string(&other).unwrap(), shared_text);
+    assert_eq!(fs::read_to_string(&moved_original).unwrap(), shared_text);
+}
+
 #[test]
 fn file_creation_and_rename_cannot_replace_an_existing_target() {
     let temp = TempDir::new().unwrap();

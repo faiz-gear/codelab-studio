@@ -281,6 +281,10 @@ export class FakeCoreClient implements CoreClient {
     this.notifyDiskChange(root, path);
   }
 
+  readDiskFile(root: string, path: string): WorkspaceFile | undefined {
+    return this.files(root).get(path);
+  }
+
   private notifyDiskChange(root: string, path: string) {
     if (this.workspace?.root === root) {
       this.emitEvent({ type: "workspaceFilesChanged", payload: { workspaceId: this.workspace.id, paths: [path] } });

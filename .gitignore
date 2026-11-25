@@ -26,4 +26,5 @@ src-tauri/target/
 src-tauri/gen/
 .audit/
 *.tsbuildinfo
+/test-results/
 

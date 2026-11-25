@@ -170,8 +170,13 @@ export function MonacoDiffSurface({ leftPath, rightPath, left, right, settings }
     if (!instance) return;
     const original = monaco.editor.createModel(left, language(leftPath));
     const modified = monaco.editor.createModel(right, language(rightPath));
-    instance.setModel({ original, modified });
+    let cancelled = false;
+    // StrictMode may clean up this setup before Monaco's worker can read its models.
+    queueMicrotask(() => {
+      if (!cancelled) instance.setModel({ original, modified });
+    });
     return () => {
+      cancelled = true;
       if (diff.current === instance) instance.setModel(null);
       original.dispose();
       modified.dispose();

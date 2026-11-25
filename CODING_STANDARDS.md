@@ -11,8 +11,8 @@ Apply every rule below when reviewing a diff for CodeLab Studio. `pnpm run check
 
 ## Crash-Safe Persistence
 
-- **Raw-byte corruption recovery**: Read persisted JSON stores (`settings`, `recents`, `trust`, and workspace `.codelab/*.json`) via `fs::read` + `serde_json::from_slice` plus domain-invariant validation so invalid UTF-8, truncated JSON, unsupported `schemaVersion`, and out-of-range values all quarantine to `.corrupt.*` backups and recover cleanly rather than aborting startup.
-- **Cross-platform atomic replacement**: Persist JSON stores via `tempfile::NamedTempFile::new_in` + `sync_all` + `persist` (plus parent directory sync on Unix) so replacement stays atomic on both POSIX and Windows without a delete-before-rename window.
+- **Load persisted JSON as raw bytes**, decode with `serde_json::from_slice`, and validate domain invariants. Quarantine invalid UTF-8, truncated JSON, unsupported `schemaVersion`, and out-of-range values in `.corrupt.*` backups and recover with valid defaults.
+- **Replace persisted JSON atomically** on POSIX and Windows. Write a temporary file in the destination directory, call `sync_all` on the file, and replace the destination atomically. Sync the parent directory on Unix. Resolve all `.codelab` reads, writes, and recovery moves relative to the validated metadata directory handle.
 
 ## Errors & Localization
 
