@@ -1386,3 +1386,40 @@ fn go_suite_requires_new_confirmation_when_resolved_working_directory_changes() 
         "seam.test/second/TestSecond"
     );
 }
+
+#[test]
+fn go_suite_reassembles_benchmark_timing_split_across_output_events() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"benchmarks","title":"Split benchmark timing","type":"test_suite","command":"cat benchmark.jsonl","requireTests":["TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    // This stream includes the timing line split by the Ubuntu Go runner.
+    let report = r#"
+{"Action":"start","Package":"seam.test/benchmark"}
+{"Action":"run","Package":"seam.test/benchmark","Test":"TestSave"}
+{"Action":"pass","Package":"seam.test/benchmark","Test":"TestSave","Elapsed":0}
+{"Action":"run","Package":"seam.test/benchmark","Test":"BenchmarkSave"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkSave","Output":"BenchmarkSave\n"}
+{"Action":"run","Package":"seam.test/benchmark","Test":"BenchmarkSave/child"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkSave/child","Output":"BenchmarkSave/child\n"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkSave/child","Output":"BenchmarkSave/child-2         \t       1\t       500.0 ns/op\n"}
+{"Action":"run","Package":"seam.test/benchmark","Test":"BenchmarkLogged"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkLogged","Output":"BenchmarkLogged\n"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkLogged","Output":"BenchmarkLogged-2             \t"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkLogged","Output":"       1\t     90023 ns/op\n"}
+{"Action":"pass","Package":"seam.test/benchmark","Elapsed":0.023}
+"#;
+    fs::write(temp.path().join("work/benchmark.jsonl"), report).unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{}", result["diffs"]);
+    assert_eq!(progress["completedExercises"], 1);
+}

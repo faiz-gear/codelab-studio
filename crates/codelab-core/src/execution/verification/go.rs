@@ -37,9 +37,35 @@ impl GoEvent {
     }
 }
 
+#[derive(Default)]
+struct PackageRun {
+    active_tests: BTreeSet<String>,
+    output_tails: BTreeMap<String, String>,
+}
+
+impl PackageRun {
+    fn benchmark_timings(&mut self, test: Option<&str>, output: &str) -> Vec<String> {
+        let tail = self
+            .output_tails
+            .entry(test.unwrap_or_default().to_owned())
+            .or_default();
+        let mut names = Vec::new();
+        for fragment in output.split_inclusive('\n') {
+            tail.push_str(fragment);
+            if fragment.ends_with('\n') {
+                if let Some(name) = benchmark_timing_name(tail) {
+                    names.push(name.to_owned());
+                }
+                tail.clear();
+            }
+        }
+        names
+    }
+}
+
 pub(super) fn parse_report(output: &str) -> SuiteReport {
     let mut tests = BTreeMap::<SuiteCaseId, TestCaseResult>::new();
-    let mut packages = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut packages = BTreeMap::<String, PackageRun>::new();
     let mut complete = true;
     for line in output.lines() {
         if !line.trim_start().starts_with('{') {
@@ -75,23 +101,29 @@ pub(super) fn parse_report(output: &str) -> SuiteReport {
         };
         let action = event.action.as_deref().unwrap_or_default();
         if action == "start" && event.test.is_none() {
-            complete &= packages.insert(package, BTreeSet::new()).is_none();
+            complete &= packages.insert(package, PackageRun::default()).is_none();
             continue;
         }
-        let Some(active) = packages.get_mut(&package) else {
+        let Some(run) = packages.get_mut(&package) else {
             complete = false;
             continue;
         };
-        let benchmark = match action {
-            "bench" => event.test.as_deref(),
-            "output" => event.output.as_deref().and_then(benchmark_timing_name),
-            _ => None,
+        let benchmarks = match action {
+            "bench" => event.test.iter().cloned().collect(),
+            "output" => event.output.as_deref().map_or_else(Vec::new, |output| {
+                run.benchmark_timings(event.test.as_deref(), output)
+            }),
+            _ => Vec::new(),
         };
+        let active = &mut run.active_tests;
         // Successful benchmarks may emit a timing line in place of a test
         // terminal event. They do not supply a passing test case.
-        if let Some(name) = benchmark
-            && let Some(test) = active_benchmark(active, name)
-        {
+        let mut completed_benchmark = false;
+        for name in benchmarks {
+            let Some(test) = active_benchmark(active, &name) else {
+                continue;
+            };
+            completed_benchmark = true;
             mark_benchmark_complete(&mut tests, &package, &test);
             // A parent with subbenchmarks has no timing or terminal event.
             for (index, _) in test.match_indices('/') {
@@ -100,9 +132,9 @@ pub(super) fn parse_report(output: &str) -> SuiteReport {
                     mark_benchmark_complete(&mut tests, &package, parent);
                 }
             }
-            if action == "bench" || event.test.is_none() {
-                continue;
-            }
+        }
+        if completed_benchmark && (action == "bench" || event.test.is_none()) {
+            continue;
         }
         let Some(test) = event.test else {
             match action {
