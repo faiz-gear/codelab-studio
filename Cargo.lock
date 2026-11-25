@@ -444,6 +444,7 @@ dependencies = [
  "cap-std",
  "cap-tempfile",
  "chrono",
+ "dunce",
  "flate2",
  "icu_normalizer",
  "libc",

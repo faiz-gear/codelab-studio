@@ -150,7 +150,8 @@ fn wait_terminal(
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "terminal timed out with {decoded}"
+            "terminal timed out with {} and output {decoded:?}",
+            updates["terminals"]
         );
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
@@ -410,6 +411,9 @@ fn terminal_service_fixture() {
     let Ok(port) = std::env::var("CODELAB_TEST_LISTEN_PORT") else {
         return;
     };
+    if let Ok(expected) = std::env::var("CODELAB_TEST_WORKSPACE_CWD") {
+        assert_eq!(fs::read_to_string("terminal-cwd.txt").unwrap(), expected);
+    }
     #[cfg(target_os = "linux")]
     if std::env::var_os("CODELAB_TEST_NEW_SESSION").is_some() {
         assert!(unsafe { libc::setsid() } > 0);
@@ -466,8 +470,13 @@ fn workspace_switch_and_shutdown_reclaim_manual_terminal_descendants() {
     trust(&temp, &app);
     let first = bind(&temp, &app, "first");
     let executable = std::env::current_exe().unwrap();
+    for name in ["first", "second"] {
+        let directory = temp.path().join(name);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("terminal-cwd.txt"), name).unwrap();
+    }
 
-    let launch = |workspace| {
+    let launch = |workspace, name| {
         let terminal = send(
             &app,
             "openTerminal",
@@ -476,13 +485,13 @@ fn workspace_switch_and_shutdown_reclaim_manual_terminal_descendants() {
         let terminal_id = terminal["payload"]["id"].as_u64().unwrap();
         #[cfg(unix)]
         let text = format!(
-            "/usr/bin/env CODELAB_TEST_LISTEN_PORT=0 '{}' --exact terminal_service_fixture --nocapture &\r",
+            "/usr/bin/env CODELAB_TEST_WORKSPACE_CWD={name} CODELAB_TEST_LISTEN_PORT=0 '{}' --exact terminal_service_fixture --nocapture &\r",
             path(&executable).replace('\'', "'\\''")
         );
         #[cfg(windows)]
         let text = format!(
-            "set CODELAB_TEST_LISTEN_PORT=0&&\"{}\" --exact terminal_service_fixture --nocapture\r",
-            executable.display()
+            "set CODELAB_TEST_WORKSPACE_CWD={name}&&set CODELAB_TEST_LISTEN_PORT=0&&\"{}\" --exact terminal_service_fixture --nocapture\r",
+            dunce::simplified(&executable).display()
         );
         send(
             &app,
@@ -499,10 +508,10 @@ fn workspace_switch_and_shutdown_reclaim_manual_terminal_descendants() {
         port
     };
 
-    let port = launch(first);
+    let port = launch(first, "first");
     let second = bind(&temp, &app, "second");
     assert_port_released(port);
-    let port = launch(second);
+    let port = launch(second, "second");
     app.execute(AppCommand::Shutdown).unwrap();
     assert_port_released(port);
 }

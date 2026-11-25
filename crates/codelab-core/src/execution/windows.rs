@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use cap_fs_ext::MetadataExt;
 use cap_std::fs::Dir;
-use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
+use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0};
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
     FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
@@ -30,7 +30,8 @@ use windows_sys::Win32::System::Threading::{
     CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
     EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList,
     LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION,
-    ResumeThread, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+    ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
+    UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 use super::{Directory, Ports, Spawn};
@@ -91,6 +92,16 @@ pub(super) struct Process {
 impl Process {
     pub fn spawn(spec: Spawn) -> io::Result<(Self, Ports)> {
         let cwd_guards = pin_cwd(&spec.directory)?;
+        let cwd_path = dunce::simplified(&spec.directory.path);
+        if spec
+            .program
+            .file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"))
+            && cwd_path.as_os_str().as_encoded_bytes().starts_with(b"\\\\")
+        {
+            // cmd would change to the Windows directory instead of using this path.
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
         // Own the job before creating a child. No breakaway flags are enabled.
         let job = owned(unsafe { CreateJobObjectW(null(), null()) })?;
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -117,11 +128,15 @@ impl Process {
             )
         })?;
         let console = Console(console);
-        drop((input, output));
 
         let attributes = Attributes::new(&console)?;
         let mut startup = STARTUPINFOEXW::default();
         startup.StartupInfo.cb = std::mem::size_of_val(&startup) as u32;
+        // Prevent redirected host streams (for example, under CI) from replacing the PTY streams.
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
+        startup.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
+        startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
         startup.lpAttributeList = attributes.ptr();
         let mut information = PROCESS_INFORMATION::default();
         let application = wide(spec.program.as_os_str());
@@ -133,7 +148,7 @@ impl Process {
             quote(&argument, &mut command_line);
         }
         command_line.push(0);
-        let cwd = wide(spec.directory.path.as_os_str());
+        let cwd = wide(cwd_path.as_os_str());
         let environment = environment(spec.env);
         // SAFETY: the UTF-16 buffers, startup attributes and output struct are alive
         // for the call. The primary thread starts suspended until the job owns it.
@@ -151,7 +166,7 @@ impl Process {
                 &mut information,
             )
         })?;
-        drop(cwd_guards);
+        drop((input, output, cwd_guards));
         let child = owned(information.hProcess)?;
         let primary_thread = owned(information.hThread)?;
         let assigned =
