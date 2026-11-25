@@ -1,0 +1,4 @@
+.codelab/
+*.db
+*.db-shm
+*.db-wal

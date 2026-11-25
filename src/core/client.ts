@@ -1,8 +1,8 @@
 import type {
   AppBootstrap,
+  AppResponse,
   AppCommand,
   AppEvent,
-  AppResponse,
   GlobalSettings,
   PreflightCommand,
   PreflightReport,
@@ -23,10 +23,7 @@ export interface CoreClient {
 
 export async function fetchBootstrap(client: CoreClient): Promise<AppBootstrap> {
   const response = await client.dispatch({ type: "bootstrap" });
-  if (response.type !== "bootstrap") {
-    throw new Error(`Unexpected response type: ${response.type}`);
-  }
-  return response.payload;
+  return expectResponse(response, "bootstrap").payload;
 }
 
 export async function updateSettings(
@@ -37,10 +34,7 @@ export async function updateSettings(
     type: "updateSettings",
     payload: patch,
   });
-  if (response.type !== "settings") {
-    throw new Error(`Unexpected response type: ${response.type}`);
-  }
-  return response.payload;
+  return expectResponse(response, "settings").payload;
 }
 
 export async function openCourse(
@@ -51,20 +45,14 @@ export async function openCourse(
     type: "openCourse",
     payload: request,
   });
-  if (response.type !== "loadedCourse") {
-    throw new Error(`Unexpected response type: ${response.type}`);
-  }
-  return response.payload;
+  return expectResponse(response, "loadedCourse").payload;
 }
 
 export async function reloadActiveCourse(
   client: CoreClient
 ): Promise<LoadedCourse> {
   const response = await client.dispatch({ type: "reloadActiveCourse" });
-  if (response.type !== "loadedCourse") {
-    throw new Error(`Unexpected response type: ${response.type}`);
-  }
-  return response.payload;
+  return expectResponse(response, "loadedCourse").payload;
 }
 
 export async function closeActiveCourse(client: CoreClient): Promise<void> {
@@ -80,8 +68,15 @@ export async function dispatchPreflight(
   command: PreflightCommand,
 ): Promise<PreflightReport> {
   const response = await client.dispatch(command);
-  if (response.type !== "preflight") {
-    throw new Error(`Unexpected response type: ${response.type}`);
+  return expectResponse(response, "preflight").payload;
+}
+
+export function expectResponse<T extends AppResponse["type"]>(
+  response: AppResponse,
+  type: T,
+): Extract<AppResponse, { type: T }> {
+  if (response.type !== type) {
+    throw new Error("Unexpected core response " + response.type);
   }
-  return response.payload;
+  return response as Extract<AppResponse, { type: T }>;
 }

@@ -17,6 +17,7 @@ function createPlainMarkdownFixture(): LoadedCourse {
     source: { kind: "localMarkdown", path: "/Users/learner/notes/shell.md" },
     entryMarkdownPath: "/Users/learner/notes/shell.md",
     isBuiltin: false,
+    trusted: false,
     introHtml: "<p>纯外部标准 Markdown 示例。</p>",
     totalExercises: 0,
     chapters: [

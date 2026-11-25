@@ -14,9 +14,10 @@ pub const CORE_EVENT_CHANNEL: &str = "codelab://core-event";
 enum LocalPathPickKind {
     MarkdownFile,
     CoursePackDir,
+    WorkspaceDir,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn dispatch_command(
     core: State<'_, Arc<App>>,
     command: AppCommand,
@@ -28,7 +29,9 @@ fn dispatch_command(
 async fn pick_local_path(app: tauri::AppHandle, kind: LocalPathPickKind) -> Option<String> {
     tauri::async_runtime::spawn_blocking(move || {
         let picked = match kind {
-            LocalPathPickKind::CoursePackDir => app.dialog().file().blocking_pick_folder(),
+            LocalPathPickKind::CoursePackDir | LocalPathPickKind::WorkspaceDir => {
+                app.dialog().file().blocking_pick_folder()
+            }
             LocalPathPickKind::MarkdownFile => app
                 .dialog()
                 .file()

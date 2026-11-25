@@ -92,6 +92,52 @@ export interface Messages {
     submitting: string;
     pathRequired: string;
   };
+  workspace: {
+    choose: string;
+    change: string;
+    resume: string;
+    chooseHint: string;
+    trust: string;
+    revokeTrust: string;
+    trustTitle: string;
+    previewHint: string;
+    trustDetail: string;
+    files: string;
+    tabs: string;
+    openFile: string;
+    openChapterFile: string;
+    loading: string;
+    save: string;
+    saved: string;
+    unsaved: string;
+    closeTab: string;
+    editFile: string;
+    changedOnDisk: string;
+    deletedOnDisk: string;
+    loadDisk: string;
+    keepDraft: string;
+    binary: string;
+    tooLarge: string;
+    missing: string;
+    bytes: string;
+    compare: string;
+    pickComparison: string;
+    comparisonName: string;
+    comparisonUnavailable: string;
+    endCompare: string;
+    newFile: string;
+    rename: string;
+    filePath: string;
+    emptyFolder: string;
+    openIde: string;
+    chooseIde: string;
+    cancel: string;
+    discard: string;
+    switchTitle: string;
+    saveAndSwitch: string;
+    closeTitle: string;
+    saveAndClose: string;
+  };
   workbench: {
     ariaLabel: string;
     manualAriaLabel: string;
@@ -133,17 +179,6 @@ export interface Messages {
     builtinBadge: string;
     localMarkdownBadge: string;
     localPackBadge: string;
-    stageTitle: string;
-    stageGuideHint: string;
-    stageExerciseHint: string;
-    stageCommandsHeading: string;
-    stageNoCommands: string;
-    stageChecksHeading: string;
-    stageNoChecks: string;
-    stageMetadataHeading: string;
-    stageChapterIdLabel: string;
-    stageSourceLabel: string;
-    stageNextMilestoneNote: string;
     checkKinds: Record<CheckKind, string>;
   };
   runtime: {
@@ -290,10 +325,56 @@ export const zhCN: Messages = {
     submitting: "解析中…",
     pathRequired: "请先输入或选择一个有效的本地绝对路径。",
   },
+  workspace: {
+    choose: "选择 Workspace",
+    change: "切换 Workspace",
+    resume: "继续使用 Workspace",
+    chooseHint: "请选择本地目录开始编辑。课程提供 Starter 时，空目录会自动复制初始文件。",
+    trust: "信任此课程",
+    revokeTrust: "撤销信任",
+    trustTitle: "信任此本地课程？",
+    previewHint: "信任此课程后可打开 Workspace，并启用本地命令、验收、语言服务和助教。",
+    trustDetail: "请仅信任你了解的来源。课程命令可使用当前用户的本地权限运行。",
+    files: "文件",
+    tabs: "已打开的文件",
+    openFile: "从文件树打开一个文件。",
+    openChapterFile: "打开 {path}",
+    loading: "正在加载编辑器…",
+    save: "保存",
+    saved: "所有修改已保存",
+    unsaved: "有未保存的修改",
+    closeTab: "关闭 {path}",
+    editFile: "编辑 {path}",
+    changedOnDisk: "磁盘文件已更改",
+    deletedOnDisk: "磁盘文件已删除",
+    loadDisk: "加载磁盘版",
+    keepDraft: "保留草稿",
+    binary: "二进制文件",
+    tooLarge: "文件超过 2 MB 编辑上限",
+    missing: "文件已不存在",
+    bytes: "{size} 字节",
+    compare: "对比文件",
+    pickComparison: "请从文件树或标签页选择另一份文本文件。",
+    comparisonName: "{left} 与 {right}",
+    comparisonUnavailable: "两份文件必须能以文本打开。",
+    endCompare: "关闭对比",
+    newFile: "新建文件",
+    rename: "重命名文件",
+    filePath: "Workspace 内路径",
+    emptyFolder: "空目录",
+    openIde: "在 IDE 中打开",
+    chooseIde: "外部 IDE",
+    cancel: "取消",
+    discard: "放弃修改",
+    switchTitle: "切换 Workspace 前如何处理未保存的修改？",
+    saveAndSwitch: "保存并切换",
+    closeTitle: "关闭文件前如何处理未保存的修改？",
+    saveAndClose: "保存并关闭",
+  },
   workbench: {
     ariaLabel: "只读手册工作台",
     manualAriaLabel: "Course 实践手册",
-    stageAriaLabel: "工作台右侧预览区",
+    stageAriaLabel: "工作台 Workspace 区域",
     focusRailExpand: "展开手册（⌘/Ctrl + B）",
     focusRailLabel: "手册",
     outlineToggle: "章节大纲",
@@ -331,17 +412,6 @@ export const zhCN: Messages = {
     builtinBadge: "内置 Course Pack",
     localMarkdownBadge: "本地 Markdown",
     localPackBadge: "本地 Course Pack",
-    stageTitle: "只读手册工作台",
-    stageGuideHint: "当前为概念导读 Chapter（guide），不计入 Exercise 完成进度。",
-    stageExerciseHint: "当前为实战 Exercise，已解析出以下结构化工作区上下文。",
-    stageCommandsHeading: "已解析 Command Block",
-    stageNoCommands: "本节未包含可执行 bash/sh/zsh 命令块。",
-    stageChecksHeading: "验收条件概览",
-    stageNoChecks: "本节暂无结构化 Check 声明。",
-    stageMetadataHeading: "Chapter 元信息",
-    stageChapterIdLabel: "稳定 chapterId",
-    stageSourceLabel: "Course 来源",
-    stageNextMilestoneNote: "本地 Workspace 绑定、多标签编辑器与 PTY 智能多终端将在后续里程碑接入右侧工作区。",
     checkKinds: {
       httpAssert: "HTTP 断言",
       commandTest: "命令测试",
@@ -427,12 +497,27 @@ export const zhCN: Messages = {
     },
   },
   stores: {
+    workspace: "Workspace 绑定",
+    progress: "Workspace 进度",
+    metrics: "Workspace 指标",
     runtimePreferences: "运行时偏好",
     settings: "全局偏好（settings）",
     recents: "最近 Workspace（recents）",
     trust: "信任列表（trust）",
   },
   errors: {
+    COURSE_UNTRUSTED: "请先信任此课程，再打开 Workspace 或启用本地操作。",
+    NO_ACTIVE_WORKSPACE: "请先选择一个活动的 Workspace。",
+    WORKSPACE_PATH_OUTSIDE_ROOT: "“{path}” 不在 Workspace 可用路径内。",
+    WORKSPACE_BOUND_TO_ANOTHER_COURSE: "此 Workspace 已绑定到其他课程。",
+    WORKSPACE_FILE_NOT_FOUND: "找不到 “{path}”。",
+    WORKSPACE_FILE_EXISTS: "“{path}” 已存在。",
+    WORKSPACE_FILE_READ_FAILED: "无法读取 “{path}”。",
+    WORKSPACE_FILE_WRITE_FAILED: "无法写入 “{path}”。",
+    WORKSPACE_FILE_NOT_TEXT: "“{path}” 必须是 2 MB 以内的文本文件。",
+    WORKSPACE_WATCH_FAILED: "无法监听 “{path}” 中的文件变化。",
+    WORKSPACE_STARTER_FAILED: "无法复制 Starter。请检查初始文件和 Workspace 的权限。",
+    EXTERNAL_IDE_OPEN_FAILED: "无法打开 {ide}。请确认 IDE 已安装并可启动。",
     INVALID_CODE_FONT_SIZE: "代码字号必须在 {min}px 至 {max}px 之间。",
     INVALID_WORKSPACE_PATH: "Workspace 路径必须为有效的本地绝对路径。",
     INVALID_COURSE_METADATA: "Course 标识与标题不能为空。",

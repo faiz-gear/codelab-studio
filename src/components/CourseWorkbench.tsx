@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   courseSourceLocation,
   type Chapter,
+  type GlobalSettings,
   type CommandBlock,
   type CourseSourceChangedEvent,
   type LoadedCourse,
@@ -14,10 +15,14 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   FileCodeIcon,
+  FolderIcon,
   MenuIcon,
   PanelLeftOpenIcon,
   RefreshIcon,
 } from "./Icons";
+
+import { WorkspaceEditor } from "../workspace/WorkspaceEditor";
+import type { WorkspaceEditorSession } from "../workspace/editorSession";
 
 const DEFAULT_MANUAL_WIDTH_PCT = 38;
 const MIN_MANUAL_WIDTH_PX = 320;
@@ -25,6 +30,14 @@ const MAX_MANUAL_WIDTH_PCT = 54;
 
 export interface CourseWorkbenchProps {
   course: LoadedCourse;
+  session: WorkspaceEditorSession | null;
+  settings: GlobalSettings;
+  switching: boolean;
+  recentWorkspacePath: string | null;
+  onChooseWorkspace: () => void;
+  onResumeWorkspace: () => void;
+  onRequestTrust: () => void;
+  onRevokeTrust: () => void;
   activeChapterId: string;
   focusMode: boolean;
   pendingReload: CourseSourceChangedEvent | null;
@@ -44,6 +57,14 @@ function getFileBasename(filePath: string): string {
 
 export function CourseWorkbench({
   course,
+  session,
+  settings,
+  switching,
+  recentWorkspacePath,
+  onChooseWorkspace,
+  onResumeWorkspace,
+  onRequestTrust,
+  onRevokeTrust,
   activeChapterId,
   focusMode,
   pendingReload,
@@ -186,10 +207,12 @@ export function CourseWorkbench({
         : t.localMarkdownBadge;
 
   const sourceLocation = courseSourceLocation(course.source);
+  const w = messages.workspace;
 
   const threeStep = activeChapter?.threeStep ?? null;
   const isThreeStepMode =
     activeChapter?.presentation === "threeStep" && threeStep !== null;
+  const chapterFile = threeStep?.step2EntryFile;
   const activeReflectionsHtml = isThreeStepMode
     ? threeStep.reflectionsHtml
     : (activeChapter?.reflectionsHtml ?? null);
@@ -440,11 +463,16 @@ export function CourseWorkbench({
                           {visibleStepNumbers.step2}
                         </span>
                         <h3>{t.step2Title}</h3>
-                        {threeStep.step2EntryFile ? (
-                          <span className="file-pill mono">
-                            <FileCodeIcon size={12} />
-                            <span>{threeStep.step2EntryFile}</span>
-                          </span>
+                        {chapterFile ? (
+                          course.trusted && session ? (
+                            <button type="button" className="file-pill mono workspace-chapter-file"
+                              aria-label={interpolate(w.openChapterFile, { path: chapterFile })}
+                              disabled={switching}
+                              onClick={() => void session.open(chapterFile)}>
+                              <FileCodeIcon size={12} />
+                              <span>{chapterFile}</span>
+                            </button>
+                          ) : <span className="file-pill mono">{chapterFile}</span>
                         ) : null}
                       </div>
                       {threeStep.step2Html ? (
@@ -630,129 +658,46 @@ export function CourseWorkbench({
         onKeyDown={handleSplitterKeyDown}
       />
 
-      {/* Right Pane: Calm Read-Only Workbench Stage */}
       <section className="pane-center" aria-label={t.stageAriaLabel}>
-        <div className="stage-bar">
-          <div className="stage-bar-left">
-            <span className="badge badge--neutral">{sourceBadge}</span>
-            {!course.isBuiltin ? (
-              <span className="badge badge--warning">
-                {t.readOnlyPreviewBadge}
-              </span>
-            ) : null}
-            {activeChapter?.entryFile ? (
-              <span className="file-pill mono">
-                <FileCodeIcon size={12} />
-                <span>{activeChapter.entryFile}</span>
-              </span>
-            ) : null}
-          </div>
-          {activeChapter ? (
-            <span className="mono muted stage-chapter-id">
-              {activeChapter.chapterId}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="stage-body">
-          <div className="stage-inner">
-            <header className="stage-head">
-              <h3>{activeChapter?.title ?? course.title}</h3>
-              <p className="muted">
-                {activeChapter?.kind === "guide"
-                  ? t.stageGuideHint
-                  : t.stageExerciseHint}
-              </p>
-            </header>
-
-            <div className="stage-grid">
-              <div className="stage-card">
-                <div className="stage-card-head">
-                  <span>{t.stageMetadataHeading}</span>
-                </div>
-                <dl className="stage-dl">
-                  <div>
-                    <dt>{t.stageChapterIdLabel}</dt>
-                    <dd className="mono">{activeChapter?.chapterId ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>{t.stageSourceLabel}</dt>
-                    <dd className="mono stage-path" title={sourceLocation}>
-                      {sourceLocation}
-                    </dd>
-                  </div>
-                  {activeChapter?.entryFile ? (
-                    <div>
-                      <dt>{t.targetFileLabel}</dt>
-                      <dd className="mono">{activeChapter.entryFile}</dd>
-                    </div>
-                  ) : null}
-                </dl>
+        {session && course.trusted ? (
+          <WorkspaceEditor
+            key={session.workspace.id}
+            session={session}
+            settings={settings}
+            messages={messages}
+            switching={switching}
+            onChangeWorkspace={onChooseWorkspace}
+            onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
+          />
+        ) : (
+          <>
+            <div className="stage-bar">
+              <div className="stage-bar-left">
+                <span className="badge badge--neutral">{sourceBadge}</span>
+                {!course.trusted && <span className="badge badge--warning">{t.readOnlyPreviewBadge}</span>}
               </div>
-
-              <div className="stage-card">
-                <div className="stage-card-head">
-                  <span>{t.stageCommandsHeading}</span>
-                  <span className="mono muted">
-                    {activeChapter?.commands.length ?? 0}
-                  </span>
-                </div>
-                {activeChapter && activeChapter.commands.length > 0 ? (
-                  <ul className="stage-list">
-                    {activeChapter.commands.map((cmd) => (
-                      <li key={cmd.id} className="stage-list-row">
-                        <span className="mono stage-cmd-preview">
-                          {cmd.command.split("\n")[0]}
-                        </span>
-                        <span className="mono muted stage-cwd-meta">
-                          {cmd.cwd ?? "."}
-                        </span>
-                        <span
-                          className={`badge ${
-                            cmd.mode === "daemon"
-                              ? "badge--info"
-                              : "badge--neutral"
-                          }`}
-                        >
-                          {cmd.mode === "daemon"
-                            ? t.commandModeDaemon
-                            : t.commandModeOneshot}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted stage-empty">{t.stageNoCommands}</p>
-                )}
-              </div>
-
-              <div className="stage-card">
-                <div className="stage-card-head">
-                  <span>{t.stageChecksHeading}</span>
-                  <span className="mono muted">
-                    {threeStep?.step3Checks.length ?? 0}
-                  </span>
-                </div>
-                {threeStep && threeStep.step3Checks.length > 0 ? (
-                  <ul className="stage-list">
-                    {threeStep.step3Checks.map((check) => (
-                      <li key={check.id} className="stage-list-row">
-                        <span className="stage-check-title">{check.title}</span>
-                        <span className="badge badge--neutral">
-                          {t.checkKinds[check.kind]}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted stage-empty">{t.stageNoChecks}</p>
-                )}
+              {course.trusted && !course.isBuiltin && (
+                <button type="button" className="btn btn--ghost btn--xs" disabled={switching} onClick={onRevokeTrust}>{w.revokeTrust}</button>
+              )}
+            </div>
+            <div className="workspace-stage">
+              <FolderIcon size={22} />
+              <h3>{course.trusted ? w.choose : course.title}</h3>
+              <p>{course.trusted ? w.chooseHint : w.previewHint}</p>
+              {!course.trusted && <span className="mono workspace-source" title={sourceLocation}>{sourceLocation}</span>}
+              <div className="workspace-stage-actions">
+                {course.trusted ? (
+                  <>
+                    {recentWorkspacePath && <button type="button" className="btn btn--primary btn--sm"
+                      disabled={switching} onClick={onResumeWorkspace}>{w.resume}</button>}
+                    <button type="button" className={recentWorkspacePath ? "btn btn--secondary btn--sm" : "btn btn--primary btn--sm"}
+                      disabled={switching} onClick={onChooseWorkspace}>{w.choose}</button>
+                  </>
+                ) : <button type="button" className="btn btn--primary btn--sm" disabled={switching} onClick={onRequestTrust}>{w.trust}</button>}
               </div>
             </div>
-
-            <p className="stage-foot-note muted">{t.stageNextMilestoneNote}</p>
-          </div>
-        </div>
+          </>
+        )}
       </section>
     </section>
   );

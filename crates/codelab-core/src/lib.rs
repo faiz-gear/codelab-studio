@@ -1,11 +1,16 @@
 mod app;
 mod course;
 mod error;
+mod filesystem;
 mod model;
 mod runtime;
 mod storage;
+mod workspace;
 
-pub use app::{App, AppCommand, AppConfig, AppEvent, AppResponse, CleanupHook, EventSubscription};
+pub use app::{
+    App, AppCommand, AppConfig, AppEvent, AppResponse, CleanupHook, CourseTrustChanged,
+    EventSubscription, RecentWorkspaceOpened,
+};
 pub use course::{
     Chapter, ChapterKind, ChapterPresentation, CheckKind, CommandBlock, CommandMode, ContentBlock,
     CourseCheckSpec, CourseSource, CourseSourceChangedEvent, CourseSummary, DaemonRequirement,
@@ -22,4 +27,9 @@ pub use runtime::{
     HostProbeResult, HostTool, HostToolchainProbe, HttpRuntimeDownloader, InstallProgress,
     LanguagePreflight, ManagedRuntime, PreflightReport, ProbeProblem, ProbeStatus, RuntimeAdapters,
     RuntimeArtifact, RuntimeDownloadAdapter, RuntimePreference, RuntimeSource, ToolCheck,
+};
+pub use workspace::{
+    ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceEntry, WorkspaceEntryKind, WorkspaceFile,
+    WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite, WorkspaceFilesChanged,
+    WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
 };

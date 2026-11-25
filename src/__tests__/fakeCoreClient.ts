@@ -15,6 +15,9 @@ import {
   type RecentWorkspace,
   type StorageRecoveryNotice,
   type TrustEntry,
+  type WorkspaceEntry,
+  type WorkspaceFile,
+  type WorkspaceSummary,
 } from "../core/contracts";
 
 export function createBuiltinGoCourseFixture(): LoadedCourse {
@@ -30,6 +33,7 @@ export function createBuiltinGoCourseFixture(): LoadedCourse {
     source: { kind: "builtin", courseId: "go-goframe-practice" },
     entryMarkdownPath: null,
     isBuiltin: true,
+    trusted: true,
     introHtml: "<p>先用 Go 标准库实现，再迁移到 GoFrame。</p>",
     totalExercises: 10,
     chapters: [
@@ -254,6 +258,47 @@ export class FakeCoreClient implements CoreClient {
     this.pickedPaths = { ...options.pickedPaths };
   }
 
+  private workspace: WorkspaceSummary | null = null;
+  private nextWorkspaceId = 1;
+  private nextFileRevision = 1;
+  private readonly disk = new Map<string, Map<string, WorkspaceFile>>();
+
+  writeDiskFile(root: string, path: string, text: string): WorkspaceFile {
+    const file: WorkspaceFile = {
+      kind: "text",
+      path,
+      text,
+      sizeBytes: text.length,
+      revision: String(this.nextFileRevision++),
+    };
+    this.files(root).set(path, file);
+    this.notifyDiskChange(root, path);
+    return file;
+  }
+
+  deleteDiskFile(root: string, path: string) {
+    this.files(root).delete(path);
+    this.notifyDiskChange(root, path);
+  }
+
+  readDiskFile(root: string, path: string): WorkspaceFile | undefined {
+    return this.files(root).get(path);
+  }
+
+  private notifyDiskChange(root: string, path: string) {
+    if (this.workspace?.root === root) {
+      this.emitEvent({ type: "workspaceFilesChanged", payload: { workspaceId: this.workspace.id, paths: [path] } });
+    }
+  }
+
+  private files(root: string) {
+    const existing = this.disk.get(root);
+    if (existing) return existing;
+    const files = new Map<string, WorkspaceFile>();
+    this.disk.set(root, files);
+    return files;
+  }
+
   registerLocalCourse(path: string, course: LoadedCourse): void {
     this.localCourses.set(path, course);
   }
@@ -311,7 +356,58 @@ export class FakeCoreClient implements CoreClient {
         details: { source: trimmed },
       });
     }
-    return { course: found, activeKey: { kind: "local", key: trimmed } };
+    return { course: this.withTrust(found), activeKey: { kind: "local", key: trimmed } };
+  }
+
+  private activeCourse(): LoadedCourse | null {
+    if (!this.activeCourseKey) return null;
+    const { kind, key } = this.activeCourseKey;
+    return (kind === "builtin" ? this.builtinCourses : this.localCourses).get(key) ?? null;
+  }
+
+  private withTrust(course: LoadedCourse): LoadedCourse {
+    const source = course.source;
+    return {
+      ...course,
+      trusted: source.kind === "builtin" || this.trustEntries.some(
+        (entry) => entry.sourceKind === "localPath" && entry.normalizedSource === source.path
+      ),
+    };
+  }
+
+  private publishTrust() {
+    const active = this.activeCourse();
+    if (active) {
+      const { source, trusted } = this.withTrust(active);
+      this.emitEvent({ type: "courseTrustChanged", payload: { source, trusted } });
+    }
+    this.emitEvent({ type: "trustUpdated", payload: [...this.trustEntries] });
+  }
+
+  private bindWorkspace(root: string) {
+    const active = this.activeCourse();
+    if (!active) throw new CoreCommandError({ code: "NO_ACTIVE_COURSE" });
+    if (!this.withTrust(active).trusted) throw new CoreCommandError({ code: "COURSE_UNTRUSTED" });
+    this.workspace = { id: this.nextWorkspaceId++, root, recoveryNotices: [] };
+    this.recents = [{
+      workspacePath: root,
+      courseSource: active.source,
+      courseId: active.courseId,
+      courseTitle: active.title,
+      language: active.language,
+      completedExercises: 0,
+      totalExercises: active.totalExercises,
+      lastOpenedAt: new Date().toISOString(),
+    }, ...this.recents.filter((recent) => recent.workspacePath !== root)];
+    this.emitEvent({ type: "recentsUpdated", payload: [...this.recents] });
+    return this.workspace;
+  }
+
+  private workspaceRoot(workspaceId: number): string {
+    const active = this.activeCourse();
+    if (active && !this.withTrust(active).trusted) throw new CoreCommandError({ code: "COURSE_UNTRUSTED" });
+    if (!this.workspace || this.workspace.id !== workspaceId) throw new CoreCommandError({ code: "NO_ACTIVE_WORKSPACE" });
+    return this.workspace.root;
   }
 
   async dispatch(command: AppCommand): Promise<AppResponse> {
@@ -425,10 +521,7 @@ export class FakeCoreClient implements CoreClient {
               )
           ),
         ];
-        this.emitEvent({
-          type: "trustUpdated",
-          payload: [...this.trustEntries],
-        });
+        this.publishTrust();
         return {
           type: "trustState",
           payload: {
@@ -448,10 +541,7 @@ export class FakeCoreClient implements CoreClient {
               e.normalizedSource === normalized
             )
         );
-        this.emitEvent({
-          type: "trustUpdated",
-          payload: [...this.trustEntries],
-        });
+        this.publishTrust();
         return { type: "trustEntries", payload: [...this.trustEntries] };
       }
       case "listBuiltinCourses":
@@ -461,6 +551,7 @@ export class FakeCoreClient implements CoreClient {
         };
       case "openCourse": {
         const { course, activeKey } = this.resolveCourse(command.payload);
+        if (this.activeCourseKey?.key !== activeKey.key) this.workspace = null;
         this.activeCourseKey = activeKey;
         this.emitEvent({ type: "courseLoaded", payload: course });
         return { type: "loadedCourse", payload: course };
@@ -479,13 +570,64 @@ export class FakeCoreClient implements CoreClient {
             details: { source: this.activeCourseKey.key },
           });
         }
-        this.emitEvent({ type: "courseLoaded", payload: course });
-        return { type: "loadedCourse", payload: course };
+        const loaded = this.withTrust(course);
+        this.emitEvent({ type: "courseLoaded", payload: loaded });
+        return { type: "loadedCourse", payload: loaded };
       }
       case "closeActiveCourse": {
         this.activeCourseKey = null;
+        this.workspace = null;
         return { type: "courseClosed" };
       }
+      case "bindWorkspace":
+        return { type: "workspaceBound", payload: this.bindWorkspace(command.payload.path) };
+      case "openRecentWorkspace": {
+        const recent = this.recents.find((item) => item.workspacePath === command.payload.path);
+        if (!recent) throw new CoreCommandError({ code: "INVALID_WORKSPACE_PATH" });
+        const { course, activeKey } = this.resolveCourse(recent.courseSource ?? { kind: "builtin", courseId: recent.courseId });
+        this.activeCourseKey = activeKey;
+        this.workspace = null;
+        const workspace = course.trusted ? this.bindWorkspace(recent.workspacePath) : null;
+        return { type: "recentWorkspaceOpened", payload: { course, workspace } };
+      }
+      case "listWorkspaceFiles": {
+        const { workspaceId, path } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        const prefix = path ? path + "/" : "";
+        const entries = new Map<string, WorkspaceEntry>();
+        for (const file of this.files(root).keys()) {
+          if (!file.startsWith(prefix)) continue;
+          const parts = file.slice(prefix.length).split("/");
+          entries.set(parts[0], { path: prefix + parts[0], name: parts[0], kind: parts.length > 1 ? "directory" : "file" });
+        }
+        return { type: "workspaceEntries", payload: [...entries.values()] };
+      }
+      case "readWorkspaceFile":
+      case "writeWorkspaceFile": {
+        const { workspaceId, path } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        const file = this.files(root).get(path) ?? { kind: "missing" as const, path, revision: null, sizeBytes: 0 };
+        if (command.type === "readWorkspaceFile") return { type: "workspaceFile", payload: file };
+        if (file.revision !== command.payload.expectedRevision) return { type: "workspaceFileConflict", payload: file };
+        return { type: "workspaceFile", payload: this.writeDiskFile(root, path, command.payload.text) };
+      }
+      case "createWorkspaceFile": {
+        const { workspaceId, path } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        if (this.files(root).has(path)) throw new CoreCommandError({ code: "WORKSPACE_FILE_EXISTS", details: { path } });
+        return { type: "workspaceFile", payload: this.writeDiskFile(root, path, "") };
+      }
+      case "renameWorkspaceFile": {
+        const { workspaceId, path, newPath } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        const file = this.files(root).get(path);
+        if (!file || file.kind !== "text") throw new CoreCommandError({ code: "WORKSPACE_FILE_NOT_FOUND", details: { path } });
+        this.files(root).delete(path);
+        return { type: "workspaceFile", payload: this.writeDiskFile(root, newPath, file.text) };
+      }
+      case "openWorkspaceIde":
+        this.workspaceRoot(command.payload.workspaceId);
+        return { type: "workspaceIdeOpened" };
       case "getPreflight":
       case "refreshPreflight":
         return { type: "preflight", payload: this.preflight };

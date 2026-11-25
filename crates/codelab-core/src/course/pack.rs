@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
@@ -12,6 +13,7 @@ use crate::course::model::{
 };
 use crate::course::parser::{ChapterChecksOverlay, ParseOverlay, parse_markdown_course};
 use crate::error::{DomainError, ErrorCode};
+use crate::filesystem::open_canonical_file;
 use crate::model::CourseLanguage;
 
 pub(crate) const SUPPORTED_PACK_SCHEMA_VERSION: &str = "1.0";
@@ -31,6 +33,7 @@ pub(crate) struct RawCourseManifest {
     pub entry_file: String,
     #[serde(default)]
     pub checks_file: Option<String>,
+    pub starter_dir: Option<String>,
     #[serde(default)]
     pub dependencies: Vec<String>,
     #[serde(default)]
@@ -144,6 +147,7 @@ pub(crate) fn load_local_markdown_file(raw_path: &str) -> Result<OpenedCourse, D
         },
         entry_markdown_path: Some(canonical_str),
         is_builtin: false,
+        trusted: false,
         intro_html: parsed.intro_html,
         total_exercises,
         chapters: parsed.chapters,
@@ -152,6 +156,7 @@ pub(crate) fn load_local_markdown_file(raw_path: &str) -> Result<OpenedCourse, D
     Ok(OpenedCourse {
         course,
         watched_files: vec![canonical],
+        starter: None,
     })
 }
 
@@ -171,7 +176,7 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
         Err(err) => return Err(err),
     };
 
-    let manifest_bytes = fs::read(&manifest_path).map_err(|_| {
+    let manifest_bytes = read_course_file(&manifest_path).map_err(|_| {
         DomainError::new(ErrorCode::CourseManifestInvalid)
             .with_detail("reasonCode", "MANIFEST_READ_FAILED")
     })?;
@@ -191,7 +196,7 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
     let checks_bytes = if let Some(rel_checks) = checks_filename {
         let checks_path = resolve_contained_file(&canonical_root, rel_checks)?;
         watched_files.push(checks_path.clone());
-        Some(fs::read(&checks_path).map_err(|_| {
+        Some(read_course_file(&checks_path).map_err(|_| {
             DomainError::new(ErrorCode::CourseChecksInvalid)
                 .with_detail("reasonCode", "CHECKS_READ_FAILED")
         })?)
@@ -200,7 +205,7 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
         if default_checks.exists() || default_checks.is_symlink() {
             let safe_checks = resolve_contained_file(&canonical_root, ".codelab-checks.json")?;
             watched_files.push(safe_checks.clone());
-            Some(fs::read(&safe_checks).map_err(|_| {
+            Some(read_course_file(&safe_checks).map_err(|_| {
                 DomainError::new(ErrorCode::CourseChecksInvalid)
                     .with_detail("reasonCode", "CHECKS_READ_FAILED")
             })?)
@@ -209,6 +214,13 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
         }
     };
 
+    let starter = super::Starter::Local {
+        root: canonical_root.clone(),
+        directory: manifest
+            .starter_dir
+            .clone()
+            .unwrap_or_else(|| "starter".into()),
+    };
     let course = build_course_from_pack_parts(
         manifest,
         &markdown,
@@ -223,6 +235,7 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
     Ok(OpenedCourse {
         course,
         watched_files,
+        starter: Some(starter),
     })
 }
 
@@ -313,6 +326,7 @@ pub(crate) fn build_course_from_pack_parts(
         source,
         entry_markdown_path,
         is_builtin,
+        trusted: is_builtin,
         intro_html: parsed.intro_html,
         total_exercises,
         chapters: parsed.chapters,
@@ -452,27 +466,34 @@ fn resolve_contained_file(
     Ok(canonical_target)
 }
 
+fn read_course_file(path: &Path) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    open_canonical_file(path)?.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 fn read_bounded_markdown(path: &Path) -> Result<String, DomainError> {
-    let meta = fs::metadata(path).map_err(|_| {
+    let invalid = || {
         DomainError::new(ErrorCode::CourseMarkdownInvalid)
             .with_detail("path", path.to_string_lossy().into_owned())
-    })?;
-    if meta.len() > MAX_MARKDOWN_BYTES as u64 {
-        return Err(DomainError::new(ErrorCode::CourseMarkdownTooLarge)
+    };
+    let too_large = |len: u64| {
+        DomainError::new(ErrorCode::CourseMarkdownTooLarge)
             .with_detail("maxMb", "5")
-            .with_detail("actualBytes", meta.len().to_string()));
+            .with_detail("actualBytes", len.to_string())
+    };
+    let file = open_canonical_file(path).map_err(|_| invalid())?;
+    let size = file.metadata().map_err(|_| invalid())?.len();
+    if size > MAX_MARKDOWN_BYTES as u64 {
+        return Err(too_large(size));
     }
-    let bytes = fs::read(path).map_err(|_| {
-        DomainError::new(ErrorCode::CourseMarkdownInvalid)
-            .with_detail("path", path.to_string_lossy().into_owned())
-    })?;
+
+    let mut bytes = Vec::new();
+    file.take((MAX_MARKDOWN_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| invalid())?;
     if bytes.len() > MAX_MARKDOWN_BYTES {
-        return Err(DomainError::new(ErrorCode::CourseMarkdownTooLarge)
-            .with_detail("maxMb", "5")
-            .with_detail("actualBytes", bytes.len().to_string()));
+        return Err(too_large(bytes.len() as u64));
     }
-    String::from_utf8(bytes).map_err(|_| {
-        DomainError::new(ErrorCode::CourseMarkdownInvalid)
-            .with_detail("path", path.to_string_lossy().into_owned())
-    })
+    String::from_utf8(bytes).map_err(|_| invalid())
 }

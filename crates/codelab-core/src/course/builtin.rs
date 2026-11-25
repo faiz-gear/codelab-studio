@@ -1,5 +1,6 @@
 use crate::course::model::{CourseSource, CourseSummary, LoadedCourse};
 use crate::course::pack::{build_course_from_pack_parts, parse_manifest_bytes};
+use crate::course::{OpenedCourse, Starter};
 use crate::error::{DomainError, ErrorCode};
 
 const GO_GOFRAME_MANIFEST: &[u8] =
@@ -9,11 +10,39 @@ const GO_GOFRAME_README: &str =
 const GO_GOFRAME_CHECKS: &[u8] =
     include_bytes!("../../../../builtin-courses/go-goframe-practice/.codelab-checks.json");
 
+macro_rules! go_starter_file {
+    ($path:literal) => {
+        (
+            $path,
+            include_bytes!(concat!(
+                "../../../../builtin-courses/go-goframe-practice/starter/",
+                $path
+            )),
+        )
+    };
+}
+
+const GO_GOFRAME_STARTER: &[(&str, &[u8])] = &[
+    go_starter_file!(".gitignore"),
+    go_starter_file!("REQUIREMENTS.md"),
+    go_starter_file!("task-api-gf/go.mod"),
+    go_starter_file!("task-api-gf/go.sum"),
+    go_starter_file!("task-api-gf/main.go"),
+    go_starter_file!("task-api-gf/main_test.go"),
+    go_starter_file!("task-api-gf/manifest/config/config.yaml"),
+    go_starter_file!("task-api/go.mod"),
+    go_starter_file!("task-api/main.go"),
+    go_starter_file!("task-api/main_test.go"),
+    go_starter_file!("task-api/migrations/001_create_tasks.sql"),
+    go_starter_file!("task-api/migrations/002_create_task_events.sql"),
+];
+
 struct BuiltinPackAsset {
     course_id: &'static str,
     manifest: &'static [u8],
     readme: &'static str,
     checks: &'static [u8],
+    starter: &'static [(&'static str, &'static [u8])],
 }
 
 const BUILTIN_PACKS: &[BuiltinPackAsset] = &[BuiltinPackAsset {
@@ -21,6 +50,7 @@ const BUILTIN_PACKS: &[BuiltinPackAsset] = &[BuiltinPackAsset {
     manifest: GO_GOFRAME_MANIFEST,
     readme: GO_GOFRAME_README,
     checks: GO_GOFRAME_CHECKS,
+    starter: GO_GOFRAME_STARTER,
 }];
 
 pub(crate) fn list_builtin_courses() -> Result<Vec<CourseSummary>, DomainError> {
@@ -41,7 +71,7 @@ pub(crate) fn list_builtin_courses() -> Result<Vec<CourseSummary>, DomainError> 
     Ok(summaries)
 }
 
-pub(crate) fn load_builtin_course(course_id: &str) -> Result<LoadedCourse, DomainError> {
+pub(crate) fn load_builtin_course(course_id: &str) -> Result<OpenedCourse, DomainError> {
     let trimmed = course_id.trim();
     let asset = BUILTIN_PACKS
         .iter()
@@ -49,7 +79,11 @@ pub(crate) fn load_builtin_course(course_id: &str) -> Result<LoadedCourse, Domai
         .ok_or_else(|| {
             DomainError::new(ErrorCode::CourseNotFound).with_detail("source", trimmed.to_string())
         })?;
-    load_builtin_asset(asset)
+    Ok(OpenedCourse {
+        course: load_builtin_asset(asset)?,
+        watched_files: Vec::new(),
+        starter: Some(Starter::Builtin(asset.starter)),
+    })
 }
 
 fn load_builtin_asset(asset: &BuiltinPackAsset) -> Result<LoadedCourse, DomainError> {

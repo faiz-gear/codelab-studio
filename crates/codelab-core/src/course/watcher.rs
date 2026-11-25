@@ -1,10 +1,12 @@
-use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
 use chrono::Utc;
+
+use crate::filesystem::open_canonical_file;
 
 use crate::course::model::{CourseSourceChangedEvent, MAX_MARKDOWN_BYTES};
 
@@ -84,10 +86,6 @@ impl CourseWatcher {
         }
     }
 
-    pub(crate) fn stop(mut self) {
-        self.stop_inner();
-    }
-
     fn stop_inner(&mut self) {
         let (lock, cvar) = &*self.stop_signal;
         if let Ok(mut stopped) = lock.lock() {
@@ -107,31 +105,31 @@ impl Drop for CourseWatcher {
 }
 
 fn compute_fingerprint(path: &Path) -> FileFingerprint {
-    let Ok(meta) = fs::metadata(path) else {
-        return FileFingerprint {
+    open_canonical_file(path)
+        .and_then(|file| {
+            let metadata = file.metadata()?;
+            let len = metadata.len();
+            let content_hash = if len > MAX_MARKDOWN_BYTES as u64 {
+                u64::MAX
+            } else {
+                let mut bytes = Vec::new();
+                file.take((MAX_MARKDOWN_BYTES + 1) as u64)
+                    .read_to_end(&mut bytes)?;
+                fnv1a_64(&bytes)
+            };
+            Ok(FileFingerprint {
+                exists: true,
+                len,
+                modified: metadata.modified().ok().map(|time| time.into_std()),
+                content_hash,
+            })
+        })
+        .unwrap_or(FileFingerprint {
             exists: false,
             len: 0,
             modified: None,
             content_hash: 0,
-        };
-    };
-
-    let modified = meta.modified().ok();
-    let len = meta.len();
-    let content_hash = if len > MAX_MARKDOWN_BYTES as u64 {
-        u64::MAX
-    } else {
-        fs::read(path)
-            .map(|bytes| fnv1a_64(&bytes))
-            .unwrap_or_default()
-    };
-
-    FileFingerprint {
-        exists: true,
-        len,
-        modified,
-        content_hash,
-    }
+        })
 }
 
 fn fnv1a_64(bytes: &[u8]) -> u64 {

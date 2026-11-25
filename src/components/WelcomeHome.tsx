@@ -22,6 +22,7 @@ export interface WelcomeHomeProps {
   builtinCourses: CourseSummary[];
   recents: RecentWorkspace[];
   onOpenBuiltinCourse: (courseId: string) => void;
+  onOpenRecentWorkspace: (workspacePath: string) => void;
   onOpenImportModal: () => void;
   onPlaceholderAction: (target: string) => void;
 }
@@ -32,6 +33,7 @@ export function WelcomeHome({
   builtinCourses,
   recents,
   onOpenBuiltinCourse,
+  onOpenRecentWorkspace,
   onOpenImportModal,
   onPlaceholderAction,
 }: WelcomeHomeProps) {
@@ -61,8 +63,8 @@ export function WelcomeHome({
     : messages.welcome.primaryCtaStart;
 
   const handlePrimaryCta = () => {
-    if (latestRecent && builtinById.has(latestRecent.courseId)) {
-      onOpenBuiltinCourse(latestRecent.courseId);
+    if (latestRecent) {
+      onOpenRecentWorkspace(latestRecent.workspacePath);
       return;
     }
     const firstBuiltin = builtinCourses[0];
@@ -234,13 +236,7 @@ export function WelcomeHome({
                   key={item.workspacePath}
                   type="button"
                   className="recent-row"
-                  onClick={() => {
-                    if (builtinById.has(item.courseId)) {
-                      onOpenBuiltinCourse(item.courseId);
-                    } else {
-                      onPlaceholderAction(item.courseTitle);
-                    }
-                  }}
+                  onClick={() => onOpenRecentWorkspace(item.workspacePath)}
                 >
                   <span className="muted" aria-hidden="true">
                     <FolderIcon />
