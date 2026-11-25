@@ -695,6 +695,8 @@ export const zhCN: Messages = {
       "Course Pack 清单（codelab.json）缺失或格式无效，请检查必填字段与版本号。",
     COURSE_CHECKS_INVALID:
       "验收规则文件（.codelab-checks.json）格式无效，请检查字段与检查类型。",
+    TEST_SUITE_ADAPTER_UNAVAILABLE:
+      "Test Suite {checkId} 需要受支持的 Course 语言。当前版本支持 Go Test Suite。",
     GIT_COURSE_FETCH_FAILED: "无法获取 “{url}”。请检查 Git 是否已安装且仓库可以访问。",
     GIT_COURSE_CACHE_FAILED: "无法读写 Git 课程缓存。",
     NO_ACTIVE_GIT_COURSE: "请先打开 Git Course Pack。",

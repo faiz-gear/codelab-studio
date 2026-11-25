@@ -1,35 +1,124 @@
-use crate::{CheckDiff, CheckResult, CheckStatus, TestCaseResult};
+use super::suite::{SuiteCaseId, SuiteReport};
+use crate::{CheckStatus, TestCaseResult};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct GoEvent {
-    action: String,
-    #[serde(default)]
-    package: String,
+    action: Option<String>,
+    import_path: Option<String>,
+    package: Option<String>,
     test: Option<String>,
     output: Option<String>,
     elapsed: Option<f64>,
 }
 
-pub(super) fn adapt(result: &mut CheckResult, required: &[String]) {
-    let mut tests = BTreeMap::<String, TestCaseResult>::new();
-    let mut package_finished = false;
-    for event in result
-        .raw_output
-        .lines()
-        .filter_map(|line| serde_json::from_str::<GoEvent>(line).ok())
-    {
+impl GoEvent {
+    fn is_test_action(&self) -> bool {
+        matches!(
+            self.action.as_deref(),
+            Some(
+                "start"
+                    | "run"
+                    | "pause"
+                    | "cont"
+                    | "pass"
+                    | "skip"
+                    | "fail"
+                    | "bench"
+                    | "output"
+                    | "attr"
+                    | "artifacts"
+                    | "build-output"
+                    | "build-fail"
+            )
+        )
+    }
+}
+
+pub(super) fn parse_report(output: &str) -> SuiteReport {
+    let mut tests = BTreeMap::<SuiteCaseId, TestCaseResult>::new();
+    let mut packages = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut complete = true;
+    for line in output.lines() {
+        if !line.trim_start().starts_with('{') {
+            continue;
+        }
+        let event = match serde_json::from_str::<GoEvent>(line) {
+            Ok(event) => event,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        };
+        match event.action.as_deref() {
+            Some("build-output") if event.import_path.is_some() => continue,
+            Some("build-fail") if event.import_path.is_some() => {
+                complete = false;
+                continue;
+            }
+            _ if event.package.is_none()
+                && event.import_path.is_none()
+                && !event.is_test_action() =>
+            {
+                continue;
+            }
+            _ => {}
+        }
+        let Some(package) = event
+            .package
+            .filter(|name| !name.is_empty() && !name.contains(':'))
+        else {
+            complete = false;
+            continue;
+        };
+        let action = event.action.as_deref().unwrap_or_default();
+        if action == "start" && event.test.is_none() {
+            complete &= packages.insert(package, BTreeSet::new()).is_none();
+            continue;
+        }
+        let Some(active) = packages.get_mut(&package) else {
+            complete = false;
+            continue;
+        };
+        let benchmark = match action {
+            "bench" => event.test.as_deref(),
+            "output" => event.output.as_deref().and_then(benchmark_timing_name),
+            _ => None,
+        };
+        // Successful benchmarks may emit a timing line in place of a test
+        // terminal event. They do not supply a passing test case.
+        if let Some(name) = benchmark
+            && let Some(test) = active_benchmark(active, name)
+        {
+            mark_benchmark_complete(&mut tests, &package, &test);
+            // A parent with subbenchmarks has no timing or terminal event.
+            for (index, _) in test.match_indices('/') {
+                let parent = &test[..index];
+                if active.remove(parent) {
+                    mark_benchmark_complete(&mut tests, &package, parent);
+                }
+            }
+            if action == "bench" || event.test.is_none() {
+                continue;
+            }
+        }
         let Some(test) = event.test else {
-            if matches!(event.action.as_str(), "pass" | "skip") {
-                package_finished = true;
+            match action {
+                "pass" | "skip" | "fail" => {
+                    complete &= active.is_empty() && action != "fail";
+                    packages.remove(&package);
+                }
+                "output" | "attr" | "artifacts" => {}
+                _ => complete = false,
             }
             continue;
         };
-        let name = format!("{}/{test}", event.package);
-        let case = tests.entry(name.clone()).or_insert_with(|| TestCaseResult {
-            name,
+        complete &= !test.is_empty();
+        let id = SuiteCaseId { package, test };
+        let case = tests.entry(id.clone()).or_insert_with(|| TestCaseResult {
+            name: id.joined_name(),
             status: CheckStatus::Running,
             duration_ms: 0,
             output: String::new(),
@@ -37,49 +126,76 @@ pub(super) fn adapt(result: &mut CheckResult, required: &[String]) {
         if let Some(output) = event.output {
             case.output.push_str(&output);
         }
-        match event.action.as_str() {
-            "pass" => case.status = CheckStatus::Passed,
-            "skip" => case.status = CheckStatus::Skipped,
-            "fail" => case.status = CheckStatus::Failed,
-            _ => {}
+        match action {
+            "run" => complete &= active.insert(id.test),
+            "pass" | "skip" | "fail" => {
+                complete &= active.remove(&id.test);
+                match action {
+                    "pass" if case.status != CheckStatus::Failed => {
+                        case.status = CheckStatus::Passed;
+                    }
+                    "skip" if case.status == CheckStatus::Running => {
+                        case.status = CheckStatus::Skipped;
+                    }
+                    "fail" => case.status = CheckStatus::Failed,
+                    _ => {}
+                }
+            }
+            "bench" if id.test.starts_with("Benchmark") => {
+                if case.status == CheckStatus::Running {
+                    case.status = CheckStatus::Skipped;
+                }
+            }
+            "pause" | "cont" => complete &= active.contains(&id.test),
+            "output" | "attr" | "artifacts" => {}
+            _ => complete = false,
         }
         if let Some(seconds) = event.elapsed {
-            case.duration_ms = (seconds * 1000.0) as u64;
+            case.duration_ms = case.duration_ms.saturating_add((seconds * 1000.0) as u64);
         }
     }
-    for test in tests.values().filter(|t| t.status == CheckStatus::Failed) {
-        result.diffs.push(CheckDiff {
-            label: test.name.clone(),
-            expected: "pass".into(),
-            actual: test.output.clone(),
-        });
+    SuiteReport {
+        completed_successfully: complete && packages.is_empty(),
+        tests,
     }
-    if result.status == CheckStatus::Passed
-        && (!package_finished
-            || tests
-                .values()
-                .any(|t| matches!(t.status, CheckStatus::Running | CheckStatus::Failed)))
+}
+
+fn benchmark_timing_name(output: &str) -> Option<&str> {
+    let mut columns = output
+        .trim_end()
+        .split('\t')
+        .map(str::trim)
+        .filter(|field| !field.is_empty());
+    let name = columns.next()?.trim();
+    let iterations = columns.next()?.parse::<u64>().ok()?;
+    (name.starts_with("Benchmark") && iterations > 0 && columns.next()?.ends_with(" ns/op"))
+        .then_some(name)
+}
+
+fn active_benchmark(active: &mut BTreeSet<String>, name: &str) -> Option<String> {
+    if !name.starts_with("Benchmark") {
+        return None;
+    }
+    if let Some(exact) = active.take(name) {
+        return Some(exact);
+    }
+    let (test, cpu_count) = name.rsplit_once('-')?;
+    cpu_count.parse::<u32>().ok()?;
+    active.take(test)
+}
+
+fn mark_benchmark_complete(
+    tests: &mut BTreeMap<SuiteCaseId, TestCaseResult>,
+    package: &str,
+    test: &str,
+) {
+    let id = SuiteCaseId {
+        package: package.to_owned(),
+        test: test.to_owned(),
+    };
+    if let Some(case) = tests.get_mut(&id)
+        && case.status == CheckStatus::Running
     {
-        result.status = CheckStatus::Failed;
-        result.diffs.push(CheckDiff {
-            label: "goTestReport".into(),
-            expected: "pass".into(),
-            actual: result.raw_output.clone(),
-        });
+        case.status = CheckStatus::Skipped;
     }
-    for name in required {
-        if !tests
-            .values()
-            .find(|test| test.name == *name || test.name.ends_with(&format!("/{name}")))
-            .is_some_and(|test| test.status == CheckStatus::Passed)
-        {
-            result.status = CheckStatus::Failed;
-            result.diffs.push(CheckDiff {
-                label: name.clone(),
-                expected: "pass".into(),
-                actual: "missingOrFailed".into(),
-            });
-        }
-    }
-    result.test_cases = tests.into_values().collect();
 }

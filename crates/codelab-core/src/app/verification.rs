@@ -28,10 +28,29 @@ impl App {
             .as_ref()
             .map(|s| s.step3_checks.as_slice())
             .unwrap_or_default();
+        let mut plan = Vec::new();
+        for check in checks.iter().filter(|c| c.kind != CheckKind::SelfCheck) {
+            let prepared = match verification::PreparedCheck::prepare(check, language) {
+                Ok(prepared) => {
+                    let cwd = check
+                        .cwd
+                        .as_deref()
+                        .or(chapter.default_cwd.as_deref())
+                        .unwrap_or(".");
+                    let directory =
+                        crate::workspace::command_cwd::directory(&workspace.files, cwd)?;
+                    Ok((prepared, directory))
+                }
+                Err(error) => Err(error),
+            };
+            plan.push((check.id.clone(), prepared));
+        }
+        let has_runnable_checks = plan.iter().any(|(_, prepared)| prepared.is_ok());
         let daemon = chapter
             .three_step
             .as_ref()
             .and_then(|s| s.requires_daemon.as_ref())
+            .filter(|_| has_runnable_checks)
             .map(|requirement| {
                 let course = &state.course()?.course;
                 let candidate = chapter
@@ -82,43 +101,25 @@ impl App {
                 Ok::<_, DomainError>((requirement.clone(), launch, directory))
             })
             .transpose()?;
-        let mut plan = Vec::new();
-        for check in checks.iter().filter(|c| c.kind != CheckKind::SelfCheck) {
-            plan.push((
-                check.clone(),
-                crate::workspace::command_cwd::directory(
-                    &workspace.files,
-                    check
-                        .cwd
-                        .as_deref()
-                        .or(chapter.default_cwd.as_deref())
-                        .unwrap_or("."),
-                )?,
-            ));
-        }
         let mut commands = plan
             .iter()
-            .filter(|(check, _)| check.kind != CheckKind::HttpAssert)
-            .map(|(check, dir)| {
-                (
-                    verification::command_block(check, language).command,
-                    dir.path.clone(),
-                )
+            .filter_map(|(_, prepared)| {
+                let (check, directory) = prepared.as_ref().ok()?;
+                Some((check.command()?.to_owned(), directory.path.clone()))
             })
             .collect::<Vec<_>>();
         if let Some((_, launch, directory)) = &daemon {
             commands.push((launch.block.command.clone(), directory.path.clone()));
         }
-        let mut block = crate::CommandBlock {
+        let block = crate::CommandBlock {
             id: format!("verification:{}", chapter.chapter_id),
             shell: "sh".into(),
-            command: plan
+            command: commands
                 .iter()
-                .filter(|(check, _)| check.kind != CheckKind::HttpAssert)
-                .map(|(check, _)| verification::command_block(check, language).command)
+                .map(|(script, _)| script.as_str())
                 .collect::<Vec<_>>()
                 .join("\n"),
-            cwd: None,
+            cwd: Some(workspace.summary.root.clone()),
             cwd_origin: crate::ValueOrigin::Explicit,
             mode: crate::CommandMode::Oneshot,
             mode_origin: crate::ValueOrigin::Explicit,
@@ -126,11 +127,6 @@ impl App {
             port: None,
             is_secondary: false,
         };
-        if let Some((_, launch, _)) = &daemon {
-            block.command.push('\n');
-            block.command.push_str(&launch.block.command);
-        }
-        block.cwd = Some(workspace.summary.root.clone());
         let launch = crate::execution::CommandLaunch {
             cwd: workspace.files.root.clone(),
             script: serde_json::to_string(&commands)
@@ -172,8 +168,8 @@ impl App {
         let mut next = workspace.progress.clone();
         let status = next.chapters.entry(chapter.chapter_id.clone()).or_default();
         status.last_check_results.clear();
-        for (check, _) in &plan {
-            status.last_check_results.push(running_result(&check.id));
+        for (check_id, _) in &plan {
+            status.last_check_results.push(running_result(check_id));
         }
         next.update_completion(&chapter, false);
         if let Err(error) = workspace.progress_store.save_atomic(&next) {
@@ -225,19 +221,19 @@ impl App {
                     }
                 })
                 .transpose();
-            for (check, directory) in plan {
+            for (check_id, prepared) in plan {
                 if cancelled.load(Ordering::Acquire) {
                     return;
                 }
-                let result = daemon_result
-                    .clone()
-                    .and_then(|_| {
-                        verification::run_command(&check, directory, &report, language, &cancelled)
+                let result = prepared
+                    .and_then(|(check, directory)| {
+                        daemon_result.clone()?;
+                        check.run(directory, &report, &cancelled)
                     })
                     .unwrap_or_else(|error| CheckResult {
                         error: Some(error),
                         status: CheckStatus::Failed,
-                        ..running_result(&check.id)
+                        ..running_result(&check_id)
                     });
                 if !with_state(&shared, &cancelled, |state| {
                     let workspace = state.active_workspace.as_mut().unwrap();
@@ -249,7 +245,7 @@ impl App {
                     if let Some(previous) = status
                         .last_check_results
                         .iter_mut()
-                        .find(|r| r.check_id == check.id)
+                        .find(|r| r.check_id == check_id)
                     {
                         *previous = result;
                     }

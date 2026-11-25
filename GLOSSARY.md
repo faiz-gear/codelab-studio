@@ -60,6 +60,12 @@ _Avoid_: Background Job, Server Tab, Worker
 隶属于某个 Exercise 的单条验收条件，包括可自动判定的客观校验与由学习者手动勾选的 Self-Check。
 _Avoid_: Rule, Assertion (when referring to the full check item)
 
+**Test Suite**:
+运行 Workspace 内可见的测试文件的自动化 Check。通过要求真实测试框架产出可解析的有效报告、至少一个用例通过，且 Course 指定的必选用例全部通过。
+
+**Command Test**:
+根据命令退出码和 Course 声明的输出条件判定的自动化 Check。
+
 **Self-Check**:
 由学习者自主评估勾选的非自动化 Check，默认作为引导提示而不阻塞自动验收达成 Exercise 完成态（除非课程显式标为必选）。
 _Avoid_: Manual Test, Checklist Note
