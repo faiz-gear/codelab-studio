@@ -791,6 +791,67 @@ fn shutdown_reclaims_an_active_headless_service_and_reopening_recovers_interrupt
 }
 
 #[test]
+fn reloading_the_same_course_recovers_interrupted_checks_in_the_retained_workspace() {
+    use std::net::TcpStream;
+
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let (temp, app, id) = fixture(
+        json!([{"chapterId":"ex-1","checks":[{"id":"long","title":"owned process","type":"command_test","command":service_command(port,"active"),"timeoutSec":60}]}]),
+        "# Course\n\n## Exercise 1\n",
+    );
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let until = Instant::now() + Duration::from_secs(10);
+    while TcpStream::connect(("127.0.0.1", port)).is_err() {
+        assert!(Instant::now() < until, "verification process did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let events = app.subscribe();
+    let response = send(&app, "reloadActiveCourse", Value::Null);
+    assert_eq!(response["type"], "loadedCourse", "{response}");
+    let event = events.recv_timeout(Duration::from_secs(1)).unwrap();
+    let codelab_core::AppEvent::ProgressUpdated(progress) = event else {
+        panic!("expected recovered progress event, got {event:?}");
+    };
+    assert_eq!(
+        progress.chapters["ex-1"].last_check_results[0].status,
+        codelab_core::CheckStatus::Failed
+    );
+
+    let progress = send(&app, "getProgress", json!({"workspaceId":id}));
+    let result = &progress["payload"]["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "failed");
+    assert_eq!(
+        result["error"]["details"]["reasonCode"],
+        "VERIFICATION_INTERRUPTED"
+    );
+    assert_eq!(progress["payload"]["runningChapterId"], Value::Null);
+
+    drop(app);
+    let reopened = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    send(
+        &reopened,
+        "openRecentWorkspace",
+        json!({"path":temp.path().join("work")}),
+    );
+    let persisted = send(&reopened, "getProgress", json!({"workspaceId":id}));
+    assert_eq!(
+        persisted["payload"]["chapters"]["ex-1"]["lastCheckResults"][0]["status"],
+        "failed"
+    );
+}
+
+#[test]
 fn contradictory_duplicate_results_are_quarantined_on_reopen() {
     let (temp, app, _id) = fixture(
         json!([{"chapterId":"ex-1","checks":[]}]),

@@ -68,6 +68,19 @@ pub struct CheckResult {
     pub test_cases: Vec<TestCaseResult>,
     pub error: Option<DomainError>,
 }
+impl CheckResult {
+    pub(crate) fn running(check_id: impl Into<String>) -> Self {
+        Self {
+            check_id: check_id.into(),
+            status: CheckStatus::Running,
+            duration_ms: 0,
+            diffs: Vec::new(),
+            raw_output: String::new(),
+            test_cases: Vec::new(),
+            error: None,
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChapterProgress {

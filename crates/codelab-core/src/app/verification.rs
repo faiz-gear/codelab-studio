@@ -1,6 +1,6 @@
 use super::*;
 use crate::execution::verification::{self, VerificationTask};
-use crate::{Chapter, ChapterKind, CheckKind, CheckResult, CheckStatus, CompletionState};
+use crate::{Chapter, ChapterKind, CheckKind, CheckResult, CheckStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
@@ -159,17 +159,11 @@ impl App {
             }));
         }
         let workspace = state.active_workspace.as_mut().unwrap();
-        let mut next = workspace.progress.clone();
-        let status = next.chapters.entry(chapter.chapter_id.clone()).or_default();
-        status.last_check_results.clear();
-        for (check_id, _) in &plan {
-            status.last_check_results.push(running_result(check_id));
-        }
-        next.update_completion(&chapter, false);
-        if let Err(error) = workspace.progress_store.save_atomic(&next) {
+        if let Err(error) =
+            workspace.start_checks(&chapter, plan.iter().map(|(check_id, _)| check_id.as_str()))
+        {
             return Ok(AppResponse::CommandFailed(CommandFailed { error, saved }));
         }
-        workspace.progress = next;
         state.verification = None;
         let cancelled = Arc::new(AtomicBool::new(false));
         state.verification = Some(VerificationTask {
@@ -227,21 +221,30 @@ impl App {
                     .unwrap_or_else(|error| CheckResult {
                         error: Some(error),
                         status: CheckStatus::Failed,
-                        ..running_result(&check_id)
+                        ..CheckResult::running(&check_id)
                     });
                 if with_state(&shared, &cancelled, |state| {
                     let workspace = state.active_workspace.as_mut().unwrap();
-                    let status = workspace
-                        .progress
-                        .chapters
-                        .get_mut(&chapter.chapter_id)
-                        .unwrap();
-                    if let Some(previous) = status
-                        .last_check_results
-                        .iter_mut()
-                        .find(|r| r.check_id == check_id)
-                    {
-                        *previous = result;
+                    let persistence = workspace.record_check_result(
+                        &chapter.chapter_id,
+                        &check_id,
+                        result.clone(),
+                    );
+                    if let Err(error) = persistence {
+                        workspace.record_unsaved_check_result(
+                            &chapter.chapter_id,
+                            &check_id,
+                            result,
+                        );
+                        workspace.record_unsaved_check_result(
+                            &chapter.chapter_id,
+                            "persistence",
+                            CheckResult {
+                                error: Some(error),
+                                status: CheckStatus::Failed,
+                                ..CheckResult::running("persistence")
+                            },
+                        );
                     }
                     emit_to_subscribers(
                         &subscribers,
@@ -255,22 +258,16 @@ impl App {
             }
             with_state(&shared, &cancelled, |state| {
                 let workspace = state.active_workspace.as_mut().unwrap();
-                let prior_completion =
-                    workspace.progress.chapters[&chapter.chapter_id].completion_state;
-                workspace.progress.update_completion(&chapter, false);
-                // Persist the completion separately from the latest Check Result.
-                if let Err(error) = workspace.progress_store.save_atomic(&workspace.progress) {
-                    let status = workspace
-                        .progress
-                        .chapters
-                        .get_mut(&chapter.chapter_id)
-                        .unwrap();
-                    status.completion_state = prior_completion;
-                    status.last_check_results.push(CheckResult {
-                        error: Some(error),
-                        status: CheckStatus::Failed,
-                        ..running_result("persistence")
-                    });
+                if let Err(error) = workspace.finish_checks(&chapter) {
+                    workspace.record_unsaved_check_result(
+                        &chapter.chapter_id,
+                        "persistence",
+                        CheckResult {
+                            error: Some(error),
+                            status: CheckStatus::Failed,
+                            ..CheckResult::running("persistence")
+                        },
+                    );
                 }
                 if let Some(task) = &mut state.verification {
                     task.chapter_id = None;
@@ -281,16 +278,15 @@ impl App {
                         .active_workspace
                         .as_mut()
                         .unwrap()
-                        .progress
-                        .chapters
-                        .get_mut(&chapter.chapter_id)
-                        .unwrap()
-                        .last_check_results
-                        .push(CheckResult {
-                            error: Some(error),
-                            status: CheckStatus::Failed,
-                            ..running_result("recentsPersistence")
-                        });
+                        .record_unsaved_check_result(
+                            &chapter.chapter_id,
+                            "recentsPersistence",
+                            CheckResult {
+                                error: Some(error),
+                                status: CheckStatus::Failed,
+                                ..CheckResult::running("recentsPersistence")
+                            },
+                        );
                     emit_to_subscribers(
                         &subscribers,
                         AppEvent::ProgressUpdated(progress_snapshot(state)),
@@ -305,72 +301,33 @@ impl App {
         }))
     }
     pub(super) fn set_self_check(&self, request: SetSelfCheck) -> Result<AppResponse, DomainError> {
-        self.change_progress(&request.target, |progress, chapter| {
-            let check = chapter
-                .three_step
-                .as_ref()
-                .and_then(|s| {
-                    s.step3_checks
-                        .iter()
-                        .find(|c| c.id == request.check_id && c.kind == CheckKind::SelfCheck)
-                })
-                .ok_or_else(|| DomainError::new(ErrorCode::CheckNotFound))?;
-            progress
-                .chapters
-                .entry(chapter.chapter_id.clone())
-                .or_default()
-                .self_checks
-                .insert(check.id.clone(), request.checked);
-            progress.update_completion(chapter, false);
-            Ok(())
-        })
+        let mut state = self.lock_state();
+        let chapter = exercise(&state, &request.target)?.clone();
+        state.active_workspace.as_mut().unwrap().set_self_check(
+            &chapter,
+            &request.check_id,
+            request.checked,
+        )?;
+        self.publish_progress(&mut state)
     }
     pub(super) fn complete_exercise(
         &self,
         target: ExerciseTarget,
     ) -> Result<AppResponse, DomainError> {
-        self.change_progress(&target, |progress, chapter| {
-            if chapter.three_step.as_ref().is_some_and(|s| {
-                s.step3_checks
-                    .iter()
-                    .any(|c| c.kind != CheckKind::SelfCheck)
-            }) {
-                return Err(DomainError::new(ErrorCode::ExerciseCompletionBlocked));
-            }
-            progress.update_completion(chapter, true);
-            if progress.chapters[&chapter.chapter_id].completion_state != CompletionState::Completed
-            {
-                return Err(DomainError::new(ErrorCode::ExerciseCompletionBlocked));
-            }
-            Ok(())
-        })
-    }
-    fn change_progress(
-        &self,
-        target: &ExerciseTarget,
-        change: impl FnOnce(
-            &mut crate::workspace::progress::Progress,
-            &Chapter,
-        ) -> Result<(), DomainError>,
-    ) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
-        state.workspace(target.workspace_id)?;
-        let chapter = exercise(&state, target)?.clone();
-        let workspace = state.active_workspace.as_mut().unwrap();
-        let mut next = workspace.progress.clone();
-        change(&mut next, &chapter)?;
-        workspace.progress_store.save_atomic(&next)?;
-        workspace.progress = next;
+        let chapter = exercise(&state, &target)?.clone();
+        state
+            .active_workspace
+            .as_mut()
+            .unwrap()
+            .complete_exercise(&chapter)?;
         self.publish_progress(&mut state)
     }
     pub(super) fn reset_progress(&self, id: u64) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
         state.workspace(id)?;
         state.verification = None;
-        let workspace = state.active_workspace.as_mut().unwrap();
-        let next = Default::default();
-        workspace.progress_store.save_atomic(&next)?;
-        workspace.progress = next;
+        state.active_workspace.as_mut().unwrap().reset_progress()?;
         self.publish_progress(&mut state)
     }
     fn publish_progress(&self, state: &mut AppState) -> Result<AppResponse, DomainError> {
@@ -395,29 +352,17 @@ fn exercise<'a>(state: &'a AppState, target: &ExerciseTarget) -> Result<&'a Chap
         .find(|c| c.chapter_id == target.chapter_id && c.kind == ChapterKind::Exercise)
         .ok_or_else(|| DomainError::new(ErrorCode::CheckNotFound))
 }
-fn progress_snapshot(state: &AppState) -> LearningProgress {
+pub(super) fn progress_snapshot(state: &AppState) -> LearningProgress {
     let workspace = state.active_workspace.as_ref().unwrap();
-    let course = &state.active_course.as_ref().unwrap().course;
     LearningProgress {
         workspace_id: workspace.summary.id,
-        chapters: workspace.progress.chapters.clone(),
-        completed_exercises: workspace.progress.completed_for(course),
-        total_exercises: course.total_exercises,
+        chapters: workspace.progress_chapters(),
+        completed_exercises: workspace.completed_exercises(),
+        total_exercises: state.active_course.as_ref().unwrap().course.total_exercises,
         running_chapter_id: state
             .verification
             .as_ref()
             .and_then(|task| task.chapter_id.clone()),
-    }
-}
-fn running_result(id: &str) -> CheckResult {
-    CheckResult {
-        check_id: id.into(),
-        status: CheckStatus::Running,
-        duration_ms: 0,
-        diffs: Vec::new(),
-        raw_output: String::new(),
-        test_cases: Vec::new(),
-        error: None,
     }
 }
 fn with_state<T>(
@@ -443,11 +388,10 @@ fn publish_progress_snapshot(
 ) -> Result<LearningProgress, DomainError> {
     let course = &state.active_course.as_ref().unwrap().course;
     let workspace = state.active_workspace.as_mut().unwrap();
-    workspace.completed_exercises = workspace.progress.completed_for(course);
     let mut recents = state.recents.clone();
     for recent in &mut recents {
         if recent.workspace_path == workspace.summary.root {
-            recent.completed_exercises = workspace.completed_exercises;
+            recent.completed_exercises = workspace.completed_exercises();
             recent.total_exercises = course.total_exercises;
         }
     }

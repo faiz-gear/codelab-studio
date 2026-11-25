@@ -8,6 +8,7 @@ pub(crate) mod progress;
 mod starter;
 mod watcher;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -31,9 +32,10 @@ use crate::{DomainError, ErrorCode};
 
 pub(crate) struct Workspace {
     pub summary: WorkspaceSummary,
-    pub completed_exercises: u32,
-    pub progress: progress::Progress,
-    pub progress_store: crate::storage::JsonStore<progress::Progress>,
+    completed_exercises: u32,
+    progress: progress::Progress,
+    progress_course: progress::ProgressCourse,
+    progress_store: crate::storage::JsonStore<progress::Progress>,
     last_saved_at: Arc<Mutex<DateTime<Utc>>>,
     pub files: WorkspacePaths,
     pub command_cwds: command_cwd::CommandCwds,
@@ -142,6 +144,7 @@ impl Workspace {
             },
             completed_exercises: metadata.completed_exercises,
             progress: metadata.progress,
+            progress_course: metadata.progress_course,
             progress_store: metadata.progress_store,
             last_saved_at,
             files,
@@ -184,8 +187,111 @@ impl Workspace {
         Ok(file)
     }
 
-    pub fn completed_for(&self, course: &LoadedCourse) -> Result<u32, DomainError> {
-        metadata::completed_for(&self.files, course)
+    pub fn completed_exercises(&self) -> u32 {
+        self.completed_exercises
+    }
+
+    pub fn progress_chapters(&self) -> BTreeMap<String, crate::ChapterProgress> {
+        self.progress.chapters.clone()
+    }
+
+    fn update_progress(
+        &mut self,
+        update: impl FnOnce(&mut progress::Progress) -> Result<(), DomainError>,
+    ) -> Result<(), DomainError> {
+        self.update_progress_for_course(self.progress_course.clone(), update)
+    }
+
+    fn update_progress_for_course(
+        &mut self,
+        course: progress::ProgressCourse,
+        update: impl FnOnce(&mut progress::Progress) -> Result<(), DomainError>,
+    ) -> Result<(), DomainError> {
+        let mut next = self.progress.clone();
+        update(&mut next)?;
+        self.progress_store.save_atomic(&next)?;
+        self.completed_exercises = next.completed_for(&course);
+        self.progress = next;
+        self.progress_course = course;
+        Ok(())
+    }
+
+    pub fn start_checks<'a>(
+        &mut self,
+        chapter: &crate::Chapter,
+        check_ids: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), DomainError> {
+        self.update_progress(|progress| {
+            progress.start_checks(chapter, check_ids);
+            Ok(())
+        })
+    }
+
+    pub fn record_check_result(
+        &mut self,
+        chapter_id: &str,
+        check_id: &str,
+        result: crate::CheckResult,
+    ) -> Result<(), DomainError> {
+        self.update_progress(|progress| {
+            progress.record_check_result(chapter_id, check_id, result);
+            Ok(())
+        })
+    }
+
+    pub fn finish_checks(&mut self, chapter: &crate::Chapter) -> Result<(), DomainError> {
+        self.update_progress(|progress| {
+            progress.finish_checks(chapter);
+            Ok(())
+        })
+    }
+
+    pub fn set_self_check(
+        &mut self,
+        chapter: &crate::Chapter,
+        check_id: &str,
+        checked: bool,
+    ) -> Result<(), DomainError> {
+        self.update_progress(|progress| progress.set_self_check(chapter, check_id, checked))
+    }
+
+    pub fn complete_exercise(&mut self, chapter: &crate::Chapter) -> Result<(), DomainError> {
+        self.update_progress(|progress| progress.complete_exercise(chapter))
+    }
+
+    pub fn reset_progress(&mut self) -> Result<(), DomainError> {
+        self.update_progress(|progress| {
+            progress.reset();
+            Ok(())
+        })
+    }
+
+    pub fn record_unsaved_check_result(
+        &mut self,
+        chapter_id: &str,
+        check_id: &str,
+        result: crate::CheckResult,
+    ) {
+        self.progress
+            .record_check_result(chapter_id, check_id, result);
+        self.completed_exercises = self.progress.completed_for(&self.progress_course);
+    }
+
+    pub fn prepare_progress_for_course(
+        &mut self,
+        course: &LoadedCourse,
+    ) -> Result<bool, DomainError> {
+        let next_course = progress::ProgressCourse::from_course(course);
+        if !self.progress.has_interrupted_checks() {
+            self.completed_exercises = self.progress.completed_for(&next_course);
+            self.progress_course = next_course;
+            return Ok(false);
+        }
+        self.update_progress_for_course(next_course, |progress| {
+            progress.recover_interrupted();
+            Ok(())
+        })?;
+        Ok(true)
     }
 
     pub fn set_trusted(&self, trusted: bool) {
