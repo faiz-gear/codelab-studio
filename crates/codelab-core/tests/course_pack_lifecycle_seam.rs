@@ -327,6 +327,10 @@ fn allow_cleanup(directory: &Path) {
                 fs::Permissions::from_mode(original.mode() | 0o200)
             };
             #[cfg(windows)]
+            #[allow(
+                clippy::permissions_set_readonly_false,
+                reason = "Windows only clears the read-only attribute for fixture cleanup"
+            )]
             let permissions = {
                 let mut permissions = original;
                 permissions.set_readonly(false);
