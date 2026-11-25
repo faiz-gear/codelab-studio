@@ -65,12 +65,13 @@ jobs:
         run: |
           printf 'dir=%s\n' "$(go env GOCACHE | tr -d '\r')" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "$(go env GOVERSION | tr -d '\r')" >> "$GITHUB_OUTPUT"
+          printf 'image=%s\n' "${ImageVersion:-default}" >> "$GITHUB_OUTPUT"
 
       - name: Cache Go build artifacts
         uses: actions/cache@v6
         with:
           path: ${{ steps.go-cache.outputs.dir }}
-          key: go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache.outputs.version }}-${{ env.ImageVersion }}
+          key: go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache.outputs.version }}-${{ steps.go-cache.outputs.image }}
           restore-keys: |
             go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache.outputs.version }}-
 
