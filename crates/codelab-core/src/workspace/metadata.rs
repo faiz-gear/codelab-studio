@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use cap_fs_ext::DirExt;
@@ -7,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use super::command_cwd::{CommandCwds, valid_cwds};
 use super::paths::{METADATA_DIR, WorkspacePaths};
+use super::progress::Progress;
 use crate::course::{CourseSource, LoadedCourse, Starter, git_pack};
 use crate::storage::JsonStore;
-use crate::{ChapterKind, DomainError, ErrorCode, StorageRecoveryNotice, StoreKind};
+use crate::{DomainError, ErrorCode, StorageRecoveryNotice, StoreKind};
 
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,26 +22,6 @@ struct Binding {
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Progress {
-    chapters: BTreeMap<String, ChapterProgress>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ChapterProgress {
-    completion_state: CompletionState,
-}
-
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum CompletionState {
-    NotStarted,
-    InProgress,
-    Completed,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct Metrics {
     course_opened: u64,
 }
@@ -49,6 +29,8 @@ struct Metrics {
 pub(super) struct WorkspaceMetadata {
     pub recovery_notices: Vec<StorageRecoveryNotice>,
     pub completed_exercises: u32,
+    pub progress: Progress,
+    pub progress_store: JsonStore<Progress>,
     pub command_cwds: CommandCwds,
     pub git_starter_snapshot: Option<String>,
 }
@@ -122,9 +104,24 @@ impl WorkspaceMetadata {
                 .git_starter_snapshot
                 .or_else(|| git_pack::snapshot_key(starter).map(str::to_owned));
         }
-        let progress = progress_store.load_or_recover(|progress: &Progress| {
-            progress.chapters.keys().all(|id| !id.trim().is_empty())
-        })?;
+        let mut progress =
+            progress_store.load_or_recover(|progress: &Progress| progress.valid())?;
+        let mut interrupted = false;
+        for chapter in progress.value.chapters.values_mut() {
+            for result in &mut chapter.last_check_results {
+                if result.status == crate::CheckStatus::Running {
+                    result.status = crate::CheckStatus::Failed;
+                    result.error = Some(
+                        crate::DomainError::new(crate::ErrorCode::ExecutionFailed)
+                            .with_detail("reasonCode", "VERIFICATION_INTERRUPTED"),
+                    );
+                    interrupted = true;
+                }
+            }
+        }
+        if interrupted {
+            progress_store.save_atomic(&progress.value)?;
+        }
         let command_cwds = command_cwd_store.load_or_recover(valid_cwds)?;
         let mut metrics = metrics_store.load_or_recover(|_: &Metrics| true)?;
 
@@ -157,28 +154,14 @@ impl WorkspaceMetadata {
             .flatten()
             .collect(),
             completed_exercises,
+            progress: progress.value,
+            progress_store,
             git_starter_snapshot: bound.git_starter_snapshot,
             command_cwds: CommandCwds {
                 store: command_cwd_store,
                 values: command_cwds.value,
             },
         })
-    }
-}
-
-impl Progress {
-    fn completed_for(&self, course: &LoadedCourse) -> u32 {
-        course
-            .chapters
-            .iter()
-            .filter(|chapter| {
-                chapter.kind == ChapterKind::Exercise
-                    && self
-                        .chapters
-                        .get(&chapter.chapter_id)
-                        .is_some_and(|status| status.completion_state == CompletionState::Completed)
-            })
-            .count() as u32
     }
 }
 
@@ -196,7 +179,7 @@ pub(super) fn completed_for(
         StoreKind::Progress,
     )
     .scoped(Arc::new(dir))
-    .load_or_recover(|progress| progress.chapters.keys().all(|id| !id.trim().is_empty()))?;
+    .load_or_recover(|progress| progress.valid())?;
     Ok(progress.value.completed_for(course))
 }
 

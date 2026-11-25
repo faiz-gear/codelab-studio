@@ -29,6 +29,11 @@ export interface CoursePlaceholderText {
 }
 
 export interface Messages {
+  verification: {
+    run: string; running: string; results: string; empty: string; expected: string; actual: string;
+    raw: string; complete: string; completed: string; reset: string; resetTitle: string; resetDetail: string; export: string;
+    required: string; status: Record<"running" | "passed" | "failed" | "timedOut" | "skipped", string>;
+  };
   skipToMain: string;
   brandTitle: string;
   topbar: {
@@ -316,6 +321,11 @@ export interface Messages {
 }
 
 export const zhCN: Messages = {
+  verification: {
+    run: "运行验收", running: "验收中…", results: "验收结果", empty: "运行验收后在这里查看结果。", expected: "预期", actual: "实际",
+    raw: "原始输出", complete: "标记完成", completed: "已完成", reset: "重置进度", resetTitle: "重置学习进度", resetDetail: "清除当前 Workspace 的完成记录和验收结果。代码会保留。", export: "导出学习记录",
+    required: "必选", status: { running: "运行中", passed: "通过", failed: "失败", timedOut: "超时", skipped: "已跳过" },
+  },
   skipToMain: "跳到主内容",
   brandTitle: "CodeLab Studio",
   topbar: {
@@ -702,6 +712,11 @@ export const zhCN: Messages = {
     RUNTIME_DOWNLOAD_FAILED: "运行时下载失败，请检查网络后重试。",
     RUNTIME_INTEGRITY_FAILED: "运行时校验失败，请重试下载。",
     RUNTIME_INSTALL_FAILED: "运行时安装失败，请检查磁盘空间与目录权限后重试。",
+    VERIFICATION_BUSY: "验收正在运行，请等待当前验收结束。",
+    CHECK_NOT_FOUND: "找不到此练习或验收项，请重新加载课程。",
+    EXERCISE_COMPLETION_BLOCKED: "请先通过自动验收并勾选必选自查项。",
+    DAEMON_PORT_CONFLICT: "端口 {port} 已被外部进程占用。请在外部停止该服务或更改课程端口后重试。",
+    DAEMON_NOT_READY: "服务未就绪。请检查服务命令、端口与服务终端输出后重试。",
     EXECUTION_FAILED: "终端操作失败。",
     COMMAND_BLOCK_NOT_FOUND: "该命令块已不可用。请重新加载课程后重试。",
     COMMAND_CWD_INVALID: "工作目录「{path}」必须存在于当前 Workspace 内。",

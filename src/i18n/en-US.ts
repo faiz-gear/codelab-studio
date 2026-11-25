@@ -1,6 +1,11 @@
 import type { Messages } from "./zh-CN";
 
 export const enUS: Messages = {
+  verification: {
+    run: "Run checks", running: "Checking…", results: "Check results", empty: "Run checks to see results here.", expected: "Expected", actual: "Actual",
+    raw: "Raw output", complete: "Mark complete", completed: "Completed", reset: "Reset progress", resetTitle: "Reset learning progress", resetDetail: "Clear completion records and check results for this Workspace. Your code is kept.", export: "Export learning record",
+    required: "Required", status: { running: "Running", passed: "Passed", failed: "Failed", timedOut: "Timed out", skipped: "Skipped" },
+  },
   skipToMain: "Skip to main content",
   brandTitle: "CodeLab Studio",
   topbar: {
@@ -397,6 +402,11 @@ export const enUS: Messages = {
     RUNTIME_DOWNLOAD_FAILED: "The runtime download failed. Check your connection and retry.",
     RUNTIME_INTEGRITY_FAILED: "The runtime failed its integrity check. Retry the download.",
     RUNTIME_INSTALL_FAILED: "Could not install the runtime. Check available disk space and directory permissions, then retry.",
+    VERIFICATION_BUSY: "Checks are already running. Wait for them to finish.",
+    CHECK_NOT_FOUND: "This Exercise or Check could not be found. Reload the Course.",
+    EXERCISE_COMPLETION_BLOCKED: "Pass the automated Checks and select the required Self-Checks first.",
+    DAEMON_PORT_CONFLICT: "Port {port} is in use by an external process. Stop that service outside CodeLab or change the Course port, then retry.",
+    DAEMON_NOT_READY: "The service is not ready. Check its command, port, and service terminal output, then retry.",
     EXECUTION_FAILED: "The terminal operation failed.",
     COMMAND_BLOCK_NOT_FOUND: "This Command Block is no longer available. Reload the Course and try again.",
     COMMAND_CWD_INVALID: "The working directory “{path}” must exist within this Workspace.",

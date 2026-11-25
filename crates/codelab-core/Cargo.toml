@@ -14,6 +14,7 @@ serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 url = "2"
+tokio = { version = "1", features = ["rt", "time"] }
 flate2 = "1"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls", "system-proxy"] }
 sha2 = "0.10"

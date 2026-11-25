@@ -101,6 +101,14 @@ struct RawCheckSpec {
     cwd: Option<String>,
     command: Option<String>,
     request: Option<RawHttpRequest>,
+    #[serde(default)]
+    expect: super::model::HttpExpectation,
+    timeout_sec: Option<u64>,
+    expect_exit_code: Option<u32>,
+    #[serde(default)]
+    forbid_output: Vec<String>,
+    #[serde(default)]
+    require_tests: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +116,9 @@ struct RawCheckSpec {
 struct RawHttpRequest {
     method: Option<String>,
     url: Option<String>,
+    #[serde(default)]
+    headers: std::collections::BTreeMap<String, String>,
+    body: Option<String>,
 }
 
 pub(crate) fn load_local_markdown_file(raw_path: &str) -> Result<OpenedCourse, DomainError> {
@@ -487,6 +498,9 @@ fn parse_checks_bytes(
                     return Err(check_field_error("EMPTY_REQUIRED_FIELD", field(missing)));
                 }
             }
+            if c.timeout_sec.is_some_and(|v| v == 0 || v > 600) {
+                return Err(check_field_error("INVALID_TIMEOUT", field("timeoutSec")));
+            }
             let required = c.required.unwrap_or(kind != CheckKind::SelfCheck);
             checks.push(CourseCheckSpec {
                 id: c.id,
@@ -497,6 +511,17 @@ fn parse_checks_bytes(
                 command: c.command,
                 method: c.request.as_ref().and_then(|r| r.method.clone()),
                 url: c.request.as_ref().and_then(|r| r.url.clone()),
+                headers: c
+                    .request
+                    .as_ref()
+                    .map(|r| r.headers.clone())
+                    .unwrap_or_default(),
+                body: c.request.as_ref().and_then(|r| r.body.clone()),
+                expect: c.expect,
+                timeout_sec: c.timeout_sec,
+                expect_exit_code: c.expect_exit_code,
+                forbid_output: c.forbid_output,
+                require_tests: c.require_tests,
             });
         }
 

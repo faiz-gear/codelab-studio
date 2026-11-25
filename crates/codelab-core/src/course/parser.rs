@@ -653,6 +653,13 @@ fn build_three_step_projection<'a>(
                 command: None,
                 method: None,
                 url: None,
+                headers: Default::default(),
+                body: None,
+                expect: Default::default(),
+                timeout_sec: None,
+                expect_exit_code: None,
+                forbid_output: Vec::new(),
+                require_tests: Vec::new(),
             })
             .collect()
     };

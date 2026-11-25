@@ -4,6 +4,16 @@ use crate::model::CourseLanguage;
 
 pub const MAX_MARKDOWN_BYTES: usize = 5 * 1024 * 1024;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpExpectation {
+    pub status: Option<u16>,
+    #[serde(default)]
+    pub headers: std::collections::BTreeMap<String, String>,
+    pub body_contains: Option<String>,
+    pub body_equals: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CourseSource {
@@ -113,6 +123,17 @@ pub struct CourseCheckSpec {
     pub command: Option<String>,
     pub method: Option<String>,
     pub url: Option<String>,
+    #[serde(default)]
+    pub headers: std::collections::BTreeMap<String, String>,
+    pub body: Option<String>,
+    #[serde(default)]
+    pub expect: HttpExpectation,
+    pub timeout_sec: Option<u64>,
+    pub expect_exit_code: Option<u32>,
+    #[serde(default)]
+    pub forbid_output: Vec<String>,
+    #[serde(default)]
+    pub require_tests: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

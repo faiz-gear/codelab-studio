@@ -458,6 +458,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "tree-sitter",
  "tree-sitter-bash",
  "url",

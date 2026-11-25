@@ -1,3 +1,6 @@
+import { useVerification } from "../verification/useVerification";
+import { CheckResults } from "../verification/CheckResults";
+import { WorkspaceDialog } from "../workspace/WorkspaceDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   courseSourceLocation,
@@ -90,6 +93,9 @@ export function CourseWorkbench({
   stage,
   onReturnToDraft,
 }: CourseWorkbenchProps) {
+  const verification = useVerification(course.trusted ? client : undefined, session, onExecutionError);
+  const [resultsOpen, setResultsOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -103,7 +109,7 @@ export function CourseWorkbench({
 
   function renderCommand(command: CommandBlock) {
     return <CommandBlockCard key={command.id} command={command} messages={messages} onCopy={onCopyCommand}
-      override={execution.cwd[command.id]} disabled={execution.busy || switching}
+      override={execution.cwd[command.id]} disabled={execution.busy || switching || !!verification.progress?.runningChapterId}
       onRun={workbench ? () => void workbench.run({ commandId: command.id }).catch(onExecutionError) : undefined}
       onChangeCwd={workbench ? () => setCwdDialog({ workbench, command }) : undefined} />;
   }
@@ -119,6 +125,8 @@ export function CourseWorkbench({
   }, [course.chapters, activeChapterId]);
 
   const activeChapter: Chapter | undefined = course.chapters[activeIndex];
+  const chapterProgress = activeChapter ? verification.progress?.chapters[activeChapter.chapterId] : undefined;
+  const checkResults = chapterProgress?.lastCheckResults ?? [];
   const prevChapter = activeIndex > 0 ? course.chapters[activeIndex - 1] : null;
   const nextChapter =
     activeIndex + 1 < course.chapters.length
@@ -564,17 +572,28 @@ export function CourseWorkbench({
                           />
                         ) : null}
 
-                        {threeStep.step3Checks.map((check) => (
-                          <div key={check.id} className="v-item">
-                            <div className="v-row">
-                              <span className="v-check" aria-hidden="true" />
-                              <span className="v-text">{check.title}</span>
-                              <span className="badge badge--neutral v-kind">
-                                {t.checkKinds[check.kind]}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                        {threeStep.step3Checks.map((check) => {
+                          const result = checkResults.find(r=>r.checkId===check.id);
+                          return <div key={check.id} className="v-item"><div className="v-row">
+                            {check.kind === "selfCheck" ? <input type="checkbox" aria-label={check.title}
+                              disabled={!session || switching || verification.busy}
+                              checked={chapterProgress?.selfChecks[check.id] ?? false}
+                              onChange={event=>session && void verification.update({type:"setSelfCheck",payload:{workspaceId:session.workspace.id,chapterId:activeChapter.chapterId,checkId:check.id,checked:event.target.checked}})} />
+                              : <span className={`badge badge--${result?.status === "passed" ? "success" : result?.status === "failed" || result?.status === "timedOut" ? "danger" : "neutral"}`}>{result ? messages.verification.status[result.status] : t.checkKinds[check.kind]}</span>}
+                            <span className="v-text">{check.title}{check.kind === "selfCheck" && check.required && <span className="badge badge--neutral">{messages.verification.required}</span>}</span>
+                            {result && <span className="mono">{result.durationMs} ms</span>}
+                          </div></div>;
+                        })}
+                        <div className="verification-actions">
+                          {threeStep.step3Checks.some(c=>c.kind!=="selfCheck") ? <button className="btn btn--primary btn--sm" type="button"
+                            disabled={!session || switching || verification.busy || !!verification.progress?.runningChapterId}
+                            onClick={()=>{setResultsOpen(true); void verification.run(activeChapter.chapterId);}}>
+                            {verification.progress?.runningChapterId === activeChapter.chapterId ? messages.verification.running : messages.verification.run}
+                          </button> : <button className="btn btn--secondary btn--sm" type="button"
+                            disabled={!session || switching || verification.busy || chapterProgress?.completionState === "completed"}
+                            onClick={()=>session && void verification.update({type:"completeExercise",payload:{workspaceId:session.workspace.id,chapterId:activeChapter.chapterId}})}>{messages.verification.complete}</button>}
+                          {chapterProgress?.completionState === "completed" && <span className="verification-completed">{messages.verification.completed}</span>}
+                        </div>
                       </div>
                     </section>
                   ) : null}
@@ -628,6 +647,11 @@ export function CourseWorkbench({
                       renderCommand(cmd)
                     );
                   })}
+                  {activeChapter.kind === "exercise" && <div className="verification-actions">
+                    <button type="button" className="btn btn--secondary btn--sm" disabled={!session || switching || chapterProgress?.completionState === "completed"}
+                      onClick={()=>session && void verification.update({type:"completeExercise",payload:{workspaceId:session.workspace.id,chapterId:activeChapter.chapterId}})}>{messages.verification.complete}</button>
+                    {chapterProgress?.completionState === "completed" && <span className="verification-completed">{messages.verification.completed}</span>}
+                  </div>}
                 </div>
               )}
 
@@ -707,8 +731,25 @@ export function CourseWorkbench({
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
               onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
             />
+            <div className="verification-tabs" role="tablist" aria-label={messages.verification.results} onKeyDown={event=>{
+              if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key) || (event.target as HTMLElement).getAttribute("role") !== "tab") return;
+              event.preventDefault(); const next = event.key === "Home" ? false : event.key === "End" ? true : !resultsOpen;
+              setResultsOpen(next); document.getElementById(next ? "verification-results-tab" : "execution-terminal-tab")?.focus();
+            }}>
+              <button type="button" role="tab" id="execution-terminal-tab" aria-selected={!resultsOpen} tabIndex={resultsOpen ? -1 : 0} aria-controls="execution-terminal-panel" onClick={()=>setResultsOpen(false)}>{messages.execution.terminal}</button>
+              <button type="button" role="tab" id="verification-results-tab" aria-selected={resultsOpen} tabIndex={resultsOpen ? 0 : -1} aria-controls="verification-results-panel" onClick={()=>setResultsOpen(true)}>{messages.verification.results} <span className="mono">{checkResults.filter(r=>r.status==="passed").length}/{checkResults.length}</span></button>
+            </div>
+            <div className="verification-record-actions">
+              <button className="btn btn--ghost btn--xs" type="button" onClick={()=>void verification.exportRecord()}>{messages.verification.export}</button>
+              <button className="btn btn--ghost btn--xs" type="button" onClick={()=>setResetOpen(true)}>{messages.verification.reset}</button>
+            </div>
+            <div role="tabpanel" id="verification-results-panel" aria-labelledby="verification-results-tab" hidden={!resultsOpen} className="verification-panel">
+              <CheckResults checks={activeChapter?.threeStep?.step3Checks ?? []} results={checkResults} messages={messages} locale={settings.locale} />
+            </div>
+            <div role="tabpanel" className="execution-terminal-container" id="execution-terminal-panel" aria-labelledby="execution-terminal-tab" hidden={resultsOpen}>
             <TerminalPanel key={`terminal-${session.workspace.id}`} workbench={workbench} state={execution} messages={messages}
               settings={settings} disabled={switching} onError={onExecutionError} />
+            </div>
           </>
         ) : (
           <>
@@ -742,6 +783,12 @@ export function CourseWorkbench({
           </>
         ))}
       </section>
+      {verification.confirmation && <CommandConfirmationDialog detail={verification.confirmation.detail} messages={messages}
+        onCancel={verification.dismiss} onConfirm={()=>{ const pending=verification.confirmation!; void verification.run(pending.chapterId,pending.detail.token); }} />}
+      {resetOpen && session && <WorkspaceDialog title={messages.verification.resetTitle} detail={messages.verification.resetDetail}
+        cancel={messages.workspace.cancel} onCancel={()=>setResetOpen(false)}>
+        <button className="btn btn--danger btn--sm" type="button" onClick={()=>{setResetOpen(false); void verification.update({type:"resetProgress",payload:{workspaceId:session.workspace.id}});}}>{messages.verification.reset}</button>
+      </WorkspaceDialog>}
       {workbench && pendingConfirmation && (
         <CommandConfirmationDialog detail={pendingConfirmation.detail} messages={messages}
           onCancel={() => workbench.dismissConfirmation()}

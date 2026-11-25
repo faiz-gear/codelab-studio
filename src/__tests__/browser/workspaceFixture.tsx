@@ -6,7 +6,7 @@ import "../../styles/execution.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../App";
-import { DEFAULT_SETTINGS } from "../../core/contracts";
+import { DEFAULT_SETTINGS, type LearningProgress } from "../../core/contracts";
 import { FakeCoreClient } from "../fakeCoreClient";
 
 declare global {
@@ -16,6 +16,7 @@ declare global {
       readMainFile(): string | null;
       writeTerminalOutput(text: string): void;
       terminalInput(): string;
+      setCheckProgress(progress: LearningProgress): void;
     };
   }
 }
@@ -30,6 +31,7 @@ client.writeDiskFile(root, "main.go", "package main\n");
 client.writeDiskFile(root, "other.go", "package second\n");
 
 window.workspaceSmoke = {
+  setCheckProgress(progress) { client.emitEvent({type:"progressUpdated",payload:progress}); },
   writeTerminalOutput(text) { client.writeTerminalOutput(text); },
   terminalInput() {
     return client.commandLog.flatMap((command) => command.type === "writeTerminal" ? [command.payload.text] : []).join("");

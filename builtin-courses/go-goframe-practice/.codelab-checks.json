@@ -56,8 +56,12 @@
           },
           "expect": {
             "status": 200,
-            "bodyContains": "\"status\":\"ok\""
-          }
+            "bodyContains": "\"status\":\"ok\"",
+            "headers": {
+              "content-type": "application/json; charset=utf-8"
+            }
+          },
+          "timeoutSec": 10
         },
         {
           "id": "v2",
@@ -69,7 +73,8 @@
           },
           "expect": {
             "status": 405
-          }
+          },
+          "timeoutSec": 10
         },
         {
           "id": "v3",
@@ -81,7 +86,8 @@
           },
           "expect": {
             "status": 404
-          }
+          },
+          "timeoutSec": 10
         }
       ]
     },
@@ -103,7 +109,8 @@
           },
           "expect": {
             "status": 200
-          }
+          },
+          "timeoutSec": 10
         },
         {
           "id": "v2",
@@ -119,7 +126,38 @@
           },
           "expect": {
             "status": 201,
-            "bodyContains": "\"status\":\"pending\""
+            "bodyContains": "\"status\":\"pending\"",
+            "headers": {
+              "content-type": "application/json; charset=utf-8"
+            }
+          },
+          "timeoutSec": 10
+        },
+        {
+          "id": "v3",
+          "title": "POST /tasks 拒绝空标题并返回 400",
+          "type": "http_assert",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:8080/tasks",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": "{\"title\":\"\"}"
+          },
+          "expect": {
+            "status": 400
+          }
+        },
+        {
+          "id": "v4",
+          "title": "GET /tasks/999999 返回 404",
+          "type": "http_assert",
+          "request": {
+            "url": "http://127.0.0.1:8080/tasks/999999"
+          },
+          "expect": {
+            "status": 404
           }
         },
         {
@@ -135,13 +173,19 @@
         {
           "id": "v1",
           "title": "go test -json -race ./... 零竞态通过",
-          "type": "command_test",
+          "type": "test_suite",
           "cwd": "task-api",
           "command": "go test -json -race ./...",
-          "timeoutSec": 10,
+          "timeoutSec": 120,
           "expectExitCode": 0,
           "forbidOutput": [
             "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestTitleRules",
+            "TestCompleteIsIdempotent",
+            "TestConcurrentCreatesAssignDistinctIDs",
+            "TestTaskHTTPContract"
           ]
         }
       ]
@@ -152,13 +196,16 @@
         {
           "id": "v1",
           "title": "go test -json -race ./... 零竞态通过",
-          "type": "command_test",
+          "type": "test_suite",
           "cwd": "task-api",
           "command": "go test -json -race ./...",
-          "timeoutSec": 10,
+          "timeoutSec": 120,
           "expectExitCode": 0,
           "forbidOutput": [
             "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestTasksSurviveReopeningSQLite"
           ]
         },
         {
@@ -174,13 +221,17 @@
         {
           "id": "v1",
           "title": "go test -json -race ./... 零竞态通过",
-          "type": "command_test",
+          "type": "test_suite",
           "cwd": "task-api",
           "command": "go test -json -race ./...",
-          "timeoutSec": 10,
+          "timeoutSec": 120,
           "expectExitCode": 0,
           "forbidOutput": [
             "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestTasksSurviveReopeningSQLite",
+            "TestCompletionRollsBackAndFiresOnlyOnce"
           ]
         },
         {
@@ -196,13 +247,17 @@
         {
           "id": "v1",
           "title": "go test -json -race ./... 零竞态通过",
-          "type": "command_test",
+          "type": "test_suite",
           "cwd": "task-api",
           "command": "go test -json -race ./...",
-          "timeoutSec": 10,
+          "timeoutSec": 120,
           "expectExitCode": 0,
           "forbidOutput": [
             "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestCanceledContextStopsTheStore",
+            "TestCompletionRollsBackAndFiresOnlyOnce"
           ]
         },
         {
@@ -230,7 +285,23 @@
           },
           "expect": {
             "status": 200
-          }
+          },
+          "timeoutSec": 10
+        },
+        {
+          "id": "go-contract",
+          "title": "GoFrame HTTP 合同测试与竞态检测通过",
+          "type": "test_suite",
+          "cwd": "task-api-gf",
+          "command": "go test -json -race ./...",
+          "timeoutSec": 120,
+          "expectExitCode": 0,
+          "forbidOutput": [
+            "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestGoFrameTaskHTTPContract"
+          ]
         },
         {
           "id": "s1",
@@ -245,13 +316,17 @@
         {
           "id": "v1",
           "title": "go test -json -race ./... 零竞态通过",
-          "type": "command_test",
+          "type": "test_suite",
           "cwd": "task-api-gf",
           "command": "go test -json -race ./...",
-          "timeoutSec": 10,
+          "timeoutSec": 120,
           "expectExitCode": 0,
           "forbidOutput": [
             "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestTasksSurviveReopeningORM",
+            "TestCompletionRollsBackAndFiresOnlyOnce"
           ]
         },
         {
@@ -267,14 +342,26 @@
         {
           "id": "v1",
           "title": "go test -json -race ./... 零竞态通过",
-          "type": "command_test",
+          "type": "test_suite",
           "cwd": "task-api-gf",
           "command": "go test -json -race ./...",
-          "timeoutSec": 10,
+          "timeoutSec": 120,
           "expectExitCode": 0,
           "forbidOutput": [
             "WARNING: DATA RACE"
+          ],
+          "requireTests": [
+            "TestTasksSurviveReopeningORM",
+            "TestCompletionRollsBackAndFiresOnlyOnce"
           ]
+        },
+        {
+          "id": "delivery",
+          "title": "交付 README 与独立配置文件已提供",
+          "type": "command_test",
+          "cwd": "task-api-gf",
+          "command": "test -s README.md && test -s manifest/config/config.yaml",
+          "expectExitCode": 0
         },
         {
           "id": "s1",

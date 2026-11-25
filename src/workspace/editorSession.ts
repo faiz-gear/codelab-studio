@@ -200,8 +200,16 @@ export class WorkspaceEditorSession {
     return saved;
   }
 
-  async runCommand(request: Omit<RunCommandBlock, "workspaceId" | "drafts">) {
-    type RunResponse = Extract<AppResponse, { type: "commandStarted" | "commandConfirmationRequired" }>;
+  runCommand(request: Omit<RunCommandBlock, "workspaceId" | "drafts">) {
+    return this.runExecution({ type: "runCommandBlock", payload: { ...request, workspaceId: this.workspace.id, drafts: [] } });
+  }
+
+  runChecks(chapterId: string, confirmation?: number) {
+    return this.runExecution({ type: "runChecks", payload: { workspaceId: this.workspace.id, chapterId, confirmation, drafts: [] } });
+  }
+
+  private async runExecution(command: Extract<import("../core/contracts").AppCommand, { type: "runChecks" | "runCommandBlock" }>) {
+    type RunResponse = Extract<AppResponse, { type: "commandStarted" | "verificationStarted" | "commandConfirmationRequired" }>;
     const result: { response: RunResponse | null } = { response: null };
     await this.enqueue(async () => {
       this.update({ busy: true, error: null });
@@ -210,15 +218,14 @@ export class WorkspaceEditorSession {
           path: file.path, text: draft, expectedRevision: file.revision,
         }]);
         const response = await this.client.dispatch({
-          type: "runCommandBlock",
-          payload: { ...request, workspaceId: this.workspace.id, drafts },
+          ...(command.type === "runChecks" ? { type: "runChecks" as const, payload: { ...command.payload, drafts } } : { type: "runCommandBlock" as const, payload: { ...command.payload, drafts } }),
         });
         if (response.type === "commandConfirmationRequired") {
           result.response = response;
           return;
         }
         const outcome = response.type === "commandSaveConflict" || response.type === "commandFailed"
-          ? response : expectResponse(response, "commandStarted");
+          ? response : response.type === "verificationStarted" ? response : expectResponse(response, "commandStarted");
         for (const file of outcome.payload.saved) {
           this.updateTab(file.path, (tab) => diskUpdate({ ...tab, file }, file));
         }

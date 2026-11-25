@@ -20,7 +20,8 @@ pub use git_pack::GitFetchAdapter;
 pub use model::{
     Chapter, ChapterKind, ChapterPresentation, CheckKind, CommandBlock, CommandMode, ContentBlock,
     CourseCheckSpec, CourseSource, CourseSourceChangedEvent, CourseSummary, DaemonRequirement,
-    LoadedCourse, MAX_MARKDOWN_BYTES, OpenCourseRequest, ThreeStepProjection, ValueOrigin,
+    HttpExpectation, LoadedCourse, MAX_MARKDOWN_BYTES, OpenCourseRequest, ThreeStepProjection,
+    ValueOrigin,
 };
 pub(crate) use watcher::CourseWatcher;
 

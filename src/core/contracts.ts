@@ -76,6 +76,11 @@ export const ERROR_CODES = [
   "RUNTIME_INTEGRITY_FAILED",
   "RUNTIME_INSTALL_FAILED",
   "EXECUTION_FAILED",
+  "VERIFICATION_BUSY",
+  "CHECK_NOT_FOUND",
+  "EXERCISE_COMPLETION_BLOCKED",
+  "DAEMON_PORT_CONFLICT",
+  "DAEMON_NOT_READY",
   "COMMAND_BLOCK_NOT_FOUND",
   "COMMAND_CWD_INVALID",
   "COMMAND_SHELL_UNAVAILABLE",
@@ -326,6 +331,13 @@ export interface CourseCheckSpec {
   command: string | null;
   method: string | null;
   url: string | null;
+  headers?: Record<string, string>;
+  body?: string | null;
+  expect?: { status?: number | null; headers: Record<string, string>; bodyContains?: string | null; bodyEquals?: string | null };
+  timeoutSec?: number | null;
+  expectExitCode?: number | null;
+  forbidOutput?: string[];
+  requireTests?: string[];
 }
 
 export type ContentBlock =
@@ -492,6 +504,26 @@ export interface TerminalUpdates {
 
 export type CommandCwdOverrides = Record<string, string>;
 
+export interface ExerciseTarget extends WorkspaceTerminalRequest { chapterId: string }
+export interface RunChecks extends ExerciseTarget { drafts: CommandDraft[]; confirmation?: number }
+export type CheckStatus = "running" | "passed" | "failed" | "timedOut" | "skipped";
+export interface CheckResult {
+  checkId: string; status: CheckStatus; durationMs: number;
+  diffs: { label: string; expected: string; actual: string }[];
+  rawOutput: string;
+  testCases: { name: string; status: CheckStatus; durationMs: number; output: string }[];
+  error: DomainError | null;
+}
+export interface ChapterProgress {
+  completionState: "not_started" | "in_progress" | "completed";
+  lastCheckResults: CheckResult[];
+  selfChecks: Record<string, boolean>;
+}
+export interface LearningProgress {
+  workspaceId: number; completedExercises: number; totalExercises: number;
+  runningChapterId: string | null; chapters: Record<string, ChapterProgress>;
+}
+
 export type AppCommand =
   | { type: "bootstrap" }
   | { type: "getSettings" }
@@ -535,6 +567,12 @@ export type AppCommand =
   | { type: "runCommandBlock"; payload: RunCommandBlock }
   | { type: "getCommandCwdOverrides"; payload: WorkspaceTerminalRequest }
   | { type: "setCommandCwdOverride"; payload: WorkspaceTerminalRequest & { commandId: string; cwd: string | null } }
+  | { type: "runChecks"; payload: RunChecks }
+  | { type: "getProgress"; payload: WorkspaceTerminalRequest }
+  | { type: "resetProgress"; payload: WorkspaceTerminalRequest }
+  | { type: "exportLearningRecord"; payload: WorkspaceTerminalRequest }
+  | { type: "setSelfCheck"; payload: ExerciseTarget & { checkId: string; checked: boolean } }
+  | { type: "completeExercise"; payload: ExerciseTarget }
   | { type: "getPreflight" }
   | { type: "refreshPreflight" }
   | { type: "setRuntimePreference"; payload: RuntimePreference }
@@ -575,10 +613,14 @@ export type AppResponse =
   | { type: "commandSaveConflict"; payload: { file: WorkspaceFile; saved: WorkspaceFile[] } }
   | { type: "commandFailed"; payload: { error: DomainError; saved: WorkspaceFile[] } }
   | { type: "commandStarted"; payload: { terminal: TerminalSummary; saved: WorkspaceFile[] } }
+  | { type: "verificationStarted"; payload: { progress: LearningProgress; saved: WorkspaceFile[] } }
+  | { type: "progress"; payload: LearningProgress }
+  | { type: "learningRecord"; payload: Record<string, unknown> }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };
 
 export type AppEvent =
+  | { type: "progressUpdated"; payload: LearningProgress }
   | { type: "settingsUpdated"; payload: GlobalSettings }
   | { type: "recentsUpdated"; payload: RecentWorkspace[] }
   | { type: "trustUpdated"; payload: TrustEntry[] }
