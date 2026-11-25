@@ -3,6 +3,7 @@ import { CloseIcon, FolderIcon } from "../components/Icons";
 import type { ExternalIde, GlobalSettings } from "../core/contracts";
 import { formatDomainError, interpolate, type Messages } from "../i18n";
 import { editorText, type EditorTab, type WorkspaceEditorSession } from "./editorSession";
+import { WorkspaceComparisonTrigger } from "./WorkspaceComparison";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { WorkspaceTree } from "./WorkspaceTree";
 
@@ -118,6 +119,8 @@ export function WorkspaceEditor({
               setTreeOpen(true);
             }
           }}>{pickingComparison || comparing ? t.endCompare : t.compare}</button>
+        <WorkspaceComparisonTrigger session={session} settings={settings} messages={messages}
+          activePath={path} disabled={busy} />
         <div className="workspace-controls-spacer" />
         <div className="workspace-ide">
           <select aria-label={t.chooseIde} value={ide} onChange={(event) => setIde(event.target.value as ExternalIde)}>

@@ -211,6 +211,8 @@ export interface FakeCoreClientOptions {
   builtinCourses?: LoadedCourse[];
   localCourses?: Record<string, LoadedCourse>;
   pickedPaths?: Partial<Record<LocalPathPickKind, string | null>>;
+  chapterSolutions?: Record<string, Record<string, string>>;
+  starterFiles?: Record<string, string>;
 }
 
 export class FakeCoreClient implements CoreClient {
@@ -229,7 +231,7 @@ export class FakeCoreClient implements CoreClient {
   private nextErrors = new Map<AppCommand["type"], DomainError>();
   readonly commandLog: AppCommand[] = [];
 
-  constructor(options: FakeCoreClientOptions = {}) {
+  constructor(private options: FakeCoreClientOptions = {}) {
     this.settings = { ...DEFAULT_SETTINGS, ...options.settings };
     this.preflight = options.preflight ?? {
       revision: 0,
@@ -408,6 +410,10 @@ export class FakeCoreClient implements CoreClient {
     if (active && !this.withTrust(active).trusted) throw new CoreCommandError({ code: "COURSE_UNTRUSTED" });
     if (!this.workspace || this.workspace.id !== workspaceId) throw new CoreCommandError({ code: "NO_ACTIVE_WORKSPACE" });
     return this.workspace.root;
+  }
+
+  private fileSnapshot(root: string, path: string): WorkspaceFile {
+    return this.files(root).get(path) ?? { kind: "missing", path, revision: null, sizeBytes: 0 };
   }
 
   async dispatch(command: AppCommand): Promise<AppResponse> {
@@ -602,11 +608,34 @@ export class FakeCoreClient implements CoreClient {
         }
         return { type: "workspaceEntries", payload: [...entries.values()] };
       }
-      case "readWorkspaceFile":
-      case "writeWorkspaceFile": {
+      case "previewChapterSolution": {
+        const { workspaceId, chapterId } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        const files = this.options.chapterSolutions?.[chapterId] ?? {};
+        return {
+          type: "workspaceComparisons",
+          payload: Object.entries(files).map(([path, proposed]) => ({
+            current: this.fileSnapshot(root, path), proposed,
+          })),
+        };
+      }
+      case "listStarterFiles": {
+        this.workspaceRoot(command.payload.workspaceId);
+        return { type: "starterFiles", payload: Object.keys(this.options.starterFiles ?? {}).sort() };
+      }
+      case "previewStarterFile": {
         const { workspaceId, path } = command.payload;
         const root = this.workspaceRoot(workspaceId);
-        const file = this.files(root).get(path) ?? { kind: "missing" as const, path, revision: null, sizeBytes: 0 };
+        const proposed = this.options.starterFiles?.[path];
+        if (proposed === undefined) throw new CoreCommandError({ code: "WORKSPACE_FILE_NOT_FOUND", details: { path } });
+        return { type: "workspaceComparisons", payload: [{ current: this.fileSnapshot(root, path), proposed }] };
+      }
+      case "readWorkspaceFile":
+      case "writeWorkspaceFile":
+      case "applyWorkspaceComparison": {
+        const { workspaceId, path } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        const file = this.fileSnapshot(root, path);
         if (command.type === "readWorkspaceFile") return { type: "workspaceFile", payload: file };
         if (file.revision !== command.payload.expectedRevision) return { type: "workspaceFileConflict", payload: file };
         return { type: "workspaceFile", payload: this.writeDiskFile(root, path, command.payload.text) };

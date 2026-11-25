@@ -21,6 +21,7 @@ import {
   RefreshIcon,
 } from "./Icons";
 
+import { WorkspaceComparisonTrigger } from "../workspace/WorkspaceComparison";
 import { WorkspaceEditor } from "../workspace/WorkspaceEditor";
 import type { WorkspaceEditorSession } from "../workspace/editorSession";
 
@@ -213,6 +214,11 @@ export function CourseWorkbench({
   const isThreeStepMode =
     activeChapter?.presentation === "threeStep" && threeStep !== null;
   const chapterFile = threeStep?.step2EntryFile;
+  const referenceTrigger = course.trusted && session && activeChapter ? (
+    <WorkspaceComparisonTrigger key={`${session.workspace.id}:${activeChapter.chapterId}`}
+      session={session} chapterId={activeChapter.chapterId} settings={settings} messages={messages}
+      disabled={switching} />
+  ) : null;
   const activeReflectionsHtml = isThreeStepMode
     ? threeStep.reflectionsHtml
     : (activeChapter?.reflectionsHtml ?? null);
@@ -223,7 +229,7 @@ export function CourseWorkbench({
     }
     const hasStep1 = threeStep.step1CommandIds.length > 0;
     const hasStep2 =
-      Boolean(threeStep.step2Html) || Boolean(threeStep.step2EntryFile);
+      Boolean(threeStep.step2Html) || Boolean(threeStep.step2EntryFile) || Boolean(activeChapter?.hasReferenceHint);
     const hasStep3 =
       threeStep.step3Checks.length > 0 ||
       Boolean(threeStep.step3IntroHtml) ||
@@ -233,7 +239,7 @@ export function CourseWorkbench({
     const step2 = hasStep2 ? (step1 ?? 0) + 1 : null;
     const step3 = hasStep3 ? (step2 ?? step1 ?? 0) + 1 : null;
     return { step1, step2, step3 };
-  }, [threeStep]);
+  }, [activeChapter?.hasReferenceHint, threeStep]);
 
   const secondaryCommands = useMemo(() => {
     if (!threeStep) return [];
@@ -475,6 +481,7 @@ export function CourseWorkbench({
                           ) : <span className="file-pill mono">{chapterFile}</span>
                         ) : null}
                       </div>
+                      {referenceTrigger}
                       {threeStep.step2Html ? (
                         <div
                           className="md-prose"
@@ -485,6 +492,8 @@ export function CourseWorkbench({
                       ) : null}
                     </section>
                   ) : null}
+
+                  {visibleStepNumbers.step2 === null && course.source.kind !== "localMarkdown" && referenceTrigger}
 
                   {visibleStepNumbers.step3 !== null ? (
                     <section
@@ -572,6 +581,7 @@ export function CourseWorkbench({
                     </div>
                   ) : null}
 
+                  {activeChapter.hasReferenceHint || (course.source.kind !== "localMarkdown" && activeChapter.kind === "exercise") ? referenceTrigger : null}
                   {activeChapter.blocks.map((block, blockIdx) => {
                     if (block.kind === "prose") {
                       return (

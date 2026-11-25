@@ -17,6 +17,11 @@ pub(crate) fn parse_fence_info(info: &str) -> FenceMeta {
     let lang_end = trimmed
         .find(|c: char| c.is_whitespace() || c == ',' || c == '{')
         .unwrap_or(trimmed.len());
+    let lang_end = if trimmed.starts_with("file=") {
+        0
+    } else {
+        lang_end
+    };
     let lang = trimmed[..lang_end].to_ascii_lowercase();
     let rest = trimmed[lang_end..]
         .trim()

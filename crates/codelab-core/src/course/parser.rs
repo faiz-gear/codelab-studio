@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
+use crate::course::ChapterReferences;
 use crate::course::chapter_id::{
     ManifestChapterHint, extract_numbered_exercise_id, match_manifest_chapter, resolve_chapter_id,
     split_heading_and_anchor,
@@ -33,6 +34,7 @@ pub(crate) struct ParsedMarkdownDocument {
     pub intro_html: Option<String>,
     pub inferred_language: Option<CourseLanguage>,
     pub chapters: Vec<Chapter>,
+    pub references: ChapterReferences,
 }
 
 #[derive(Debug)]
@@ -61,6 +63,7 @@ struct RawSection<'a> {
     heading_text: String,
     parsed_id: Option<String>,
     items: Vec<SectionItem<'a>>,
+    references: Vec<(String, String)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -117,12 +120,14 @@ pub(crate) fn parse_markdown_course(
                     heading_text,
                     parsed_id,
                     items: Vec::new(),
+                    references: Vec::new(),
                 });
                 idx = next_idx;
             }
             _ => {
                 let (block, next_idx) = collect_balanced(&all_events, idx);
                 if let Some(sec) = current_section.as_mut() {
+                    sec.references.extend(file_fences(&block));
                     if let Some(item) = classify_section_item(block, &mut lang_votes) {
                         sec.items.push(item);
                     }
@@ -142,7 +147,10 @@ pub(crate) fn parse_markdown_course(
     // Promote pre-H2 content into an opening guide chapter if there are no H2 chapters at all
     // OR if pre-H2 itself contains executable shell Command Blocks that must remain interactive.
     let intro_has_shell = events_contain_shell_fence(&intro_events);
-    let intro_html = if !intro_events.is_empty() && (raw_sections.is_empty() || intro_has_shell) {
+    let intro_references = file_fences(&intro_events);
+    let intro_html = if !intro_events.is_empty()
+        && (raw_sections.is_empty() || intro_has_shell || !intro_references.is_empty())
+    {
         let mut items = Vec::new();
         let mut cursor = 0;
         while cursor < intro_events.len() {
@@ -158,6 +166,7 @@ pub(crate) fn parse_markdown_course(
                 heading_text: doc_title.clone().unwrap_or_else(|| "Overview".to_string()),
                 parsed_id: None,
                 items,
+                references: intro_references,
             },
         );
         None
@@ -168,8 +177,15 @@ pub(crate) fn parse_markdown_course(
     let mut used_ids = HashSet::new();
     let mut chapters = Vec::with_capacity(raw_sections.len());
 
-    for raw in raw_sections {
-        chapters.push(build_chapter(raw, overlay, &mut used_ids));
+    let mut references = ChapterReferences::new();
+    for mut raw in raw_sections {
+        let files = std::mem::take(&mut raw.references);
+        let mut chapter = build_chapter(raw, overlay, &mut used_ids);
+        chapter.has_reference_hint = !files.is_empty();
+        if chapter.has_reference_hint {
+            references.insert(chapter.chapter_id.clone(), files);
+        }
+        chapters.push(chapter);
     }
 
     let inferred_language = lang_votes
@@ -182,13 +198,41 @@ pub(crate) fn parse_markdown_course(
         intro_html,
         inferred_language,
         chapters,
+        references,
     }
+}
+
+fn file_fences(events: &[Event<'_>]) -> Vec<(String, String)> {
+    events
+        .iter()
+        .enumerate()
+        .filter_map(|(index, event)| {
+            let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = event else {
+                return None;
+            };
+            let path = parse_fence_info(info).attrs.remove("file")?;
+            let code = events[index + 1..]
+                .iter()
+                .take_while(|event| !matches!(event, Event::End(TagEnd::CodeBlock)))
+                .filter_map(|event| match event {
+                    Event::Text(text) => Some(text.as_ref()),
+                    _ => None,
+                })
+                .collect();
+            Some((path, code))
+        })
+        .collect()
+}
+
+fn is_shell_command_fence(info: &str) -> bool {
+    let meta = parse_fence_info(info);
+    is_command_shell(&meta.lang) && !meta.attrs.contains_key("file")
 }
 
 fn events_contain_shell_fence(events: &[Event<'_>]) -> bool {
     events.iter().any(|ev| {
         if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = ev {
-            is_command_shell(&parse_fence_info(info).lang)
+            is_shell_command_fence(info)
         } else {
             false
         }
@@ -240,7 +284,7 @@ fn classify_section_item<'a>(
             };
             let meta = parse_fence_info(&info);
             let code = extract_code_text(&events);
-            if is_command_shell(&meta.lang) {
+            if is_command_shell(&meta.lang) && !meta.attrs.contains_key("file") {
                 Some(SectionItem::ShellCommand { info, code })
             } else {
                 vote_language(&meta.lang, lang_votes);
@@ -559,6 +603,7 @@ fn build_chapter(
         title,
         kind,
         presentation,
+        has_reference_hint: false,
         default_cwd,
         entry_file: acc.entry_file,
         summary_html,
@@ -720,7 +765,7 @@ fn strip_nested_shell_blocks<'a>(
     for ev in events {
         match ev {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref info)))
-                if is_command_shell(&parse_fence_info(info).lang) =>
+                if is_shell_command_fence(info) =>
             {
                 active_shell_info = Some(info.to_string());
                 active_code.clear();

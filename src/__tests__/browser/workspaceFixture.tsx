@@ -21,6 +21,7 @@ const root = "/work/monaco";
 const client = new FakeCoreClient({
   settings: { ...DEFAULT_SETTINGS, locale: "en-US" },
   pickedPaths: { workspaceDir: root },
+  chapterSolutions: { "ex-0": { "main.go": "package main\n// reference implementation\n" } },
 });
 client.writeDiskFile(root, "main.go", "package main\n");
 client.writeDiskFile(root, "other.go", "package second\n");

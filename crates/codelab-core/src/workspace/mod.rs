@@ -1,3 +1,4 @@
+mod comparison;
 mod files;
 mod metadata;
 mod model;
@@ -11,6 +12,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub use comparison::WorkspaceComparison;
 pub use model::{
     ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceEntry, WorkspaceEntryKind, WorkspaceFile,
     WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite, WorkspaceFilesChanged,

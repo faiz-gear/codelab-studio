@@ -1,4 +1,5 @@
 mod builtin;
+mod builtin_solutions;
 mod chapter_id;
 mod model;
 mod pack;
@@ -7,8 +8,9 @@ mod sanitize;
 mod shell;
 mod watcher;
 
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
+pub(crate) use builtin::builtin_solution;
 pub use model::{
     Chapter, ChapterKind, ChapterPresentation, CheckKind, CommandBlock, CommandMode, ContentBlock,
     CourseCheckSpec, CourseSource, CourseSourceChangedEvent, CourseSummary, DaemonRequirement,
@@ -18,14 +20,19 @@ pub(crate) use watcher::CourseWatcher;
 
 use crate::error::DomainError;
 
+pub(crate) type ChapterReferences = HashMap<String, Vec<(String, String)>>;
+
 pub(crate) struct OpenedCourse {
     pub course: LoadedCourse,
     pub watched_files: Vec<PathBuf>,
     pub starter: Option<Starter>,
+    pub references: ChapterReferences,
 }
 
+pub(crate) type EmbeddedFiles = &'static [(&'static str, &'static [u8])];
+
 pub(crate) enum Starter {
-    Builtin(&'static [(&'static str, &'static [u8])]),
+    Builtin(EmbeddedFiles),
     Local { root: PathBuf, directory: String },
 }
 

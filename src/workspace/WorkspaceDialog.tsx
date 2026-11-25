@@ -1,12 +1,14 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 
 export function WorkspaceDialog({
-  title, detail, cancel, children, onCancel, busy = false,
+  title, detail, cancel, children, onCancel, body, className, busy = false,
 }: {
   title: string;
   detail?: ReactNode;
   cancel: string;
   children: ReactNode;
+  body?: ReactNode;
+  className?: string;
   onCancel: () => void;
   busy?: boolean;
 }) {
@@ -29,7 +31,7 @@ export function WorkspaceDialog({
   return (
     <dialog
       ref={dialog}
-      className="modal-card workspace-dialog"
+      className={`modal-card workspace-dialog${className ? ` ${className}` : ""}`}
       aria-labelledby={titleId}
       aria-describedby={detail ? detailId : undefined}
       onCancel={(event) => {
@@ -43,6 +45,7 @@ export function WorkspaceDialog({
           {detail && <div className="modal-sub" id={detailId}>{detail}</div>}
         </div>
       </div>
+      {body}
       <div className="modal-foot">
         <button ref={cancelButton} className="btn btn--secondary btn--sm" type="button" disabled={busy} onClick={onCancel}>{cancel}</button>
         {children}

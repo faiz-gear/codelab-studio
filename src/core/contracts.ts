@@ -306,6 +306,7 @@ export interface Chapter {
   title: string;
   kind: ChapterKind;
   presentation: ChapterPresentation;
+  hasReferenceHint?: boolean;
   defaultCwd: string | null;
   entryFile: string | null;
   summaryHtml: string | null;
@@ -380,6 +381,11 @@ export type WorkspaceFile = {
   revision: string | null;
 } & ({ kind: "text"; text: string } | { kind: "binary" | "tooLarge" | "missing" });
 
+export interface WorkspaceComparison {
+  current: WorkspaceFile;
+  proposed: string;
+}
+
 export interface WorkspaceFilesChanged {
   workspaceId: number;
   paths: string[];
@@ -407,6 +413,10 @@ export type AppCommand =
   | { type: "listWorkspaceFiles"; payload: WorkspacePath }
   | { type: "readWorkspaceFile"; payload: WorkspacePath }
   | { type: "writeWorkspaceFile"; payload: WorkspacePath & { text: string; expectedRevision: string | null } }
+  | { type: "previewChapterSolution"; payload: { workspaceId: number; chapterId: string } }
+  | { type: "listStarterFiles"; payload: { workspaceId: number } }
+  | { type: "previewStarterFile"; payload: WorkspacePath }
+  | { type: "applyWorkspaceComparison"; payload: WorkspacePath & { text: string; expectedRevision: string | null } }
   | { type: "createWorkspaceFile"; payload: WorkspacePath }
   | { type: "renameWorkspaceFile"; payload: WorkspacePath & { newPath: string } }
   | { type: "openWorkspaceIde"; payload: WorkspacePath & { ide: ExternalIde } }
@@ -435,6 +445,8 @@ export type AppResponse =
   | { type: "workspaceEntries"; payload: WorkspaceEntry[] }
   | { type: "workspaceFile"; payload: WorkspaceFile }
   | { type: "workspaceFileConflict"; payload: WorkspaceFile }
+  | { type: "workspaceComparisons"; payload: WorkspaceComparison[] }
+  | { type: "starterFiles"; payload: string[] }
   | { type: "workspaceIdeOpened" }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };

@@ -29,7 +29,7 @@ pub use runtime::{
     RuntimeArtifact, RuntimeDownloadAdapter, RuntimePreference, RuntimeSource, ToolCheck,
 };
 pub use workspace::{
-    ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceEntry, WorkspaceEntryKind, WorkspaceFile,
-    WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite, WorkspaceFilesChanged,
-    WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
+    ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceComparison, WorkspaceEntry, WorkspaceEntryKind,
+    WorkspaceFile, WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite,
+    WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
 };
