@@ -183,10 +183,10 @@ fn git_import_trust_and_refresh_keep_the_learner_workspace() {
             .readonly()
     );
     fs::write(learner.join("main.go"), "learner edit").unwrap();
-    fs::write(
-        learner.join(".codelab/progress.json"),
-        r#"{"schemaVersion":1,"data":{"chapters":{"stable":{"completionState":"completed"}}}}"#,
-    )
+    app.execute(AppCommand::CompleteExercise(codelab_core::ExerciseTarget {
+        workspace_id: workspace.id,
+        chapter_id: "stable".into(),
+    }))
     .unwrap();
 
     commit_pack(&repo, "Exercise 1 revised", "After", "starter v2");

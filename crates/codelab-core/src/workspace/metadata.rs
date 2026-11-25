@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::command_cwd::{CommandCwds, valid_cwds};
 use super::paths::{METADATA_DIR, WorkspacePaths};
-use super::progress::Progress;
+use super::progress::{Progress, ProgressCourse};
 use crate::course::{CourseSource, LoadedCourse, Starter, git_pack};
 use crate::storage::JsonStore;
 use crate::{DomainError, ErrorCode, StorageRecoveryNotice, StoreKind};
@@ -30,6 +30,7 @@ pub(super) struct WorkspaceMetadata {
     pub recovery_notices: Vec<StorageRecoveryNotice>,
     pub completed_exercises: u32,
     pub progress: Progress,
+    pub progress_course: ProgressCourse,
     pub progress_store: JsonStore<Progress>,
     pub command_cwds: CommandCwds,
     pub git_starter_snapshot: Option<String>,
@@ -106,20 +107,7 @@ impl WorkspaceMetadata {
         }
         let mut progress =
             progress_store.load_or_recover(|progress: &Progress| progress.valid())?;
-        let mut interrupted = false;
-        for chapter in progress.value.chapters.values_mut() {
-            for result in &mut chapter.last_check_results {
-                if result.status == crate::CheckStatus::Running {
-                    result.status = crate::CheckStatus::Failed;
-                    result.error = Some(
-                        crate::DomainError::new(crate::ErrorCode::ExecutionFailed)
-                            .with_detail("reasonCode", "VERIFICATION_INTERRUPTED"),
-                    );
-                    interrupted = true;
-                }
-            }
-        }
-        if interrupted {
+        if progress.value.recover_interrupted() {
             progress_store.save_atomic(&progress.value)?;
         }
         let command_cwds = command_cwd_store.load_or_recover(valid_cwds)?;
@@ -142,7 +130,8 @@ impl WorkspaceMetadata {
         metrics.value.course_opened = metrics.value.course_opened.saturating_add(1);
         metrics_store.save_atomic(&metrics.value)?;
 
-        let completed_exercises = progress.value.completed_for(course);
+        let progress_course = ProgressCourse::from_course(course);
+        let completed_exercises = progress.value.completed_for(&progress_course);
         Ok(Self {
             recovery_notices: [
                 binding.recovery,
@@ -155,6 +144,7 @@ impl WorkspaceMetadata {
             .collect(),
             completed_exercises,
             progress: progress.value,
+            progress_course,
             progress_store,
             git_starter_snapshot: bound.git_starter_snapshot,
             command_cwds: CommandCwds {
@@ -163,24 +153,6 @@ impl WorkspaceMetadata {
             },
         })
     }
-}
-
-pub(super) fn completed_for(
-    paths: &WorkspacePaths,
-    course: &LoadedCourse,
-) -> Result<u32, DomainError> {
-    let dir = paths
-        .dir
-        .open_dir_nofollow(METADATA_DIR)
-        .map_err(|err| metadata_error(ErrorCode::StorageReadFailed, err))?;
-    let progress = JsonStore::<Progress>::new(
-        &paths.root.join(METADATA_DIR),
-        "progress.json",
-        StoreKind::Progress,
-    )
-    .scoped(Arc::new(dir))
-    .load_or_recover(|progress| progress.valid())?;
-    Ok(progress.value.completed_for(course))
 }
 
 fn valid_source(source: &CourseSource) -> bool {

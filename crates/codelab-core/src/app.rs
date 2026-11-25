@@ -943,14 +943,25 @@ impl App {
         };
         let request = OpenCourseRequest::GitPack { url: url.clone() };
         let (mut state, opened) = self.prepare_course(state, &request, true)?;
+        state.verification = None;
+        state.execution.invalidate_confirmation();
+        let recovered = state
+            .active_workspace
+            .as_mut()
+            .map(|workspace| workspace.prepare_progress_for_course(&opened.course))
+            .transpose()?
+            .unwrap_or(false);
+        let course = self.activate_course(&mut state, opened)?;
+        if recovered {
+            self.emit(AppEvent::ProgressUpdated(verification::progress_snapshot(
+                &state,
+            )));
+        }
         if let Some(workspace) = &state.active_workspace {
-            let mut recent = workspace_recent(workspace, &opened.course);
-            recent.completed_exercises = workspace.completed_for(&opened.course)?;
+            let recent = workspace_recent(workspace, &course);
             self.store_recent(&mut state, recent)?;
         }
-        Ok(AppResponse::LoadedCourse(
-            self.activate_course(&mut state, opened),
-        ))
+        Ok(AppResponse::LoadedCourse(course))
     }
 
     fn load_course(
@@ -968,7 +979,7 @@ impl App {
             state.deactivate_workspace();
         }
         Ok(AppResponse::LoadedCourse(
-            self.activate_course(&mut state, opened),
+            self.activate_course(&mut state, opened)?,
         ))
     }
 
@@ -1003,7 +1014,11 @@ impl App {
         Ok((state, opened))
     }
 
-    fn activate_course(&self, state: &mut AppState, opened: OpenedCourse) -> LoadedCourse {
+    fn activate_course(
+        &self,
+        state: &mut AppState,
+        opened: OpenedCourse,
+    ) -> Result<LoadedCourse, DomainError> {
         let watcher = if opened.watched_files.is_empty() {
             None
         } else {
@@ -1016,6 +1031,12 @@ impl App {
         };
         state.verification = None;
         state.execution.invalidate_confirmation();
+        let recovered = state
+            .active_workspace
+            .as_mut()
+            .map(|workspace| workspace.prepare_progress_for_course(&opened.course))
+            .transpose()?
+            .unwrap_or(false);
         let course = opened.course;
         state.active_course = Some(ActiveCourseState {
             course: course.clone(),
@@ -1023,8 +1044,13 @@ impl App {
             references: opened.references,
             _watcher: watcher,
         });
+        if recovered {
+            self.emit(AppEvent::ProgressUpdated(verification::progress_snapshot(
+                state,
+            )));
+        }
         self.emit(AppEvent::CourseLoaded(course.clone()));
-        course
+        Ok(course)
     }
 
     fn close_active_course(&self) -> AppResponse {
@@ -1086,7 +1112,7 @@ impl App {
             None
         };
         state.trial_workspace = None;
-        let course = self.activate_course(&mut state, opened);
+        let course = self.activate_course(&mut state, opened)?;
         Ok(AppResponse::RecentWorkspaceOpened(RecentWorkspaceOpened {
             course,
             workspace,
@@ -1145,7 +1171,7 @@ impl App {
         let workspace = self.activate_workspace(&mut state, workspace);
         state.course_load_generation += 1;
         state.trial_workspace = Some(trial);
-        let course = self.activate_course(&mut state, opened);
+        let course = self.activate_course(&mut state, opened)?;
         Ok(AppResponse::TrialWorkspaceOpened(TrialWorkspaceOpened {
             course,
             workspace,
@@ -1298,7 +1324,7 @@ fn workspace_recent(workspace: &Workspace, course: &LoadedCourse) -> RecentWorks
         course_title: course.title.clone(),
         language: course.language,
         course_source: Some(course.source.clone()),
-        completed_exercises: workspace.completed_exercises,
+        completed_exercises: workspace.completed_exercises(),
         total_exercises: course.total_exercises,
         last_opened_at: Utc::now().to_rfc3339(),
     }
