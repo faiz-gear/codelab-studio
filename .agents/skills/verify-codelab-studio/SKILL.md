@@ -71,4 +71,4 @@ test -r "$VERIFY_EVIDENCE/launch-1.log" &&
 ls -l "$VERIFY_EVIDENCE"
 ```
 
-Open the retained screenshots and assertion log (or the blocker diagnostics) after cleanup. Refresh the map when the user path changes with [PStack's `/maintain-verification-skill`](https://github.com/cursor/plugins/blob/main/pstack/skills/maintain-verification-skill/SKILL.md).
+Open the retained screenshots and assertion log (or the blocker diagnostics) after cleanup. Use [`$maintain-verification-skill`](../maintain-verification-skill/SKILL.md) to audit and refresh this skill and its feature map.
