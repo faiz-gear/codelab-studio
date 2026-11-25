@@ -3,6 +3,7 @@ mod http;
 pub(crate) mod model;
 mod suite;
 
+use super::preparation::CommandInvocation;
 use super::{Directory, Process, Spawn, environment, execution_error, shell_command};
 use crate::runtime::PreflightReport;
 use crate::{
@@ -19,6 +20,7 @@ use std::time::{Duration, Instant};
 use suite::TestSuiteAdapter;
 
 const OUTPUT_LIMIT: u64 = 2 * 1024 * 1024;
+const CHECK_SHELL: &str = "sh";
 
 pub(crate) struct VerificationTask {
     pub chapter_id: Option<String>,
@@ -96,10 +98,12 @@ impl PreparedCheck {
         })
     }
 
-    pub fn command(&self) -> Option<&str> {
+    pub fn invocation(&self, directory: &Directory) -> Option<CommandInvocation> {
         match &self.execution {
             CheckExecution::Http => None,
-            CheckExecution::Command { script, .. } => Some(script),
+            CheckExecution::Command { script, .. } => {
+                Some(CommandInvocation::new(script, &directory.path, CHECK_SHELL))
+            }
         }
     }
 
@@ -150,7 +154,7 @@ fn run_headless(
     timeout: Duration,
     cancelled: &AtomicBool,
 ) -> Result<CommandOutput, DomainError> {
-    let (program, args) = shell_command("sh", script)?;
+    let (program, args) = shell_command(CHECK_SHELL, script)?;
     let mut output = tempfile::tempfile().map_err(execution_error)?;
     let mut process = Process::spawn_headless(
         Spawn {

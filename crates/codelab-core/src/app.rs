@@ -19,7 +19,8 @@ use crate::course::{
     GitFetchAdapter, LoadedCourse, OpenCourseRequest, OpenedCourse, Starter,
 };
 use crate::error::{DomainError, ErrorCode};
-use crate::execution::{Execution, editors, model::*};
+use crate::execution::preparation::{CommandPreparation, ConfirmationTarget};
+use crate::execution::{Execution, model::*};
 use crate::model::{
     AppBootstrap, GlobalSettings, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, TrustEntry,
@@ -577,32 +578,40 @@ impl App {
                 .command_cwds
                 .resolve(&workspace.files, course, block, None)?
         };
-        let launch = match state.execution.approve(launch, request.confirmation) {
-            Ok(launch) => launch,
-            Err(confirmation) => return Ok(AppResponse::CommandConfirmationRequired(confirmation)),
-        };
-        let mut saved = Vec::new();
-        let result = (|| {
-            let workspace = state.workspace(request.workspace_id)?;
-            if let Some(file) = editors::save(workspace, request.drafts, &mut saved)? {
-                return Ok(Err(file));
+        let AppState {
+            execution,
+            active_workspace,
+            ..
+        } = &mut *state;
+        match execution.prepare_command(
+            active_workspace.as_ref().unwrap(),
+            ConfirmationTarget::Block(Box::new(launch)),
+            request.confirmation,
+            request.drafts,
+        ) {
+            CommandPreparation::Ready {
+                target: ConfirmationTarget::Block(launch),
+                saved,
+            } => match execution.start(Some(*launch), dir, &self.runtime.snapshot(), language) {
+                Ok(terminal) => Ok(AppResponse::CommandStarted(CommandStarted {
+                    terminal,
+                    saved,
+                })),
+                Err(error) if saved.is_empty() => Err(error),
+                Err(error) => Ok(AppResponse::CommandFailed(CommandFailed { error, saved })),
+            },
+            CommandPreparation::Ready {
+                target: ConfirmationTarget::Checks { .. },
+                ..
+            } => unreachable!("block preparation target"),
+            CommandPreparation::ConfirmationRequired(prompt) => {
+                Ok(AppResponse::CommandConfirmationRequired(prompt))
             }
-            state
-                .execution
-                .start(Some(launch), dir, &self.runtime.snapshot(), language)
-                .map(Ok)
-        })();
-        match result {
-            Ok(Ok(terminal)) => Ok(AppResponse::CommandStarted(CommandStarted {
-                terminal,
-                saved,
-            })),
-            Ok(Err(file)) => Ok(AppResponse::CommandSaveConflict(CommandSaveConflict {
-                file,
-                saved,
-            })),
-            Err(error) if saved.is_empty() => Err(error),
-            Err(error) => Ok(AppResponse::CommandFailed(CommandFailed { error, saved })),
+            CommandPreparation::SaveConflict(conflict) => {
+                Ok(AppResponse::CommandSaveConflict(conflict))
+            }
+            CommandPreparation::Failed(failed) if failed.saved.is_empty() => Err(failed.error),
+            CommandPreparation::Failed(failed) => Ok(AppResponse::CommandFailed(failed)),
         }
     }
 
