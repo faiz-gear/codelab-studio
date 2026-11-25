@@ -23,6 +23,7 @@ export interface TopBarProps {
   builtinCourses: CourseSummary[];
   importedCourses: CourseSummary[];
   activeCourse: LoadedCourse | null;
+  completedExercises?: number;
   focusMode: boolean;
   appearanceOpen: boolean;
   appearanceTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -41,6 +42,7 @@ export function TopBar({
   builtinCourses,
   importedCourses,
   activeCourse,
+  completedExercises = 0,
   focusMode,
   appearanceOpen,
   appearanceTriggerRef,
@@ -79,10 +81,11 @@ export function TopBar({
     };
   }, [menuOpen]);
 
-  const activeTitle = activeCourse
-    ? (messages.welcome.courseTexts[activeCourse.courseId]?.title ??
-      activeCourse.title)
-    : messages.topbar.courseMenuEmpty;
+  const activeSourceKey = activeCourse && courseSourceKey(activeCourse.source);
+  const builtinTitle = activeCourse?.isBuiltin
+    ? messages.welcome.courseTexts[activeCourse.courseId]?.title
+    : undefined;
+  const activeTitle = builtinTitle ?? activeCourse?.title ?? messages.topbar.courseMenuEmpty;
 
   return (
     <header className="topbar">
@@ -131,7 +134,7 @@ export function TopBar({
                   const displayTitle =
                     messages.welcome.courseTexts[course.courseId]?.title ??
                     course.title;
-                  const isActive = activeCourse?.courseId === course.courseId;
+                  const isActive = activeSourceKey === courseSourceKey(course.source);
                   return (
                     <button
                       key={course.courseId}
@@ -164,7 +167,7 @@ export function TopBar({
                   {messages.topbar.importedGroupLabel}
                 </div>
                 {importedCourses.map((course) => {
-                  const isActive = activeCourse?.courseId === course.courseId;
+                  const isActive = activeSourceKey === courseSourceKey(course.source);
                   return (
                     <button
                       key={courseSourceKey(course.source)}
@@ -234,7 +237,7 @@ export function TopBar({
           title={messages.topbar.progressLabel}
           data-testid="topbar-exercise-progress"
         >
-          0 / {activeCourse.totalExercises}
+          {completedExercises} / {activeCourse.totalExercises}
         </span>
       ) : null}
 

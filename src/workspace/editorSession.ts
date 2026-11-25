@@ -2,7 +2,10 @@ import { expectResponse, type CoreClient } from "../core/client";
 import {
   CoreCommandError,
   type DomainError,
+  type AppResponse,
+  type RunCommandBlock,
   type ExternalIde,
+  type WorkspaceComparison,
   type WorkspaceFile,
   type WorkspaceSummary,
 } from "../core/contracts";
@@ -14,12 +17,18 @@ export interface EditorTab {
   unavailable: DomainError | null;
 }
 
+export interface ComparisonReview {
+  comparison: WorkspaceComparison;
+  draft: string | null;
+}
+
 interface EditorState {
   tabs: EditorTab[];
   activePath: string | null;
   treeVersion: number;
   busy: boolean;
   error: DomainError | null;
+  executionConflict: number;
 }
 
 export function editorText(tab: EditorTab): string | null {
@@ -48,6 +57,7 @@ export class WorkspaceEditorSession {
     treeVersion: 0,
     busy: false,
     error: null,
+    executionConflict: 0,
   };
 
   constructor(private client: CoreClient, readonly workspace: WorkspaceSummary) {}
@@ -190,6 +200,44 @@ export class WorkspaceEditorSession {
     return saved;
   }
 
+  async runCommand(request: Omit<RunCommandBlock, "workspaceId" | "drafts">) {
+    type RunResponse = Extract<AppResponse, { type: "commandStarted" | "commandConfirmationRequired" }>;
+    const result: { response: RunResponse | null } = { response: null };
+    await this.enqueue(async () => {
+      this.update({ busy: true, error: null });
+      try {
+        const drafts = this.state.tabs.flatMap(({ file, draft }) => draft === null ? [] : [{
+          path: file.path, text: draft, expectedRevision: file.revision,
+        }]);
+        const response = await this.client.dispatch({
+          type: "runCommandBlock",
+          payload: { ...request, workspaceId: this.workspace.id, drafts },
+        });
+        if (response.type === "commandConfirmationRequired") {
+          result.response = response;
+          return;
+        }
+        const outcome = response.type === "commandSaveConflict" || response.type === "commandFailed"
+          ? response : expectResponse(response, "commandStarted");
+        for (const file of outcome.payload.saved) {
+          this.updateTab(file.path, (tab) => diskUpdate({ ...tab, file }, file));
+        }
+        if (outcome.type === "commandSaveConflict") {
+          const file = outcome.payload.file;
+          this.updateTab(file.path, (tab) => diskUpdate(tab, file));
+          this.update({ activePath: file.path, executionConflict: this.state.executionConflict + 1 });
+        } else if (outcome.type === "commandFailed") {
+          throw new CoreCommandError(outcome.payload.error);
+        } else {
+          result.response = outcome;
+        }
+      } finally {
+        this.update({ busy: false });
+      }
+    });
+    return result.response;
+  }
+
   private async saveTab(path: string): Promise<boolean> {
     const tab = this.tab(path);
     if (!tab || tab.draft === null) return true;
@@ -200,9 +248,7 @@ export class WorkspaceEditorSession {
         payload: { ...this.target(path), text: tab.draft, expectedRevision: tab.file.revision },
       });
       if (response.type === "workspaceFileConflict") {
-        this.updateTab(path, (current) => response.payload.path === path
-          ? diskUpdate(current, response.payload)
-          : { ...current, unavailable: { code: "WORKSPACE_FILE_READ_FAILED", details: { path } } });
+        this.acceptDiskUpdate(path, response.payload);
         return this.tab(path)?.draft === null;
       }
       const file = expectResponse(response, "workspaceFile").payload;
@@ -212,6 +258,90 @@ export class WorkspaceEditorSession {
       this.update({ error: domainError(error) });
       return false;
     }
+  }
+
+  private acceptDiskUpdate(path: string, file: WorkspaceFile) {
+    this.updateTab(path, (tab) => file.path === path
+      ? diskUpdate(tab, file)
+      : { ...tab, unavailable: { code: "WORKSPACE_FILE_READ_FAILED", details: { path } } });
+  }
+
+  async previewChapterSolution(chapterId: string): Promise<ComparisonReview[]> {
+    const response = await this.client.dispatch({
+      type: "previewChapterSolution",
+      payload: { workspaceId: this.workspace.id, chapterId },
+    });
+    return expectResponse(response, "workspaceComparisons").payload.map((file) => this.review(file));
+  }
+
+  async listStarterFiles(): Promise<string[]> {
+    const response = await this.client.dispatch({
+      type: "listStarterFiles", payload: { workspaceId: this.workspace.id },
+    });
+    return expectResponse(response, "starterFiles").payload;
+  }
+
+  async previewStarterFile(path: string): Promise<ComparisonReview | undefined> {
+    const response = await this.client.dispatch({ type: "previewStarterFile", payload: this.target(path) });
+    return expectResponse(response, "workspaceComparisons").payload.map((file) => this.review(file))[0];
+  }
+
+  private review(comparison: WorkspaceComparison): ComparisonReview {
+    return { comparison, draft: this.tab(comparison.current.path)?.draft ?? null };
+  }
+
+  async applyComparison({ comparison, draft }: ComparisonReview): Promise<"applied" | "conflict" | "stale" | "failed"> {
+    const { current, proposed } = comparison;
+    const { path } = current;
+    let outcome: "applied" | "conflict" | "stale" | "failed" = "failed";
+    await this.enqueue(async () => {
+      this.update({ busy: true, error: null });
+      try {
+        const tab = this.tab(path);
+        if ((tab?.draft ?? null) !== draft) {
+          outcome = "stale";
+          return;
+        }
+        if (tab?.conflict || tab?.unavailable) {
+          this.select(path);
+          outcome = "conflict";
+          return;
+        }
+        // The preview may see an external write before the watcher delivers it.
+        if (tab && draft !== null && tab.file.revision !== current.revision) {
+          const disk = await this.read(path);
+          this.acceptDiskUpdate(path, disk);
+          this.select(path);
+          outcome = this.tab(path)?.conflict ? "conflict" : "stale";
+          return;
+        }
+        const response = await this.client.dispatch({
+          type: "applyWorkspaceComparison",
+          payload: { ...this.target(path), text: proposed, expectedRevision: current.revision },
+        });
+        if (response.type === "workspaceFileConflict") {
+          this.acceptDiskUpdate(path, response.payload);
+          if (this.tab(path)?.conflict) {
+            this.select(path);
+            outcome = "conflict";
+          } else {
+            outcome = "stale";
+          }
+          return;
+        }
+        const file = expectResponse(response, "workspaceFile").payload;
+        this.updateTab(path, (previous) => {
+          const nextDraft = previous.draft === draft ? null : previous.draft;
+          return diskUpdate({ ...previous, file, draft: nextDraft }, file);
+        });
+        this.showFile(file);
+        this.update({ treeVersion: this.state.treeVersion + 1 });
+        outcome = "applied";
+      } finally {
+        this.update({ busy: false });
+      }
+    });
+    return outcome;
   }
 
   close(path: string) {

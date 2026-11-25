@@ -149,7 +149,7 @@ describe("Course Workbench & Navigation seam (CoreClient)", () => {
       )
     );
 
-    const dialog = screen.getByRole("dialog", { name: "导入本地 Course" });
+    const dialog = screen.getByRole("dialog", { name: "导入或创作课程包" });
     await user.click(within(dialog).getByRole("button", { name: "浏览 .md 文件" }));
     expect(
       within(dialog).getByLabelText("本地 Markdown 文件路径")
@@ -169,7 +169,7 @@ describe("Course Workbench & Navigation seam (CoreClient)", () => {
     // Retry succeeds and loads the local Markdown course into the workbench
     await user.click(within(dialog).getByRole("button", { name: "打开只读手册" }));
     expect(
-      screen.queryByRole("dialog", { name: "导入本地 Course" })
+      screen.queryByRole("dialog", { name: "导入或创作课程包" })
     ).not.toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { level: 2, name: "检查端口占用" })
@@ -304,7 +304,7 @@ describe("Course Workbench & Navigation seam (CoreClient)", () => {
     await user.click(
       screen.getByRole("button", { name: "导入本地 Markdown / Course Pack" })
     );
-    const dialog = screen.getByRole("dialog", { name: "导入本地 Course" });
+    const dialog = screen.getByRole("dialog", { name: "导入或创作课程包" });
     await user.click(
       within(dialog).getByRole("button", { name: "本地 Course Pack 目录" })
     );

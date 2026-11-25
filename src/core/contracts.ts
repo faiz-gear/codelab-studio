@@ -46,6 +46,14 @@ export const ERROR_CODES = [
   "COURSE_MARKDOWN_INVALID",
   "COURSE_MANIFEST_INVALID",
   "COURSE_CHECKS_INVALID",
+  "GIT_COURSE_FETCH_FAILED",
+  "GIT_COURSE_CACHE_FAILED",
+  "NO_ACTIVE_GIT_COURSE",
+  "NO_ACTIVE_DRAFT",
+  "INVALID_DRAFT_PATH",
+  "DRAFT_DIRECTORY_NOT_EMPTY",
+  "DRAFT_WRITE_FAILED",
+  "TRIAL_WORKSPACE_FAILED",
   "NO_ACTIVE_COURSE",
   "COURSE_UNTRUSTED",
   "NO_ACTIVE_WORKSPACE",
@@ -67,6 +75,11 @@ export const ERROR_CODES = [
   "RUNTIME_DOWNLOAD_FAILED",
   "RUNTIME_INTEGRITY_FAILED",
   "RUNTIME_INSTALL_FAILED",
+  "EXECUTION_FAILED",
+  "COMMAND_BLOCK_NOT_FOUND",
+  "COMMAND_CWD_INVALID",
+  "COMMAND_SHELL_UNAVAILABLE",
+  "TERMINAL_NOT_FOUND",
   "SHUTDOWN_FAILED",
   "IPC_UNAVAILABLE",
   "UNEXPECTED_ERROR",
@@ -214,27 +227,57 @@ export interface ShutdownReport {
 export type CourseSource =
   | { kind: "builtin"; courseId: string }
   | { kind: "localMarkdown"; path: string }
-  | { kind: "localPack"; path: string };
+  | { kind: "localPack"; path: string }
+  | { kind: "gitPack"; url: string };
 
-export type OpenCourseRequest =
-  | { kind: "builtin"; courseId: string }
-  | { kind: "localMarkdown"; path: string }
-  | { kind: "localPack"; path: string };
+export type OpenCourseRequest = CourseSource;
 
 export function courseSourceKey(source: CourseSource): string {
-  return source.kind === "builtin"
-    ? `builtin:${source.courseId}`
-    : `${source.kind}:${source.path}`;
+  return source.kind === "builtin" ? `builtin:${source.courseId}` : `${source.kind}:${courseSourceLocation(source)}`;
 }
 
 export function courseSourceLocation(source: CourseSource): string {
-  return source.kind === "builtin"
-    ? `builtin://${source.courseId}`
-    : source.path;
+  if (source.kind === "builtin") return `builtin://${source.courseId}`;
+  return source.kind === "gitPack" ? source.url : source.path;
 }
 
 export function openRequestFromSource(source: CourseSource): OpenCourseRequest {
   return source;
+}
+
+export interface CourseDraftRequest {
+  path: string;
+  title: string;
+  language: CourseLanguage;
+  referenceSolution: boolean;
+}
+
+export interface DraftDiagnostic {
+  path: string;
+  error: DomainError;
+}
+
+export interface DraftPreview {
+  course: LoadedCourse | null;
+  diagnostics: DraftDiagnostic[];
+}
+
+export interface CourseDraft {
+  id: number;
+  root: string;
+  files: string[];
+  preview: DraftPreview;
+  requiresRegistryTrust: boolean;
+}
+
+export interface DraftFilePath {
+  draftId: number;
+  path: string;
+}
+
+export interface DraftEdit {
+  path: string;
+  text: string;
 }
 
 export type ChapterKind = "guide" | "exercise";
@@ -306,6 +349,7 @@ export interface Chapter {
   title: string;
   kind: ChapterKind;
   presentation: ChapterPresentation;
+  hasReferenceHint?: boolean;
   defaultCwd: string | null;
   entryFile: string | null;
   summaryHtml: string | null;
@@ -380,12 +424,73 @@ export type WorkspaceFile = {
   revision: string | null;
 } & ({ kind: "text"; text: string } | { kind: "binary" | "tooLarge" | "missing" });
 
+export interface WorkspaceComparison {
+  current: WorkspaceFile;
+  proposed: string;
+}
+
 export interface WorkspaceFilesChanged {
   workspaceId: number;
   paths: string[];
 }
 
 export type ExternalIde = "vsCode" | "cursor" | "goLand" | "intelliJIdea";
+
+
+export interface WorkspaceTerminalRequest {
+  workspaceId: number;
+}
+
+export interface TerminalTarget extends WorkspaceTerminalRequest {
+  terminalId: number;
+}
+
+export interface CommandDraft {
+  path: string;
+  text: string;
+  expectedRevision: string | null;
+}
+
+export interface RunCommandBlock extends WorkspaceTerminalRequest {
+  commandId: string;
+  confirmation?: number;
+  restartTerminalId?: number;
+  drafts: CommandDraft[];
+}
+
+export interface CommandConfirmation {
+  token: number;
+  cwd: string;
+  command: string;
+}
+
+export interface TerminalSummary {
+  id: number;
+  commandId: string | null;
+  label: string | null;
+  mode: CommandMode | null;
+  cwd: string;
+  startedAt: string;
+  port: number | null;
+  running: boolean;
+  exitCode: number | null;
+  portConflict: boolean;
+}
+
+export interface TerminalOutput {
+  cursor: number;
+  reset: boolean;
+  data: string;
+  more: boolean;
+}
+
+export interface TerminalUpdates {
+  terminals: TerminalSummary[];
+  output: TerminalOutput | null;
+  recentErrors: string[];
+}
+
+export type CommandCwdOverrides = Record<string, string>;
 
 export type AppCommand =
   | { type: "bootstrap" }
@@ -401,15 +506,35 @@ export type AppCommand =
   | { type: "listBuiltinCourses" }
   | { type: "openCourse"; payload: OpenCourseRequest }
   | { type: "reloadActiveCourse" }
+  | { type: "refreshGitCourse" }
+  | { type: "createCourseDraft"; payload: CourseDraftRequest }
+  | { type: "openCourseDraft"; payload: { path: string } }
+  | { type: "readCourseDraftFile"; payload: DraftFilePath }
+  | { type: "writeCourseDraftFile"; payload: DraftFilePath & { text: string; expectedRevision: string | null } }
+  | { type: "previewCourseDraft"; payload: { draftId: number; edits: DraftEdit[] } }
+  | { type: "startTrialWorkspace"; payload: { draftId: number } }
   | { type: "closeActiveCourse" }
   | { type: "bindWorkspace"; payload: { path: string } }
   | { type: "openRecentWorkspace"; payload: { path: string } }
   | { type: "listWorkspaceFiles"; payload: WorkspacePath }
   | { type: "readWorkspaceFile"; payload: WorkspacePath }
   | { type: "writeWorkspaceFile"; payload: WorkspacePath & { text: string; expectedRevision: string | null } }
+  | { type: "previewChapterSolution"; payload: { workspaceId: number; chapterId: string } }
+  | { type: "listStarterFiles"; payload: { workspaceId: number } }
+  | { type: "previewStarterFile"; payload: WorkspacePath }
+  | { type: "applyWorkspaceComparison"; payload: WorkspacePath & { text: string; expectedRevision: string | null } }
   | { type: "createWorkspaceFile"; payload: WorkspacePath }
   | { type: "renameWorkspaceFile"; payload: WorkspacePath & { newPath: string } }
   | { type: "openWorkspaceIde"; payload: WorkspacePath & { ide: ExternalIde } }
+  | { type: "openTerminal"; payload: WorkspaceTerminalRequest }
+  | { type: "readTerminals"; payload: WorkspaceTerminalRequest & { terminalId?: number; cursor?: number; includeRecentErrors?: boolean } }
+  | { type: "writeTerminal"; payload: TerminalTarget & { text: string } }
+  | { type: "resizeTerminal"; payload: TerminalTarget & { cols: number; rows: number } }
+  | { type: "stopTerminal"; payload: TerminalTarget }
+  | { type: "closeTerminal"; payload: TerminalTarget }
+  | { type: "runCommandBlock"; payload: RunCommandBlock }
+  | { type: "getCommandCwdOverrides"; payload: WorkspaceTerminalRequest }
+  | { type: "setCommandCwdOverride"; payload: WorkspaceTerminalRequest & { commandId: string; cwd: string | null } }
   | { type: "getPreflight" }
   | { type: "refreshPreflight" }
   | { type: "setRuntimePreference"; payload: RuntimePreference }
@@ -429,13 +554,27 @@ export type AppResponse =
   | { type: "trustState"; payload: TrustState }
   | { type: "builtinCourses"; payload: CourseSummary[] }
   | { type: "loadedCourse"; payload: LoadedCourse }
+  | { type: "courseDraft"; payload: CourseDraft }
+  | { type: "draftPreview"; payload: DraftPreview }
+  | { type: "trialTrustRequired"; payload: TrustSource }
+  | { type: "trialWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary } }
   | { type: "courseClosed" }
   | { type: "workspaceBound"; payload: WorkspaceSummary }
   | { type: "recentWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary | null } }
   | { type: "workspaceEntries"; payload: WorkspaceEntry[] }
   | { type: "workspaceFile"; payload: WorkspaceFile }
   | { type: "workspaceFileConflict"; payload: WorkspaceFile }
+  | { type: "workspaceComparisons"; payload: WorkspaceComparison[] }
+  | { type: "starterFiles"; payload: string[] }
   | { type: "workspaceIdeOpened" }
+  | { type: "terminalOpened"; payload: TerminalSummary }
+  | { type: "terminals"; payload: TerminalUpdates }
+  | { type: "terminalUpdated" }
+  | { type: "commandCwdOverrides"; payload: CommandCwdOverrides }
+  | { type: "commandConfirmationRequired"; payload: CommandConfirmation }
+  | { type: "commandSaveConflict"; payload: { file: WorkspaceFile; saved: WorkspaceFile[] } }
+  | { type: "commandFailed"; payload: { error: DomainError; saved: WorkspaceFile[] } }
+  | { type: "commandStarted"; payload: { terminal: TerminalSummary; saved: WorkspaceFile[] } }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };
 

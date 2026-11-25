@@ -1,16 +1,22 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::Duration;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::course::authoring::{
+    CourseDraft, CourseDraftRequest, Draft, DraftFilePath, DraftFileWrite, DraftPreview,
+    DraftPreviewRequest, TrialWorkspaceOpened,
+};
+use crate::course::git_pack::{self, GitCli, normalize_git_url};
 use crate::course::{
-    self, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher, LoadedCourse,
-    OpenCourseRequest, OpenedCourse, Starter,
+    self, ChapterReferences, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher,
+    GitFetchAdapter, LoadedCourse, OpenCourseRequest, OpenedCourse, Starter,
 };
 use crate::error::{DomainError, ErrorCode};
+use crate::execution::{Execution, editors, model::*};
 use crate::model::{
     AppBootstrap, GlobalSettings, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, TrustEntry,
@@ -19,8 +25,9 @@ use crate::model::{
 use crate::runtime::{PreflightReport, RuntimeAdapters, RuntimeManager, RuntimePreference};
 use crate::storage::JsonStore;
 use crate::workspace::{
-    Workspace, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename, WorkspaceFileWrite,
-    WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
+    Workspace, WorkspaceComparison, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename,
+    WorkspaceFileWrite, WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath,
+    WorkspaceSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,6 +68,18 @@ pub enum AppCommand {
     ListBuiltinCourses,
     OpenCourse(OpenCourseRequest),
     ReloadActiveCourse,
+    RefreshGitCourse,
+    CreateCourseDraft(CourseDraftRequest),
+    OpenCourseDraft {
+        path: String,
+    },
+    ReadCourseDraftFile(DraftFilePath),
+    WriteCourseDraftFile(DraftFileWrite),
+    PreviewCourseDraft(DraftPreviewRequest),
+    StartTrialWorkspace {
+        #[serde(rename = "draftId")]
+        draft_id: u64,
+    },
     CloseActiveCourse,
     BindWorkspace {
         path: String,
@@ -71,9 +90,30 @@ pub enum AppCommand {
     ListWorkspaceFiles(WorkspacePath),
     ReadWorkspaceFile(WorkspacePath),
     WriteWorkspaceFile(WorkspaceFileWrite),
+    PreviewChapterSolution {
+        #[serde(rename = "workspaceId")]
+        workspace_id: u64,
+        #[serde(rename = "chapterId")]
+        chapter_id: String,
+    },
+    ListStarterFiles {
+        #[serde(rename = "workspaceId")]
+        workspace_id: u64,
+    },
+    PreviewStarterFile(WorkspacePath),
+    ApplyWorkspaceComparison(WorkspaceFileWrite),
     CreateWorkspaceFile(WorkspacePath),
     RenameWorkspaceFile(WorkspaceFileRename),
     OpenWorkspaceIde(WorkspaceIdeRequest),
+    OpenTerminal(WorkspaceTerminalRequest),
+    ReadTerminals(TerminalRead),
+    WriteTerminal(TerminalInput),
+    ResizeTerminal(TerminalSize),
+    StopTerminal(TerminalTarget),
+    CloseTerminal(TerminalTarget),
+    GetCommandCwdOverrides(WorkspaceTerminalRequest),
+    SetCommandCwdOverride(CommandCwdOverride),
+    RunCommandBlock(RunCommandBlock),
     GetPreflight,
     RefreshPreflight,
     SetRuntimePreference(RuntimePreference),
@@ -93,13 +133,27 @@ pub enum AppResponse {
     TrustState(TrustState),
     BuiltinCourses(Vec<CourseSummary>),
     LoadedCourse(LoadedCourse),
+    CourseDraft(CourseDraft),
+    DraftPreview(DraftPreview),
+    TrialTrustRequired(TrustSource),
+    TrialWorkspaceOpened(TrialWorkspaceOpened),
     CourseClosed,
     WorkspaceBound(WorkspaceSummary),
     RecentWorkspaceOpened(RecentWorkspaceOpened),
     WorkspaceEntries(Vec<WorkspaceEntry>),
     WorkspaceFile(WorkspaceFile),
     WorkspaceFileConflict(WorkspaceFile),
+    WorkspaceComparisons(Vec<WorkspaceComparison>),
+    StarterFiles(Vec<String>),
     WorkspaceIdeOpened,
+    TerminalOpened(TerminalSummary),
+    Terminals(TerminalUpdates),
+    TerminalUpdated,
+    CommandCwdOverrides(CommandCwdOverrides),
+    CommandConfirmationRequired(CommandConfirmation),
+    CommandSaveConflict(CommandSaveConflict),
+    CommandFailed(CommandFailed),
+    CommandStarted(CommandStarted),
     Preflight(PreflightReport),
     Shutdown(ShutdownReport),
 }
@@ -145,6 +199,7 @@ pub type CleanupHook = Box<dyn FnOnce() -> Result<(), String> + Send + 'static>;
 struct ActiveCourseState {
     course: LoadedCourse,
     starter: Option<Starter>,
+    references: ChapterReferences,
     _watcher: Option<CourseWatcher>,
 }
 
@@ -155,8 +210,13 @@ struct AppState {
     recovery_notices: Vec<StorageRecoveryNotice>,
     builtin_courses: Vec<CourseSummary>,
     active_course: Option<ActiveCourseState>,
+    course_load_generation: u64,
     active_workspace: Option<Workspace>,
+    trial_workspace: Option<tempfile::TempDir>,
+    draft: Option<Draft>,
+    next_draft_id: u64,
     next_workspace_id: u64,
+    execution: Execution,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
@@ -171,6 +231,7 @@ pub struct App {
     state: Mutex<AppState>,
     subscribers: Arc<Subscribers>,
     runtime: Arc<RuntimeManager>,
+    git: Arc<dyn GitFetchAdapter>,
 }
 
 impl App {
@@ -181,6 +242,21 @@ impl App {
     pub fn open_with_runtime_adapters(
         config: AppConfig,
         adapters: RuntimeAdapters,
+    ) -> Result<Self, DomainError> {
+        Self::open_with_adapters(config, adapters, Arc::new(GitCli))
+    }
+
+    pub fn open_with_git_fetcher(
+        config: AppConfig,
+        git: Arc<dyn GitFetchAdapter>,
+    ) -> Result<Self, DomainError> {
+        Self::open_with_adapters(config, RuntimeAdapters::default(), git)
+    }
+
+    fn open_with_adapters(
+        config: AppConfig,
+        adapters: RuntimeAdapters,
+        git: Arc<dyn GitFetchAdapter>,
     ) -> Result<Self, DomainError> {
         fs::create_dir_all(&config.data_dir).map_err(|err| {
             DomainError::new(ErrorCode::StorageWriteFailed)
@@ -244,17 +320,24 @@ impl App {
                 recovery_notices,
                 builtin_courses,
                 active_course: None,
+                course_load_generation: 0,
                 active_workspace: None,
+                trial_workspace: None,
+                draft: None,
+                next_draft_id: 1,
                 next_workspace_id: 1,
+                execution: Execution::default(),
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
             }),
             subscribers,
             runtime,
+            git,
         })
     }
 
     pub fn execute(&self, command: AppCommand) -> Result<AppResponse, DomainError> {
+        let applying_comparison = matches!(command, AppCommand::ApplyWorkspaceComparison(_));
         match command {
             AppCommand::Bootstrap => {
                 let state = self.lock_state();
@@ -286,6 +369,37 @@ impl App {
             )),
             AppCommand::OpenCourse(request) => self.open_course(request),
             AppCommand::ReloadActiveCourse => self.reload_active_course(),
+            AppCommand::RefreshGitCourse => self.refresh_git_course(),
+            AppCommand::CreateCourseDraft(request) => self
+                .open_draft(|id, workspace| Draft::create(id, request, &self.data_dir, workspace)),
+            AppCommand::OpenCourseDraft { path } => {
+                self.open_draft(|id, workspace| Draft::open(id, &path, &self.data_dir, workspace))
+            }
+            AppCommand::ReadCourseDraftFile(target) => self
+                .lock_state()
+                .draft(target.draft_id)?
+                .paths
+                .read(&target.path)
+                .map(AppResponse::WorkspaceFile),
+            AppCommand::WriteCourseDraftFile(request) => {
+                let state = self.lock_state();
+                let result = state.draft(request.target.draft_id)?.paths.write(
+                    &request.target.path,
+                    &request.text,
+                    request.expected_revision.as_deref(),
+                    false,
+                )?;
+                Ok(match result {
+                    Ok(file) => AppResponse::WorkspaceFile(file),
+                    Err(file) => AppResponse::WorkspaceFileConflict(file),
+                })
+            }
+            AppCommand::PreviewCourseDraft(request) => self
+                .lock_state()
+                .draft(request.draft_id)?
+                .preview(&request.edits)
+                .map(AppResponse::DraftPreview),
+            AppCommand::StartTrialWorkspace { draft_id } => self.start_trial_workspace(draft_id),
             AppCommand::CloseActiveCourse => Ok(self.close_active_course()),
             AppCommand::BindWorkspace { path } => self.bind_workspace(&path),
             AppCommand::OpenRecentWorkspace { path } => self.open_recent_workspace(&path),
@@ -301,12 +415,49 @@ impl App {
                 .files
                 .read(&target.path)
                 .map(AppResponse::WorkspaceFile),
-            AppCommand::WriteWorkspaceFile(request) => {
+            AppCommand::PreviewChapterSolution {
+                workspace_id,
+                chapter_id,
+            } => {
+                let state = self.lock_state();
+                let active = state.course()?;
+                state
+                    .workspace(workspace_id)?
+                    .files
+                    .preview_chapter(
+                        &active.course,
+                        active.starter.as_ref(),
+                        &active.references,
+                        &chapter_id,
+                    )
+                    .map(AppResponse::WorkspaceComparisons)
+            }
+            AppCommand::ListStarterFiles { workspace_id } => {
+                let state = self.lock_state();
+                let workspace = state.workspace(workspace_id)?;
+                let starter = self.workspace_starter(workspace, state.course()?)?;
+                workspace
+                    .files
+                    .list_starter(starter.as_ref())
+                    .map(AppResponse::StarterFiles)
+            }
+            AppCommand::PreviewStarterFile(target) => {
+                let state = self.lock_state();
+                let workspace = state.workspace(target.workspace_id)?;
+                let starter = self.workspace_starter(workspace, state.course()?)?;
+                let comparison = workspace
+                    .files
+                    .preview_starter(starter.as_ref(), &target.path)?;
+                Ok(AppResponse::WorkspaceComparisons(vec![comparison]))
+            }
+            AppCommand::WriteWorkspaceFile(request)
+            | AppCommand::ApplyWorkspaceComparison(request) => {
                 let state = self.lock_state();
                 let result = state.workspace(request.target.workspace_id)?.files.write(
                     &request.target.path,
                     &request.text,
                     request.expected_revision.as_deref(),
+                    applying_comparison,
                 )?;
                 Ok(match result {
                     Ok(file) => AppResponse::WorkspaceFile(file),
@@ -331,6 +482,37 @@ impl App {
                     .open_in_ide(&request)?;
                 Ok(AppResponse::WorkspaceIdeOpened)
             }
+            AppCommand::OpenTerminal(request) => self.open_terminal(request.workspace_id),
+            AppCommand::RunCommandBlock(request) => self.run_command_block(request),
+            AppCommand::ReadTerminals(request) => {
+                let mut state = self.lock_state();
+                state.workspace(request.workspace_id)?;
+                Ok(AppResponse::Terminals(state.execution.read(request)))
+            }
+            AppCommand::WriteTerminal(request) => self
+                .update_terminal(request.target.workspace_id, |execution| {
+                    execution.input(request)
+                }),
+            AppCommand::ResizeTerminal(request) => self
+                .update_terminal(request.target.workspace_id, |execution| {
+                    execution.resize(request)
+                }),
+            AppCommand::StopTerminal(target) => self
+                .update_terminal(target.workspace_id, |execution| {
+                    execution.stop(target.terminal_id)
+                }),
+            AppCommand::CloseTerminal(target) => self
+                .update_terminal(target.workspace_id, |execution| {
+                    execution.close(target.terminal_id)
+                }),
+            AppCommand::GetCommandCwdOverrides(request) => {
+                let state = self.lock_state();
+                let workspace = state.workspace(request.workspace_id)?;
+                Ok(AppResponse::CommandCwdOverrides(
+                    workspace.command_cwds.for_course(&state.course()?.course),
+                ))
+            }
+            AppCommand::SetCommandCwdOverride(request) => self.set_command_cwd(request),
             AppCommand::GetPreflight => Ok(AppResponse::Preflight(self.runtime.snapshot())),
             AppCommand::RefreshPreflight => self.runtime.refresh().map(AppResponse::Preflight),
             AppCommand::SetRuntimePreference(preference) => self
@@ -342,6 +524,97 @@ impl App {
             }
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
+    }
+
+    fn open_terminal(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let workspace = state.workspace(workspace_id)?;
+        let dir = crate::workspace::command_cwd::directory(&workspace.files, ".")?;
+        let language = state.course()?.course.language;
+        state
+            .execution
+            .start(None, dir, &self.runtime.snapshot(), language)
+            .map(AppResponse::TerminalOpened)
+    }
+
+    fn run_command_block(&self, request: RunCommandBlock) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let workspace = state.workspace(request.workspace_id)?;
+        let course = &state.course()?.course;
+        let language = course.language;
+        let (launch, dir) = if let Some(id) = request.restart_terminal_id {
+            let previous = state.execution.restart_launch(id, &request.command_id)?;
+            workspace.command_cwds.resolve_saved(
+                &workspace.files,
+                &previous.block,
+                previous.cwd_key.clone(),
+                Some(id),
+            )?
+        } else {
+            let block = find_block(course, &request.command_id)?;
+            workspace
+                .command_cwds
+                .resolve(&workspace.files, course, block, None)?
+        };
+        let launch = match state.execution.approve(launch, request.confirmation) {
+            Ok(launch) => launch,
+            Err(confirmation) => return Ok(AppResponse::CommandConfirmationRequired(confirmation)),
+        };
+        let mut saved = Vec::new();
+        let result = (|| {
+            let workspace = state.workspace(request.workspace_id)?;
+            if let Some(file) = editors::save(workspace, request.drafts, &mut saved)? {
+                return Ok(Err(file));
+            }
+            state
+                .execution
+                .start(Some(launch), dir, &self.runtime.snapshot(), language)
+                .map(Ok)
+        })();
+        match result {
+            Ok(Ok(terminal)) => Ok(AppResponse::CommandStarted(CommandStarted {
+                terminal,
+                saved,
+            })),
+            Ok(Err(file)) => Ok(AppResponse::CommandSaveConflict(CommandSaveConflict {
+                file,
+                saved,
+            })),
+            Err(error) if saved.is_empty() => Err(error),
+            Err(error) => Ok(AppResponse::CommandFailed(CommandFailed { error, saved })),
+        }
+    }
+
+    fn set_command_cwd(&self, request: CommandCwdOverride) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        state.workspace(request.workspace_id)?;
+        let AppState {
+            active_course,
+            active_workspace,
+            execution,
+            ..
+        } = &mut *state;
+        let course = &active_course.as_ref().unwrap().course;
+        let workspace = active_workspace.as_mut().unwrap();
+        let block = find_block(course, &request.command_id)?;
+        workspace
+            .command_cwds
+            .set(&workspace.files, course, block, request.cwd.as_deref())?;
+        execution.invalidate_confirmation();
+        Ok(AppResponse::CommandCwdOverrides(
+            workspace.command_cwds.for_course(course),
+        ))
+    }
+
+    fn update_terminal(
+        &self,
+        id: u64,
+        update: impl FnOnce(&mut Execution) -> Result<(), DomainError>,
+    ) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        state.workspace(id)?;
+        update(&mut state.execution)?;
+        Ok(AppResponse::TerminalUpdated)
     }
 
     pub fn subscribe(&self) -> EventSubscription {
@@ -370,7 +643,7 @@ impl App {
     }
 
     pub fn shutdown(&self) -> Result<ShutdownReport, DomainError> {
-        let (hooks, active_course, active_workspace) = {
+        let (hooks, active_course, active_workspace, trial_workspace) = {
             let mut state = self.lock_state();
             if state.shut_down {
                 return Ok(ShutdownReport {
@@ -379,15 +652,18 @@ impl App {
                 });
             }
             state.shut_down = true;
+            state.execution.clear();
             (
                 std::mem::take(&mut state.cleanup_hooks),
                 state.active_course.take(),
                 state.active_workspace.take(),
+                state.trial_workspace.take(),
             )
         };
 
         drop(active_workspace);
         drop(active_course);
+        drop(trial_workspace);
 
         let mut hooks_executed = 0;
         let mut failures = Vec::new();
@@ -595,7 +871,12 @@ impl App {
         self.trust_store.save_atomic(&next)?;
         state.trust_entries = next.clone();
 
+        let scaffolded_trial = state.trial_workspace.is_some()
+            && state.draft.as_ref().is_some_and(|draft| draft.scaffolded);
         let changed = state.active_course.as_mut().and_then(|active| {
+            if scaffolded_trial {
+                return None;
+            }
             let trusted = is_course_trusted(&active.course.source, &next);
             if std::mem::replace(&mut active.course.trusted, trusted) == trusted {
                 return None;
@@ -609,6 +890,9 @@ impl App {
             if let Some(workspace) = &state.active_workspace {
                 workspace.set_trusted(changed.trusted);
             }
+            if !changed.trusted {
+                state.execution.clear();
+            }
             self.emit(AppEvent::CourseTrustChanged(changed));
         }
         self.emit(AppEvent::TrustUpdated(next.clone()));
@@ -616,45 +900,84 @@ impl App {
     }
 
     fn open_course(&self, request: OpenCourseRequest) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
-        self.load_course(&mut state, &request)
+        self.load_course(self.lock_state(), &request)
     }
 
     fn reload_active_course(&self) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
-        let request = request_from_source(&state.course()?.course.source);
-        self.load_course(&mut state, &request)
+        let state = self.lock_state();
+        let active = state.course()?;
+        if state.trial_workspace.is_some() {
+            return Ok(AppResponse::LoadedCourse(active.course.clone()));
+        }
+        let request = request_from_source(&active.course.source);
+        self.load_course(state, &request)
+    }
+
+    fn refresh_git_course(&self) -> Result<AppResponse, DomainError> {
+        let state = self.lock_state();
+        let CourseSource::GitPack { url } = &state.course()?.course.source else {
+            return Err(DomainError::new(ErrorCode::NoActiveGitCourse));
+        };
+        let request = OpenCourseRequest::GitPack { url: url.clone() };
+        let (mut state, opened) = self.prepare_course(state, &request, true)?;
+        if let Some(workspace) = &state.active_workspace {
+            let mut recent = workspace_recent(workspace, &opened.course);
+            recent.completed_exercises = workspace.completed_for(&opened.course)?;
+            self.store_recent(&mut state, recent)?;
+        }
+        Ok(AppResponse::LoadedCourse(
+            self.activate_course(&mut state, opened),
+        ))
     }
 
     fn load_course(
         &self,
-        state: &mut AppState,
+        state: MutexGuard<'_, AppState>,
         request: &OpenCourseRequest,
     ) -> Result<AppResponse, DomainError> {
-        let opened = self.prepare_course(state, request)?;
+        let (mut state, opened) = self.prepare_course(state, request, false)?;
+        state.close_trial();
         if state
             .active_course
             .as_ref()
             .is_some_and(|active| active.course.source != opened.course.source)
         {
-            state.active_workspace = None;
+            state.deactivate_workspace();
         }
         Ok(AppResponse::LoadedCourse(
-            self.activate_course(state, opened),
+            self.activate_course(&mut state, opened),
         ))
     }
 
-    fn prepare_course(
-        &self,
-        state: &AppState,
+    fn prepare_course<'a>(
+        &'a self,
+        mut state: MutexGuard<'a, AppState>,
         request: &OpenCourseRequest,
-    ) -> Result<OpenedCourse, DomainError> {
+        refresh: bool,
+    ) -> Result<(MutexGuard<'a, AppState>, OpenedCourse), DomainError> {
         if state.shut_down {
             return Err(DomainError::new(ErrorCode::NoActiveCourse));
         }
-        let mut opened = course::open_course(request)?;
+        state.course_load_generation += 1;
+        let mut opened = if let OpenCourseRequest::GitPack { url } = request {
+            let generation = state.course_load_generation;
+            drop(state);
+            let prepared = git_pack::prepare(&self.data_dir, url, self.git.as_ref(), refresh);
+            state = self.lock_state();
+            if state.shut_down || generation != state.course_load_generation {
+                drop(state);
+                return Err(DomainError::new(if refresh {
+                    ErrorCode::NoActiveGitCourse
+                } else {
+                    ErrorCode::NoActiveCourse
+                }));
+            }
+            prepared?.publish()?
+        } else {
+            course::open_local_course(request, &self.data_dir)?
+        };
         opened.course.trusted = is_course_trusted(&opened.course.source, &state.trust_entries);
-        Ok(opened)
+        Ok((state, opened))
     }
 
     fn activate_course(&self, state: &mut AppState, opened: OpenedCourse) -> LoadedCourse {
@@ -668,10 +991,12 @@ impl App {
                 move |changed| emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed)),
             ))
         };
+        state.execution.invalidate_confirmation();
         let course = opened.course;
         state.active_course = Some(ActiveCourseState {
             course: course.clone(),
             starter: opened.starter,
+            references: opened.references,
             _watcher: watcher,
         });
         self.emit(AppEvent::CourseLoaded(course.clone()));
@@ -680,7 +1005,9 @@ impl App {
 
     fn close_active_course(&self) -> AppResponse {
         let mut state = self.lock_state();
-        state.active_workspace = None;
+        state.course_load_generation += 1;
+        state.deactivate_workspace();
+        state.trial_workspace = None;
         state.active_course = None;
         AppResponse::CourseClosed
     }
@@ -688,6 +1015,10 @@ impl App {
     fn bind_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
         let active = state.trusted_course()?;
+        if state.trial_workspace.is_some() {
+            return Err(DomainError::new(ErrorCode::InvalidWorkspacePath));
+        }
+        state.protect_draft_path(path)?;
         let workspace = self.prepare_workspace(
             state.next_workspace_id,
             path,
@@ -701,7 +1032,7 @@ impl App {
     }
 
     fn open_recent_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
+        let state = self.lock_state();
         let normalized = normalize_absolute_path(path)
             .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
         let recent = state
@@ -715,8 +1046,9 @@ impl App {
                 course_id: recent.course_id.clone(),
             },
         };
-        let opened = self.prepare_course(&state, &request)?;
+        let (mut state, opened) = self.prepare_course(state, &request, false)?;
         let workspace = if opened.course.trusted {
+            state.protect_draft_path(path)?;
             let workspace = self.prepare_workspace(
                 state.next_workspace_id,
                 path,
@@ -726,11 +1058,71 @@ impl App {
             self.store_recent(&mut state, workspace_recent(&workspace, &opened.course))?;
             Some(self.activate_workspace(&mut state, workspace))
         } else {
-            state.active_workspace = None;
+            state.deactivate_workspace();
             None
         };
+        state.trial_workspace = None;
         let course = self.activate_course(&mut state, opened);
         Ok(AppResponse::RecentWorkspaceOpened(RecentWorkspaceOpened {
+            course,
+            workspace,
+        }))
+    }
+
+    fn open_draft(
+        &self,
+        open: impl FnOnce(u64, Option<&Path>) -> Result<Draft, DomainError>,
+    ) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        if state.shut_down {
+            return Err(DomainError::new(ErrorCode::NoActiveDraft));
+        }
+        let workspace = state
+            .active_workspace
+            .as_ref()
+            .map(|workspace| workspace.files.root.as_path());
+        let draft = open(state.next_draft_id, workspace)?;
+        let summary = draft.summary()?;
+        state.course_load_generation += 1;
+        state.next_draft_id += 1;
+        state.deactivate_workspace();
+        state.trial_workspace = None;
+        state.active_course = None;
+        state.draft = Some(draft);
+        Ok(AppResponse::CourseDraft(summary))
+    }
+
+    fn start_trial_workspace(&self, draft_id: u64) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let draft = state.draft(draft_id)?;
+        let path = draft.paths.root.to_string_lossy().into_owned();
+        let source = CourseSource::LocalPack { path: path.clone() };
+        if !draft.scaffolded && !is_course_trusted(&source, &state.trust_entries) {
+            return Ok(AppResponse::TrialTrustRequired(TrustSource {
+                source_kind: TrustSourceKind::LocalPath,
+                source: path,
+            }));
+        }
+        let mut opened = draft.trial_course()?;
+        if opened.course.source != source {
+            return Err(DomainError::new(ErrorCode::InvalidDraftPath));
+        }
+        opened.course.trusted = true;
+        let trial = tempfile::Builder::new()
+            .prefix("codelab-trial-")
+            .tempdir()
+            .map_err(|_| DomainError::new(ErrorCode::TrialWorkspaceFailed))?;
+        let workspace = self.prepare_workspace(
+            state.next_workspace_id,
+            &trial.path().to_string_lossy(),
+            &opened.course,
+            opened.starter.as_ref(),
+        )?;
+        let workspace = self.activate_workspace(&mut state, workspace);
+        state.course_load_generation += 1;
+        state.trial_workspace = Some(trial);
+        let course = self.activate_course(&mut state, opened);
+        Ok(AppResponse::TrialWorkspaceOpened(TrialWorkspaceOpened {
             course,
             workspace,
         }))
@@ -749,7 +1141,23 @@ impl App {
         })
     }
 
+    fn workspace_starter(
+        &self,
+        workspace: &Workspace,
+        active: &ActiveCourseState,
+    ) -> Result<Option<Starter>, DomainError> {
+        if let (CourseSource::GitPack { url }, Some(key)) = (
+            &active.course.source,
+            workspace.git_starter_snapshot.as_deref(),
+        ) && git_pack::snapshot_key(active.starter.as_ref()) != Some(key)
+        {
+            return git_pack::snapshot_starter(&self.data_dir, url, key);
+        }
+        Ok(active.starter.clone())
+    }
+
     fn activate_workspace(&self, state: &mut AppState, workspace: Workspace) -> WorkspaceSummary {
+        state.execution.clear();
         state.next_workspace_id += 1;
         let summary = workspace.summary.clone();
         state.active_workspace = Some(workspace);
@@ -768,6 +1176,35 @@ impl App {
 }
 
 impl AppState {
+    fn deactivate_workspace(&mut self) {
+        self.execution.clear();
+        self.active_workspace = None;
+    }
+
+    fn close_trial(&mut self) {
+        if self.trial_workspace.is_some() {
+            self.deactivate_workspace();
+            self.trial_workspace = None;
+        }
+    }
+
+    fn draft(&self, id: u64) -> Result<&Draft, DomainError> {
+        self.draft
+            .as_ref()
+            .filter(|draft| draft.id == id && !self.shut_down)
+            .ok_or_else(|| DomainError::new(ErrorCode::NoActiveDraft))
+    }
+
+    fn protect_draft_path(&self, path: &str) -> Result<(), DomainError> {
+        if let Some(draft) = &self.draft
+            && let Ok(root) = fs::canonicalize(path)
+            && (root.starts_with(&draft.paths.root) || draft.paths.root.starts_with(root))
+        {
+            return Err(DomainError::new(ErrorCode::InvalidWorkspacePath));
+        }
+        Ok(())
+    }
+
     fn course(&self) -> Result<&ActiveCourseState, DomainError> {
         self.active_course
             .as_ref()
@@ -791,9 +1228,24 @@ impl AppState {
     }
 }
 
+fn find_block<'a>(
+    course: &'a LoadedCourse,
+    id: &str,
+) -> Result<&'a crate::CommandBlock, DomainError> {
+    course
+        .chapters
+        .iter()
+        .flat_map(|chapter| &chapter.commands)
+        .find(|block| block.id == id)
+        .ok_or_else(|| DomainError::new(ErrorCode::CommandBlockNotFound))
+}
+
 fn is_course_trusted(source: &CourseSource, entries: &[TrustEntry]) -> bool {
     match source {
         CourseSource::Builtin { .. } => true,
+        CourseSource::GitPack { url } => entries
+            .iter()
+            .any(|entry| matches_trust_key(entry, TrustSourceKind::GitRepo, url)),
         CourseSource::LocalMarkdown { path } | CourseSource::LocalPack { path } => entries
             .iter()
             .any(|entry| matches_trust_key(entry, TrustSourceKind::LocalPath, path)),
@@ -809,6 +1261,7 @@ fn request_from_source(source: &CourseSource) -> OpenCourseRequest {
             OpenCourseRequest::LocalMarkdown { path: path.clone() }
         }
         CourseSource::LocalPack { path } => OpenCourseRequest::LocalPack { path: path.clone() },
+        CourseSource::GitPack { url } => OpenCourseRequest::GitPack { url: url.clone() },
     }
 }
 
@@ -887,41 +1340,4 @@ fn normalize_trust_source(kind: TrustSourceKind, raw: &str) -> Option<String> {
         TrustSourceKind::LocalPath => normalize_absolute_path(raw),
         TrustSourceKind::GitRepo => normalize_git_url(raw),
     }
-}
-
-fn normalize_git_url(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
-        return None;
-    }
-
-    if let Some((scheme, rest)) = trimmed.split_once("://") {
-        let lower_scheme = scheme.to_ascii_lowercase();
-        if !matches!(lower_scheme.as_str(), "https" | "http" | "ssh") {
-            return None;
-        }
-        let (host, path) = split_and_clean_git_host_path(rest, '/')?;
-        return Some(format!("{lower_scheme}://{host}/{path}"));
-    }
-
-    if let Some(after_user) = trimmed.strip_prefix("git@") {
-        let (host, path) = split_and_clean_git_host_path(after_user, ':')?;
-        return Some(format!("git@{host}:{path}"));
-    }
-
-    None
-}
-
-fn split_and_clean_git_host_path(input: &str, separator: char) -> Option<(String, String)> {
-    let (host, raw_path) = input.split_once(separator)?;
-    let lower_host = host.trim().to_ascii_lowercase();
-    let trimmed_path = raw_path.trim_matches('/');
-    let clean_path = trimmed_path
-        .strip_suffix(".git")
-        .unwrap_or(trimmed_path)
-        .trim_end_matches('/');
-    if lower_host.is_empty() || clean_path.is_empty() {
-        return None;
-    }
-    Some((lower_host, clean_path.to_string()))
 }

@@ -1,3 +1,5 @@
+pub(crate) mod command_cwd;
+mod comparison;
 mod files;
 mod metadata;
 mod model;
@@ -11,6 +13,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub use comparison::WorkspaceComparison;
 pub use model::{
     ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceEntry, WorkspaceEntryKind, WorkspaceFile,
     WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite, WorkspaceFilesChanged,
@@ -18,7 +21,7 @@ pub use model::{
 };
 
 use self::metadata::WorkspaceMetadata;
-use self::paths::WorkspacePaths;
+pub(crate) use self::paths::WorkspacePaths;
 use self::watcher::WorkspaceWatcher;
 use crate::course::{CourseSource, LoadedCourse, Starter};
 use crate::{DomainError, ErrorCode};
@@ -27,6 +30,8 @@ pub(crate) struct Workspace {
     pub summary: WorkspaceSummary,
     pub completed_exercises: u32,
     pub files: WorkspacePaths,
+    pub command_cwds: command_cwd::CommandCwds,
+    pub git_starter_snapshot: Option<String>,
     events_enabled: Arc<AtomicBool>,
     _watcher: WorkspaceWatcher,
 }
@@ -91,9 +96,15 @@ impl Workspace {
             },
             completed_exercises: metadata.completed_exercises,
             files,
+            command_cwds: metadata.command_cwds,
+            git_starter_snapshot: metadata.git_starter_snapshot,
             events_enabled,
             _watcher: watcher,
         })
+    }
+
+    pub fn completed_for(&self, course: &LoadedCourse) -> Result<u32, DomainError> {
+        metadata::completed_for(&self.files, course)
     }
 
     pub fn set_trusted(&self, trusted: bool) {

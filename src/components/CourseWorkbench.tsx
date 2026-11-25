@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   courseSourceLocation,
   type Chapter,
@@ -9,6 +9,10 @@ import {
 } from "../core/contracts";
 import { interpolate, type Messages } from "../i18n";
 import { ChapterOutlineDrawer } from "./ChapterOutlineDrawer";
+import type { CoreClient } from "../core/client";
+import { CommandWorkbench, emptyWorkbench } from "../execution/CommandWorkbench";
+import { CommandConfirmationDialog, CommandCwdDialog } from "../execution/ExecutionDialogs";
+import { TerminalPanel } from "../execution/TerminalPanel";
 import { CommandBlockCard } from "./CommandBlockCard";
 import {
   BookOpenIcon,
@@ -21,15 +25,21 @@ import {
   RefreshIcon,
 } from "./Icons";
 
+import { WorkspaceComparisonTrigger } from "../workspace/WorkspaceComparison";
 import { WorkspaceEditor } from "../workspace/WorkspaceEditor";
 import type { WorkspaceEditorSession } from "../workspace/editorSession";
 
 const DEFAULT_MANUAL_WIDTH_PCT = 38;
+const ignoreExecutionError = () => {};
+const staticSnapshot = () => emptyWorkbench;
+const staticSubscribe = () => () => {};
 const MIN_MANUAL_WIDTH_PX = 320;
 const MAX_MANUAL_WIDTH_PCT = 54;
 
 export interface CourseWorkbenchProps {
   course: LoadedCourse;
+  client?: CoreClient;
+  onExecutionError?: (error: unknown) => void;
   session: WorkspaceEditorSession | null;
   settings: GlobalSettings;
   switching: boolean;
@@ -37,7 +47,7 @@ export interface CourseWorkbenchProps {
   onChooseWorkspace: () => void;
   onResumeWorkspace: () => void;
   onRequestTrust: () => void;
-  onRevokeTrust: () => void;
+  onRevokeTrust?: () => void;
   activeChapterId: string;
   focusMode: boolean;
   pendingReload: CourseSourceChangedEvent | null;
@@ -48,6 +58,8 @@ export interface CourseWorkbenchProps {
   onReloadCourse: () => void;
   onDismissReload: () => void;
   onCopyCommand: (commandText: string) => void;
+  stage?: ReactNode;
+  onReturnToDraft?: () => void;
 }
 
 function getFileBasename(filePath: string): string {
@@ -56,7 +68,7 @@ function getFileBasename(filePath: string): string {
 }
 
 export function CourseWorkbench({
-  course,
+  course, client, onExecutionError = ignoreExecutionError,
   session,
   settings,
   switching,
@@ -75,10 +87,26 @@ export function CourseWorkbench({
   onReloadCourse,
   onDismissReload,
   onCopyCommand,
+  stage,
+  onReturnToDraft,
 }: CourseWorkbenchProps) {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [cwdDialog, setCwdDialog] = useState<{ workbench: CommandWorkbench; command: CommandBlock } | null>(null);
+  const workbench = useMemo(() => client && session && course.trusted ? new CommandWorkbench(client, session) : null,
+    [client, course.trusted, session]);
+  const execution = useSyncExternalStore(workbench?.subscribe ?? staticSubscribe, workbench?.snapshot ?? staticSnapshot);
+  useEffect(() => {
+    if (workbench) void workbench.loadCwd().catch(onExecutionError);
+  }, [course, onExecutionError, workbench]);
+
+  function renderCommand(command: CommandBlock) {
+    return <CommandBlockCard key={command.id} command={command} messages={messages} onCopy={onCopyCommand}
+      override={execution.cwd[command.id]} disabled={execution.busy || switching}
+      onRun={workbench ? () => void workbench.run({ commandId: command.id }).catch(onExecutionError) : undefined}
+      onChangeCwd={workbench ? () => setCwdDialog({ workbench, command }) : undefined} />;
+  }
 
   const wbRef = useRef<HTMLDivElement | null>(null);
   const manualScrollRef = useRef<HTMLDivElement | null>(null);
@@ -202,7 +230,9 @@ export function CourseWorkbench({
   const sourceBadge =
     course.source.kind === "builtin"
       ? t.builtinBadge
-      : course.source.kind === "localPack"
+      : course.source.kind === "gitPack"
+        ? messages.coursePack.gitBadge
+        : course.source.kind === "localPack"
         ? t.localPackBadge
         : t.localMarkdownBadge;
 
@@ -213,6 +243,11 @@ export function CourseWorkbench({
   const isThreeStepMode =
     activeChapter?.presentation === "threeStep" && threeStep !== null;
   const chapterFile = threeStep?.step2EntryFile;
+  const referenceTrigger = course.trusted && session && activeChapter ? (
+    <WorkspaceComparisonTrigger key={`${session.workspace.id}:${activeChapter.chapterId}`}
+      session={session} chapterId={activeChapter.chapterId} settings={settings} messages={messages}
+      disabled={switching} />
+  ) : null;
   const activeReflectionsHtml = isThreeStepMode
     ? threeStep.reflectionsHtml
     : (activeChapter?.reflectionsHtml ?? null);
@@ -223,7 +258,7 @@ export function CourseWorkbench({
     }
     const hasStep1 = threeStep.step1CommandIds.length > 0;
     const hasStep2 =
-      Boolean(threeStep.step2Html) || Boolean(threeStep.step2EntryFile);
+      Boolean(threeStep.step2Html) || Boolean(threeStep.step2EntryFile) || Boolean(activeChapter?.hasReferenceHint);
     const hasStep3 =
       threeStep.step3Checks.length > 0 ||
       Boolean(threeStep.step3IntroHtml) ||
@@ -233,7 +268,7 @@ export function CourseWorkbench({
     const step2 = hasStep2 ? (step1 ?? 0) + 1 : null;
     const step3 = hasStep3 ? (step2 ?? step1 ?? 0) + 1 : null;
     return { step1, step2, step3 };
-  }, [threeStep]);
+  }, [activeChapter?.hasReferenceHint, threeStep]);
 
   const secondaryCommands = useMemo(() => {
     if (!threeStep) return [];
@@ -246,6 +281,7 @@ export function CourseWorkbench({
     ? getFileBasename(pendingReload.changedPaths[0])
     : course.title;
 
+  const pendingConfirmation = execution.confirmation;
   return (
     <section
       ref={wbRef}
@@ -340,6 +376,16 @@ export function CourseWorkbench({
           onSelectChapter={onSelectChapter}
           onClose={() => setOutlineOpen(false)}
         />
+
+        {course.source.kind === "gitPack" && (
+          <div className="git-course-actions">
+            <button type="button" className="btn btn--secondary btn--xs"
+              disabled={reloading || switching} onClick={onReloadCourse}>
+              <RefreshIcon size={12} />
+              {reloading ? messages.coursePack.gitLoading : messages.coursePack.gitRefresh}
+            </button>
+          </div>
+        )}
 
         {pendingReload ? (
           <div
@@ -442,12 +488,7 @@ export function CourseWorkbench({
                         const cmd = commandById.get(cmdId);
                         if (!cmd) return null;
                         return (
-                          <CommandBlockCard
-                            key={cmd.id}
-                            command={cmd}
-                            messages={messages}
-                            onCopy={onCopyCommand}
-                          />
+                          renderCommand(cmd)
                         );
                       })}
                     </section>
@@ -475,6 +516,7 @@ export function CourseWorkbench({
                           ) : <span className="file-pill mono">{chapterFile}</span>
                         ) : null}
                       </div>
+                      {referenceTrigger}
                       {threeStep.step2Html ? (
                         <div
                           className="md-prose"
@@ -485,6 +527,8 @@ export function CourseWorkbench({
                       ) : null}
                     </section>
                   ) : null}
+
+                  {visibleStepNumbers.step2 === null && course.source.kind !== "localMarkdown" && referenceTrigger}
 
                   {visibleStepNumbers.step3 !== null ? (
                     <section
@@ -549,12 +593,7 @@ export function CourseWorkbench({
                       </summary>
                       <div className="disclosure-body">
                         {secondaryCommands.map((cmd) => (
-                          <CommandBlockCard
-                            key={cmd.id}
-                            command={cmd}
-                            messages={messages}
-                            onCopy={onCopyCommand}
-                          />
+                          renderCommand(cmd)
                         ))}
                       </div>
                     </details>
@@ -572,6 +611,7 @@ export function CourseWorkbench({
                     </div>
                   ) : null}
 
+                  {activeChapter.hasReferenceHint || (course.source.kind !== "localMarkdown" && activeChapter.kind === "exercise") ? referenceTrigger : null}
                   {activeChapter.blocks.map((block, blockIdx) => {
                     if (block.kind === "prose") {
                       return (
@@ -585,12 +625,7 @@ export function CourseWorkbench({
                     const cmd = commandById.get(block.commandId);
                     if (!cmd) return null;
                     return (
-                      <CommandBlockCard
-                        key={cmd.id}
-                        command={cmd}
-                        messages={messages}
-                        onCopy={onCopyCommand}
-                      />
+                      renderCommand(cmd)
                     );
                   })}
                 </div>
@@ -659,16 +694,22 @@ export function CourseWorkbench({
       />
 
       <section className="pane-center" aria-label={t.stageAriaLabel}>
-        {session && course.trusted ? (
-          <WorkspaceEditor
-            key={session.workspace.id}
-            session={session}
-            settings={settings}
-            messages={messages}
-            switching={switching}
-            onChangeWorkspace={onChooseWorkspace}
-            onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
-          />
+        {stage ?? (session && workbench ? (
+          <>
+            <WorkspaceEditor
+              key={session.workspace.id}
+              session={session}
+              settings={settings}
+              messages={messages}
+              switching={switching}
+              onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
+              workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
+              workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
+              onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
+            />
+            <TerminalPanel key={`terminal-${session.workspace.id}`} workbench={workbench} state={execution} messages={messages}
+              settings={settings} disabled={switching} onError={onExecutionError} />
+          </>
         ) : (
           <>
             <div className="stage-bar">
@@ -676,7 +717,7 @@ export function CourseWorkbench({
                 <span className="badge badge--neutral">{sourceBadge}</span>
                 {!course.trusted && <span className="badge badge--warning">{t.readOnlyPreviewBadge}</span>}
               </div>
-              {course.trusted && !course.isBuiltin && (
+              {course.trusted && !course.isBuiltin && onRevokeTrust && (
                 <button type="button" className="btn btn--ghost btn--xs" disabled={switching} onClick={onRevokeTrust}>{w.revokeTrust}</button>
               )}
             </div>
@@ -694,11 +735,26 @@ export function CourseWorkbench({
                       disabled={switching} onClick={onChooseWorkspace}>{w.choose}</button>
                   </>
                 ) : <button type="button" className="btn btn--primary btn--sm" disabled={switching} onClick={onRequestTrust}>{w.trust}</button>}
+                {onReturnToDraft && <button type="button" className="btn btn--secondary btn--sm"
+                  disabled={switching} onClick={onReturnToDraft}>{messages.coursePack.returnDraft}</button>}
               </div>
             </div>
           </>
-        )}
+        ))}
       </section>
+      {workbench && pendingConfirmation && (
+        <CommandConfirmationDialog detail={pendingConfirmation.detail} messages={messages}
+          onCancel={() => workbench.dismissConfirmation()}
+          onConfirm={() => {
+            const { request, detail } = pendingConfirmation;
+            void workbench.run({ ...request, confirmation: detail.token }).catch(onExecutionError);
+          }} />
+      )}
+      {workbench && cwdDialog?.workbench === workbench && (
+        <CommandCwdDialog key={cwdDialog.command.id} command={cwdDialog.command} override={execution.cwd[cwdDialog.command.id]}
+          messages={messages} locale={settings.locale} onCancel={() => setCwdDialog(null)}
+          onSave={(value) => workbench.setCwd(cwdDialog.command.id, value)} />
+      )}
     </section>
   );
 }

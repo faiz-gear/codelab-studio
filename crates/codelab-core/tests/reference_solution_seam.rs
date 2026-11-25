@@ -1,0 +1,363 @@
+use std::fs;
+use std::path::Path;
+
+use codelab_core::{
+    App, AppCommand, AppConfig, AppResponse, OpenCourseRequest, TrustSource, TrustSourceKind,
+    WorkspaceComparison, WorkspaceFileContents, WorkspaceFileWrite, WorkspacePath,
+};
+use tempfile::TempDir;
+
+fn open(pack: &Path, request: OpenCourseRequest) -> (App, TempDir, u64) {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("workspace");
+    fs::create_dir(&root).unwrap();
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    app.execute(AppCommand::GrantTrust(TrustSource {
+        source_kind: TrustSourceKind::LocalPath,
+        source: pack.to_str().unwrap().into(),
+    }))
+    .unwrap();
+    app.execute(AppCommand::OpenCourse(request)).unwrap();
+    let AppResponse::WorkspaceBound(workspace) = app
+        .execute(AppCommand::BindWorkspace {
+            path: root.to_str().unwrap().into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected a bound Workspace");
+    };
+    (app, temp, workspace.id)
+}
+
+fn preview(app: &App, workspace_id: u64, chapter_id: &str) -> Vec<WorkspaceComparison> {
+    let AppResponse::WorkspaceComparisons(files) = app
+        .execute(AppCommand::PreviewChapterSolution {
+            workspace_id,
+            chapter_id: chapter_id.into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected Workspace comparisons");
+    };
+    files
+}
+
+fn target(workspace_id: u64, path: &str) -> WorkspacePath {
+    WorkspacePath {
+        workspace_id,
+        path: path.into(),
+    }
+}
+
+fn apply(app: &App, workspace_id: u64, comparison: &WorkspaceComparison) -> AppResponse {
+    app.execute(AppCommand::ApplyWorkspaceComparison(WorkspaceFileWrite {
+        target: target(workspace_id, &comparison.current.path),
+        text: comparison.proposed.clone(),
+        expected_revision: comparison.current.revision.clone(),
+    }))
+    .unwrap()
+}
+
+#[test]
+fn compares_chapter_snapshots_and_applies_only_the_confirmed_file() {
+    let pack = TempDir::new().unwrap();
+    let root = pack.path();
+    fs::write(
+        root.join("codelab.json"),
+        r#"{
+        "schemaVersion":"1.0","courseId":"sample","title":"Sample",
+        "chapters":[{"chapterId":"stable-id","match":{"headingPrefix":"Renamed"}}]
+    }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("README.md"),
+        "# Sample\n\n## Renamed heading\n\n```go file=hint.go\n// ignored\n```\n",
+    )
+    .unwrap();
+    let snapshot = root.join("solutions/stable-id");
+    fs::create_dir_all(snapshot.join("nested")).unwrap();
+    fs::write(snapshot.join("main.go"), "package main\n").unwrap();
+    fs::write(snapshot.join("nested/new.go"), "package nested\n").unwrap();
+
+    let (app, temp, id) = open(
+        root,
+        OpenCourseRequest::LocalPack {
+            path: root.to_str().unwrap().into(),
+        },
+    );
+    let workspace = temp.path().join("workspace");
+    let draft = "package main\n\n  // my partial implementation\n";
+    fs::write(workspace.join("main.go"), draft).unwrap();
+
+    let comparisons = preview(&app, id, "stable-id");
+    assert_eq!(
+        comparisons
+            .iter()
+            .map(|item| item.current.path.as_str())
+            .collect::<Vec<_>>(),
+        ["main.go", "nested/new.go"]
+    );
+    assert_eq!(
+        comparisons[0].current.contents,
+        WorkspaceFileContents::Text { text: draft.into() }
+    );
+    assert_eq!(
+        comparisons[1].current.contents,
+        WorkspaceFileContents::Missing
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("main.go")).unwrap(),
+        draft
+    );
+    assert!(matches!(
+        apply(&app, id, &comparisons[1]),
+        AppResponse::WorkspaceFile(_)
+    ));
+    assert_eq!(
+        fs::read_to_string(workspace.join("nested/new.go")).unwrap(),
+        "package nested\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("main.go")).unwrap(),
+        draft
+    );
+
+    fs::write(workspace.join("main.go"), "// edited after review\n").unwrap();
+    assert!(matches!(
+        apply(&app, id, &comparisons[0]),
+        AppResponse::WorkspaceFileConflict(_)
+    ));
+    assert_eq!(
+        fs::read_to_string(workspace.join("main.go")).unwrap(),
+        "// edited after review\n"
+    );
+}
+
+#[test]
+fn resolves_file_fences_by_chapter_in_plain_markdown() {
+    let course = TempDir::new().unwrap();
+    let entry = course.path().join("lesson.md");
+    fs::write(
+        &entry,
+        r#"# Course
+
+## Before {#before}
+
+```go file=before.go
+package before
+```
+
+## Lesson {#stable}
+
+> ```go file="nested/my file.go"
+> package learning
+> ```
+
+```file=README.md
+document
+```
+
+```go path=example.go
+package example
+```
+"#,
+    )
+    .unwrap();
+    let (app, _temp, id) = open(
+        &entry,
+        OpenCourseRequest::LocalMarkdown {
+            path: entry.to_str().unwrap().into(),
+        },
+    );
+    let comparisons = preview(&app, id, "stable");
+    assert_eq!(
+        comparisons
+            .iter()
+            .map(|file| (file.current.path.as_str(), file.proposed.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("README.md", "document\n"),
+            ("nested/my file.go", "package learning\n"),
+        ]
+    );
+}
+
+#[test]
+fn restores_a_deleted_starter_test_file_without_touching_its_neighbors() {
+    let pack = TempDir::new().unwrap();
+    let root = pack.path();
+    fs::write(
+        root.join("codelab.json"),
+        r#"{
+        "schemaVersion":"1.0","courseId":"sample","title":"Sample","starterDir":"initial"
+    }"#,
+    )
+    .unwrap();
+    fs::write(root.join("README.md"), "# Sample\n\n## Lesson\n").unwrap();
+    fs::create_dir_all(root.join("initial/tests")).unwrap();
+    fs::write(root.join("initial/tests/hello_test.go"), "package test\n").unwrap();
+    fs::write(root.join("initial/main.go"), "package main\n").unwrap();
+
+    let (app, temp, id) = open(
+        root,
+        OpenCourseRequest::LocalPack {
+            path: root.to_str().unwrap().into(),
+        },
+    );
+    let workspace = temp.path().join("workspace");
+    fs::remove_dir_all(workspace.join("tests")).unwrap();
+    fs::write(workspace.join("main.go"), "// edited\n").unwrap();
+
+    let AppResponse::StarterFiles(files) = app
+        .execute(AppCommand::ListStarterFiles { workspace_id: id })
+        .unwrap()
+    else {
+        panic!("expected Starter files");
+    };
+    assert_eq!(files, ["main.go", "tests/hello_test.go"]);
+    let AppResponse::WorkspaceComparisons(files) = app
+        .execute(AppCommand::PreviewStarterFile(target(
+            id,
+            "tests/hello_test.go",
+        )))
+        .unwrap()
+    else {
+        panic!("expected a Starter comparison");
+    };
+    assert_eq!(files[0].current.contents, WorkspaceFileContents::Missing);
+    assert!(!workspace.join("tests").exists());
+    assert!(matches!(
+        apply(&app, id, &files[0]),
+        AppResponse::WorkspaceFile(_)
+    ));
+    assert_eq!(
+        fs::read_to_string(workspace.join("tests/hello_test.go")).unwrap(),
+        "package test\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("main.go")).unwrap(),
+        "// edited\n"
+    );
+    assert_eq!(
+        app.execute(AppCommand::PreviewStarterFile(target(id, "unrelated.go")))
+            .unwrap_err()
+            .code,
+        codelab_core::ErrorCode::WorkspaceFileNotFound
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn refuses_symlinked_course_sources_and_workspace_targets() {
+    use codelab_core::ErrorCode;
+    use std::os::unix::fs::symlink;
+
+    let pack = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let root = pack.path();
+    let outside_file = outside.path().join("untouched.go");
+    fs::write(&outside_file, "outside").unwrap();
+    fs::write(
+        root.join("codelab.json"),
+        r#"{"schemaVersion":"1.0","courseId":"sample","title":"Sample"}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("README.md"),
+        "# Sample\n\n## Lesson {#stable}\n\n```go file=outside.go\npackage outside\n```\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("solutions/stable")).unwrap();
+    fs::create_dir_all(root.join("starter")).unwrap();
+    fs::write(root.join("starter/main_test.go"), "package test\n").unwrap();
+    symlink(&outside_file, root.join("solutions/stable/main.go")).unwrap();
+
+    let (app, temp, id) = open(
+        root,
+        OpenCourseRequest::LocalPack {
+            path: root.to_str().unwrap().into(),
+        },
+    );
+    let request = || AppCommand::PreviewChapterSolution {
+        workspace_id: id,
+        chapter_id: "stable".into(),
+    };
+    assert_eq!(
+        app.execute(request()).unwrap_err().code,
+        ErrorCode::CoursePathInvalid
+    );
+
+    fs::remove_file(root.join("solutions/stable/main.go")).unwrap();
+    fs::write(root.join("solutions/stable/main.go"), "package main\n").unwrap();
+    let files = preview(&app, id, "stable");
+    let workspace = temp.path().join("workspace");
+    symlink(&outside_file, workspace.join("main.go")).unwrap();
+    assert_eq!(
+        app.execute(request()).unwrap_err().code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    let write = AppCommand::ApplyWorkspaceComparison(WorkspaceFileWrite {
+        target: target(id, &files[0].current.path),
+        text: files[0].proposed.clone(),
+        expected_revision: files[0].current.revision.clone(),
+    });
+    assert_eq!(
+        app.execute(write).unwrap_err().code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    assert_eq!(fs::read_to_string(&outside_file).unwrap(), "outside");
+
+    fs::remove_file(root.join("starter/main_test.go")).unwrap();
+    symlink(&outside_file, root.join("starter/main_test.go")).unwrap();
+    assert!(
+        app.execute(AppCommand::PreviewStarterFile(target(id, "main_test.go")))
+            .is_err()
+    );
+}
+
+#[test]
+fn ships_applicable_reference_files_for_all_builtin_go_exercises() {
+    let trust = TempDir::new().unwrap();
+    let (app, temp, id) = open(
+        trust.path(),
+        OpenCourseRequest::Builtin {
+            course_id: "go-goframe-practice".into(),
+        },
+    );
+    for (exercise, expected_file, expected_text) in [
+        (0, "REQUIREMENTS.md", "PATCH"),
+        (1, "task-api/main.go", "/healthz"),
+        (2, "task-api/main.go", "sync.RWMutex"),
+        (3, "task-api/internal/task/service.go", "RuneCountInString"),
+        (4, "task-api/internal/task/sqlite.go", "ORDER BY id"),
+        (5, "task-api/internal/task/sqlite.go", "BeginTx"),
+        (6, "task-api/main.go", ".Shutdown("),
+        (7, "task-api-gf/main.go", "BindHandler"),
+        (8, "task-api-gf/internal/task/orm.go", ".Transaction("),
+        (9, "task-api-gf/README.md", "go test -race"),
+    ] {
+        let comparisons = preview(&app, id, &format!("ex-{exercise}"));
+        assert!(
+            comparisons
+                .iter()
+                .any(|file| file.current.path == expected_file
+                    && file.proposed.contains(expected_text)),
+            "missing chapter {exercise} showcase"
+        );
+        for file in comparisons {
+            assert!(
+                matches!(apply(&app, id, &file), AppResponse::WorkspaceFile(_)),
+                "applying {}",
+                file.current.path
+            );
+            assert_eq!(
+                fs::read_to_string(temp.path().join("workspace").join(&file.current.path)).unwrap(),
+                file.proposed
+            );
+        }
+    }
+}

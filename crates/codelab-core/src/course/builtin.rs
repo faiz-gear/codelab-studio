@@ -1,6 +1,8 @@
 use crate::course::model::{CourseSource, CourseSummary, LoadedCourse};
 use crate::course::pack::{build_course_from_pack_parts, parse_manifest_bytes};
-use crate::course::{OpenedCourse, Starter};
+use crate::course::{
+    EmbeddedFiles, OpenedCourse, Starter, builtin_solutions::GO_GOFRAME_SOLUTIONS,
+};
 use crate::error::{DomainError, ErrorCode};
 
 const GO_GOFRAME_MANIFEST: &[u8] =
@@ -42,7 +44,8 @@ struct BuiltinPackAsset {
     manifest: &'static [u8],
     readme: &'static str,
     checks: &'static [u8],
-    starter: &'static [(&'static str, &'static [u8])],
+    starter: EmbeddedFiles,
+    solutions: &'static [(&'static str, EmbeddedFiles)],
 }
 
 const BUILTIN_PACKS: &[BuiltinPackAsset] = &[BuiltinPackAsset {
@@ -51,12 +54,23 @@ const BUILTIN_PACKS: &[BuiltinPackAsset] = &[BuiltinPackAsset {
     readme: GO_GOFRAME_README,
     checks: GO_GOFRAME_CHECKS,
     starter: GO_GOFRAME_STARTER,
+    solutions: GO_GOFRAME_SOLUTIONS,
 }];
+
+pub(crate) fn builtin_solution(course_id: &str, chapter_id: &str) -> Option<EmbeddedFiles> {
+    BUILTIN_PACKS
+        .iter()
+        .find(|pack| pack.course_id == course_id)?
+        .solutions
+        .iter()
+        .find(|(id, _)| *id == chapter_id)
+        .map(|(_, files)| *files)
+}
 
 pub(crate) fn list_builtin_courses() -> Result<Vec<CourseSummary>, DomainError> {
     let mut summaries = Vec::with_capacity(BUILTIN_PACKS.len());
     for asset in BUILTIN_PACKS {
-        let loaded = load_builtin_asset(asset)?;
+        let (loaded, _) = load_builtin_asset(asset)?;
         summaries.push(CourseSummary {
             course_id: loaded.course_id,
             title: loaded.title,
@@ -79,14 +93,18 @@ pub(crate) fn load_builtin_course(course_id: &str) -> Result<OpenedCourse, Domai
         .ok_or_else(|| {
             DomainError::new(ErrorCode::CourseNotFound).with_detail("source", trimmed.to_string())
         })?;
+    let (course, references) = load_builtin_asset(asset)?;
     Ok(OpenedCourse {
-        course: load_builtin_asset(asset)?,
+        course,
+        references,
         watched_files: Vec::new(),
         starter: Some(Starter::Builtin(asset.starter)),
     })
 }
 
-fn load_builtin_asset(asset: &BuiltinPackAsset) -> Result<LoadedCourse, DomainError> {
+fn load_builtin_asset(
+    asset: &BuiltinPackAsset,
+) -> Result<(LoadedCourse, super::ChapterReferences), DomainError> {
     let manifest = parse_manifest_bytes(asset.manifest)?;
     build_course_from_pack_parts(
         manifest,

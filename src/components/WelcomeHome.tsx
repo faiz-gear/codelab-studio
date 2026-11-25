@@ -24,6 +24,7 @@ export interface WelcomeHomeProps {
   onOpenBuiltinCourse: (courseId: string) => void;
   onOpenRecentWorkspace: (workspacePath: string) => void;
   onOpenImportModal: () => void;
+  onOpenAuthorModal: () => void;
   onPlaceholderAction: (target: string) => void;
 }
 
@@ -35,6 +36,7 @@ export function WelcomeHome({
   onOpenBuiltinCourse,
   onOpenRecentWorkspace,
   onOpenImportModal,
+  onOpenAuthorModal,
   onPlaceholderAction,
 }: WelcomeHomeProps) {
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
@@ -212,9 +214,7 @@ export function WelcomeHome({
             <button
               type="button"
               className="btn btn--ghost btn--xs"
-              onClick={() =>
-                onPlaceholderAction(messages.welcome.newCoursePack)
-              }
+              onClick={onOpenAuthorModal}
             >
               {messages.welcome.newCoursePack}
             </button>

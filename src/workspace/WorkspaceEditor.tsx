@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { CloseIcon, FolderIcon } from "../components/Icons";
 import type { ExternalIde, GlobalSettings } from "../core/contracts";
 import { formatDomainError, interpolate, type Messages } from "../i18n";
 import { editorText, type EditorTab, type WorkspaceEditorSession } from "./editorSession";
+import { WorkspaceComparisonTrigger } from "./WorkspaceComparison";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { WorkspaceTree } from "./WorkspaceTree";
 
@@ -17,16 +18,23 @@ const IDES: Record<ExternalIde, string> = {
 };
 
 export function WorkspaceEditor({
-  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching,
+  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching, workspaceActionLabel, workspaceLabel,
 }: {
   session: WorkspaceEditorSession;
   settings: GlobalSettings;
   messages: Messages;
   onChangeWorkspace: () => void;
+  workspaceActionLabel?: string;
+  workspaceLabel?: string;
   onRevokeTrust?: () => void;
   switching: boolean;
 }) {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
+  const conflictBanner = useRef<HTMLDivElement>(null);
+  const { executionConflict } = state;
+  useEffect(() => {
+    if (executionConflict > 0) conflictBanner.current?.focus();
+  }, [executionConflict]);
   const [treeOpen, setTreeOpen] = useState(false);
   const [ide, setIde] = useState<ExternalIde>("vsCode");
   const [fileForm, setFileForm] = useState<{ rename: string | null; value: string } | null>(null);
@@ -98,8 +106,9 @@ export function WorkspaceEditor({
   return (
     <div className="workspace-editor">
       <div className="workspace-location">
+        {workspaceLabel && <span className="badge badge--neutral">{workspaceLabel}</span>}
         <span className="mono workspace-root" title={session.workspace.root}>{session.workspace.root}</span>
-        <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onChangeWorkspace}>{t.change}</button>
+        <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onChangeWorkspace}>{workspaceActionLabel ?? t.change}</button>
         {onRevokeTrust && <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onRevokeTrust}>{t.revokeTrust}</button>}
       </div>
       <div className="workspace-controls">
@@ -118,6 +127,8 @@ export function WorkspaceEditor({
               setTreeOpen(true);
             }
           }}>{pickingComparison || comparing ? t.endCompare : t.compare}</button>
+        <WorkspaceComparisonTrigger session={session} settings={settings} messages={messages}
+          activePath={path} disabled={busy} />
         <div className="workspace-controls-spacer" />
         <div className="workspace-ide">
           <select aria-label={t.chooseIde} value={ide} onChange={(event) => setIde(event.target.value as ExternalIde)}>
@@ -151,7 +162,7 @@ export function WorkspaceEditor({
       {state.error && <p className="workspace-error" role="alert">{formatDomainError(state.error, settings.locale)}</p>}
       {active?.unavailable && <p className="workspace-error" role="alert">{formatDomainError(active.unavailable, settings.locale)}</p>}
       {conflicted?.conflict && (
-        <div className="workspace-conflict" role="region" aria-label={t.changedOnDisk}>
+        <div ref={conflictBanner} className="workspace-conflict" role="region" tabIndex={-1} aria-label={t.changedOnDisk}>
           <div role="status">
             <strong>{conflicted.conflict.kind === "missing" ? t.deletedOnDisk : t.changedOnDisk}</strong>
             <span className="mono">{conflicted.file.path}</span>
