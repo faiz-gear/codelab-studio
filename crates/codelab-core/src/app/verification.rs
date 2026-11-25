@@ -1,9 +1,10 @@
 use super::*;
-use crate::execution::preparation::CommandInvocation;
-use crate::execution::verification::{self, VerificationTask};
-use crate::{Chapter, ChapterKind, CheckKind, CheckResult, CheckStatus};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+use crate::execution::preparation::{CommandPreparation, ConfirmationTarget};
+use crate::execution::verification::{VerificationTask, model::*};
+use crate::{Chapter, ChapterKind};
+use std::sync::atomic::AtomicBool;
+
+mod run;
 
 impl App {
     pub(super) fn get_progress(&self, id: u64) -> Result<AppResponse, DomainError> {
@@ -23,100 +24,9 @@ impl App {
             return Err(DomainError::new(ErrorCode::VerificationBusy));
         }
         let chapter = exercise(&state, &request.target)?.clone();
-        let language = state.course()?.course.language;
-        let checks = chapter
-            .three_step
-            .as_ref()
-            .map(|s| s.step3_checks.as_slice())
-            .unwrap_or_default();
-        let mut plan = Vec::new();
-        for check in checks.iter().filter(|c| c.kind != CheckKind::SelfCheck) {
-            let prepared = match verification::PreparedCheck::prepare(check, language) {
-                Ok(prepared) => {
-                    let cwd = check
-                        .cwd
-                        .as_deref()
-                        .or(chapter.default_cwd.as_deref())
-                        .unwrap_or(".");
-                    let directory =
-                        crate::workspace::command_cwd::directory(&workspace.files, cwd)?;
-                    Ok((prepared, directory))
-                }
-                Err(error) => Err(error),
-            };
-            plan.push((check.id.clone(), prepared));
-        }
-        let has_runnable_checks = plan.iter().any(|(_, prepared)| prepared.is_ok());
-        let daemon = chapter
-            .three_step
-            .as_ref()
-            .and_then(|s| s.requires_daemon.as_ref())
-            .filter(|_| has_runnable_checks)
-            .map(|requirement| {
-                let course = &state.course()?.course;
-                let candidate = chapter
-                    .commands
-                    .iter()
-                    .chain(course.chapters.iter().flat_map(|c| &c.commands))
-                    .filter(|block| {
-                        block.mode == crate::CommandMode::Daemon
-                            && (block.port == Some(requirement.port)
-                                || block.command.trim() == requirement.label
-                                || block.label.as_deref() == Some(&requirement.label))
-                    })
-                    .enumerate()
-                    .max_by_key(|(index, block)| {
-                        (
-                            requirement.service_key.as_deref().is_some_and(|key| {
-                                block.label.as_deref() == Some(key)
-                                    || block.cwd.as_deref().is_some_and(|cwd| {
-                                        Path::new(cwd).file_name().is_some_and(|name| name == key)
-                                    })
-                            }),
-                            block.label.as_deref() == Some(&requirement.label)
-                                || block.command.trim() == requirement.label,
-                            std::cmp::Reverse(*index),
-                        )
-                    })
-                    .map(|(_, block)| block)
-                    .ok_or_else(|| {
-                        DomainError::new(ErrorCode::DaemonNotReady)
-                            .with_detail("port", requirement.port.to_string())
-                    })?;
-                let mut block = candidate.clone();
-                block.port = Some(requirement.port);
-                if block.cwd.is_none() {
-                    block.cwd = chapter.default_cwd.clone().or_else(|| {
-                        chapter
-                            .entry_file
-                            .as_deref()
-                            .and_then(|p| Path::new(p).parent())
-                            .filter(|p| !p.as_os_str().is_empty())
-                            .map(|p| p.to_string_lossy().into_owned())
-                    });
-                }
-                let (launch, directory) =
-                    workspace
-                        .command_cwds
-                        .resolve(&workspace.files, course, &block, None)?;
-                Ok::<_, DomainError>((requirement.clone(), launch, directory))
-            })
-            .transpose()?;
-        let mut commands = plan
-            .iter()
-            .filter_map(|(_, prepared)| {
-                let (check, directory) = prepared.as_ref().ok()?;
-                check.invocation(directory)
-            })
-            .collect::<Vec<_>>();
-        if let Some((_, launch, _)) = &daemon {
-            commands.push(CommandInvocation::from_block(launch));
-        }
-        let target = ConfirmationTarget::Checks {
-            chapter_id: chapter.chapter_id.clone(),
-            workspace_root: workspace.files.root.clone(),
-            commands,
-        };
+        let course = &state.course()?.course;
+        let plan = run::VerificationPlan::prepare(course, chapter, workspace)?;
+        let target = plan.confirmation_target(workspace.files.root.clone());
         let AppState {
             execution,
             active_workspace,
@@ -131,7 +41,7 @@ impl App {
             CommandPreparation::Ready {
                 target: ConfirmationTarget::Checks { chapter_id, .. },
                 saved,
-            } if chapter_id == chapter.chapter_id => saved,
+            } if chapter_id == plan.chapter().chapter_id => saved,
             CommandPreparation::Ready { .. } => {
                 unreachable!("Check preparation target")
             }
@@ -144,15 +54,12 @@ impl App {
             CommandPreparation::Failed(failed) => return Ok(AppResponse::CommandFailed(failed)),
         };
         let workspace = state.active_workspace.as_mut().unwrap();
-        if let Err(error) =
-            workspace.start_checks(&chapter, plan.iter().map(|(check_id, _)| check_id.as_str()))
-        {
+        if let Err(error) = workspace.start_checks(plan.chapter(), plan.check_ids()) {
             return Ok(AppResponse::CommandFailed(CommandFailed { error, saved }));
         }
-        state.verification = None;
         let cancelled = Arc::new(AtomicBool::new(false));
         state.verification = Some(VerificationTask {
-            chapter_id: Some(chapter.chapter_id.clone()),
+            chapter_id: Some(plan.chapter().chapter_id.clone()),
             cancelled: Arc::clone(&cancelled),
             handle: None,
         });
@@ -161,124 +68,11 @@ impl App {
         let subscribers = Arc::clone(&self.subscribers);
         let recents_dir = self.data_dir.clone();
         let report = self.runtime.snapshot();
-        let handle = thread::spawn(move || {
-            let daemon_result = daemon
-                .map(|(requirement, launch, directory)| {
-                    let port = requirement.port;
-                    let daemon = with_state(&shared, &cancelled, |state| {
-                        let latest = state.active_workspace.as_ref().unwrap().last_saved_at();
-                        state
-                            .execution
-                            .start_daemon(launch, directory, &report, language, port, latest)
-                    })
-                    .ok_or_else(|| {
-                        DomainError::new(ErrorCode::DaemonNotReady)
-                            .with_detail("port", port.to_string())
-                    })??;
-                    daemon.wait_until_ready(|daemon| {
-                        let running = with_state(&shared, &cancelled, |state| {
-                            state.execution.daemon_running(daemon)
-                        });
-                        Some(match running {
-                            None => Err(DomainError::new(ErrorCode::DaemonNotReady)
-                                .with_detail("port", daemon.port().to_string())),
-                            Some(Err(error)) => Err(error),
-                            Some(Ok(true)) => Ok(daemon.port_open()),
-                            Some(Ok(false)) if daemon.port_open() => {
-                                Err(DomainError::new(ErrorCode::DaemonPortConflict)
-                                    .with_detail("port", daemon.port().to_string()))
-                            }
-                            Some(Ok(false)) => Err(DomainError::new(ErrorCode::DaemonNotReady)
-                                .with_detail("port", daemon.port().to_string())),
-                        })
-                    })
-                })
-                .transpose();
-            for (check_id, prepared) in plan {
-                if cancelled.load(Ordering::Acquire) {
-                    return;
-                }
-                let result = prepared
-                    .and_then(|(check, directory)| {
-                        daemon_result.clone()?;
-                        check.run(directory, &report, &cancelled)
-                    })
-                    .unwrap_or_else(|error| CheckResult {
-                        error: Some(error),
-                        status: CheckStatus::Failed,
-                        ..CheckResult::running(&check_id)
-                    });
-                if with_state(&shared, &cancelled, |state| {
-                    let workspace = state.active_workspace.as_mut().unwrap();
-                    let persistence = workspace.record_check_result(
-                        &chapter.chapter_id,
-                        &check_id,
-                        result.clone(),
-                    );
-                    if let Err(error) = persistence {
-                        workspace.record_unsaved_check_result(
-                            &chapter.chapter_id,
-                            &check_id,
-                            result,
-                        );
-                        workspace.record_unsaved_check_result(
-                            &chapter.chapter_id,
-                            "persistence",
-                            CheckResult {
-                                error: Some(error),
-                                status: CheckStatus::Failed,
-                                ..CheckResult::running("persistence")
-                            },
-                        );
-                    }
-                    emit_to_subscribers(
-                        &subscribers,
-                        AppEvent::ProgressUpdated(progress_snapshot(state)),
-                    );
-                })
-                .is_none()
-                {
-                    return;
-                }
-            }
-            with_state(&shared, &cancelled, |state| {
-                let workspace = state.active_workspace.as_mut().unwrap();
-                if let Err(error) = workspace.finish_checks(&chapter) {
-                    workspace.record_unsaved_check_result(
-                        &chapter.chapter_id,
-                        "persistence",
-                        CheckResult {
-                            error: Some(error),
-                            status: CheckStatus::Failed,
-                            ..CheckResult::running("persistence")
-                        },
-                    );
-                }
-                if let Some(task) = &mut state.verification {
-                    task.chapter_id = None;
-                }
-                let store = JsonStore::new(&recents_dir, "recents.json", StoreKind::Recents);
-                if let Err(error) = publish_progress_snapshot(state, &store, &subscribers) {
-                    state
-                        .active_workspace
-                        .as_mut()
-                        .unwrap()
-                        .record_unsaved_check_result(
-                            &chapter.chapter_id,
-                            "recentsPersistence",
-                            CheckResult {
-                                error: Some(error),
-                                status: CheckStatus::Failed,
-                                ..CheckResult::running("recentsPersistence")
-                            },
-                        );
-                    emit_to_subscribers(
-                        &subscribers,
-                        AppEvent::ProgressUpdated(progress_snapshot(state)),
-                    );
-                }
-            });
-        });
+        let handle = run::VerificationRun::new(plan, report, cancelled).spawn(
+            shared,
+            subscribers,
+            recents_dir,
+        );
         state.verification.as_mut().unwrap().handle = Some(handle);
         Ok(AppResponse::VerificationStarted(VerificationStarted {
             progress: initial,
@@ -350,22 +144,6 @@ pub(super) fn progress_snapshot(state: &AppState) -> LearningProgress {
             .and_then(|task| task.chapter_id.clone()),
     }
 }
-fn with_state<T>(
-    state: &Mutex<AppState>,
-    cancelled: &AtomicBool,
-    action: impl FnOnce(&mut AppState) -> T,
-) -> Option<T> {
-    loop {
-        if cancelled.load(Ordering::Acquire) {
-            return None;
-        }
-        if let Ok(mut state) = state.try_lock() {
-            return Some(action(&mut state));
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-
 fn publish_progress_snapshot(
     state: &mut AppState,
     store: &JsonStore<Vec<RecentWorkspace>>,
