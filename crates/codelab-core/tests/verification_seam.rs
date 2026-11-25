@@ -295,6 +295,155 @@ fn timeout_interrupts_and_kills_the_entire_headless_process_group() {
     );
 }
 
+#[cfg(windows)]
+mod windows_timeout {
+    use super::*;
+    use std::{
+        net::TcpListener,
+        os::windows::process::CommandExt,
+        process::Command,
+        sync::atomic::{AtomicBool, Ordering},
+        thread,
+    };
+    use windows_sys::Win32::System::{
+        Console::{CTRL_BREAK_EVENT, GetConsoleCP, SetConsoleCtrlHandler},
+        Threading::DETACHED_PROCESS,
+    };
+
+    const DRIVER: &str = "CODELAB_TEST_DETACHED_DRIVER";
+    const LEAF: &str = "CODELAB_TEST_TIMEOUT_LEAF";
+    const CHILD_TEST: &str = "windows_timeout::timeout_child";
+    static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+    #[test]
+    fn timeout_delivers_interrupt_from_an_app_without_a_console() {
+        if run_in_detached_driver(
+            "windows_timeout::timeout_delivers_interrupt_from_an_app_without_a_console",
+        ) {
+            return;
+        }
+        let (_temp, result) = time_out("graceful");
+        assert!(
+            result["rawOutput"]
+                .as_str()
+                .unwrap()
+                .contains("console interrupt handled"),
+            "{result}"
+        );
+    }
+
+    #[test]
+    fn timeout_reclaims_descendants_that_ignore_the_interrupt() {
+        if run_in_detached_driver(
+            "windows_timeout::timeout_reclaims_descendants_that_ignore_the_interrupt",
+        ) {
+            return;
+        }
+        let (temp, result) = time_out("stubborn");
+        let port: u16 = fs::read_to_string(temp.path().join("work/listener-port.txt"))
+            .unwrap_or_else(|error| panic!("descendant did not start: {error}; {result}"))
+            .parse()
+            .unwrap();
+        let until = Instant::now() + Duration::from_secs(2);
+        loop {
+            match TcpListener::bind(("127.0.0.1", port)) {
+                Ok(_) => break,
+                Err(error) => {
+                    assert!(
+                        Instant::now() < until,
+                        "descendant retained port {port}: {error}"
+                    );
+                    thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+    }
+
+    fn run_in_detached_driver(test: &str) -> bool {
+        if std::env::var_os(DRIVER).is_some() {
+            assert_eq!(unsafe { GetConsoleCP() }, 0, "driver has a console");
+            return false;
+        }
+        // Match the no-console startup of the release desktop app in a new process.
+        let result = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture"])
+            .env(DRIVER, "1")
+            .creation_flags(DETACHED_PROCESS)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}\n{}",
+            result.status,
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        true
+    }
+
+    fn time_out(mode: &str) -> (TempDir, Value) {
+        let executable = std::env::current_exe().unwrap();
+        let executable = dunce::simplified(&executable)
+            .to_string_lossy()
+            .replace('\\', "/")
+            .replace('\'', "'\\''");
+        let command = format!("exec '{executable}' --ignored --exact {CHILD_TEST} --nocapture");
+        let (temp, app, id) = fixture(
+            json!([{"chapterId":"ex-1","checks":[
+                {"id":"timeout","title":"deadline","type":"command_test","command":command,"timeoutSec":3}
+            ]}]),
+            "# Course\n\n## Exercise 1\n",
+        );
+        fs::write(temp.path().join("work/timeout-mode.txt"), mode).unwrap();
+        send(
+            &app,
+            "runChecks",
+            json!({"workspaceId":id,"chapterId":"ex-1"}),
+        );
+        let result = wait(&app, id)["chapters"]["ex-1"]["lastCheckResults"][0].clone();
+        assert_eq!(result["status"], "timedOut", "{result}");
+        (temp, result)
+    }
+
+    #[test]
+    #[ignore = "spawned by the Windows timeout tests"]
+    fn timeout_child() {
+        let mode = fs::read_to_string("timeout-mode.txt").unwrap();
+        assert_ne!(unsafe { SetConsoleCtrlHandler(Some(handle_break), 1) }, 0);
+        if mode == "graceful" {
+            let until = Instant::now() + Duration::from_secs(15);
+            while !INTERRUPTED.load(Ordering::Relaxed) && Instant::now() < until {
+                thread::sleep(Duration::from_millis(5));
+            }
+            assert!(INTERRUPTED.load(Ordering::Relaxed));
+            println!("console interrupt handled");
+        } else if std::env::var_os(LEAF).is_none() {
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--ignored", "--exact", CHILD_TEST, "--nocapture"])
+                .env(LEAF, "1")
+                .status()
+                .unwrap();
+        } else {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            fs::write(
+                "listener-port.txt",
+                listener.local_addr().unwrap().port().to_string(),
+            )
+            .unwrap();
+            thread::sleep(Duration::from_secs(15));
+        }
+    }
+
+    unsafe extern "system" fn handle_break(event: u32) -> i32 {
+        if event == CTRL_BREAK_EVENT {
+            INTERRUPTED.store(true, Ordering::Relaxed);
+            1
+        } else {
+            0
+        }
+    }
+}
+
 #[test]
 fn verification_trust_confirmation_and_conflicts_guard_execution_before_saving() {
     let (temp, app, id) = fixture(
