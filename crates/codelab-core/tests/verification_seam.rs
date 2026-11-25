@@ -1,4 +1,4 @@
-use codelab_core::{App, AppCommand, AppConfig};
+use codelab_core::{App, AppCommand, AppConfig, ErrorCode};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -164,6 +164,46 @@ fn headless_commands_produce_results_and_sticky_completion_without_pty_output() 
     assert_eq!(
         send(&app, "listRecents", Value::Null)["payload"][0]["completedExercises"],
         1
+    );
+}
+
+#[test]
+fn running_checks_blocks_command_blocks_until_verification_finishes() {
+    let (temp, app, id) = fixture(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"slow","title":"wait for the runner","type":"command_test","command":"while [ ! -f release ]; do sleep 0.01; done"}
+        ]}]),
+        "# Course\n\n## Exercise 1\n\n```sh\nprintf command\n```\n",
+    );
+    assert_eq!(
+        send(
+            &app,
+            "runChecks",
+            json!({"workspaceId":id,"chapterId":"ex-1"}),
+        )["type"],
+        "verificationStarted"
+    );
+
+    let blocked = app
+        .execute(
+            serde_json::from_value::<AppCommand>(json!({
+                "type":"runCommandBlock",
+                "payload":{"workspaceId":id,"commandId":"ex-1:cmd-1"}
+            }))
+            .unwrap(),
+        )
+        .unwrap_err();
+    assert_eq!(blocked.code, ErrorCode::VerificationBusy);
+
+    fs::write(temp.path().join("work/release"), "done").unwrap();
+    wait(&app, id);
+    assert_eq!(
+        send(
+            &app,
+            "runCommandBlock",
+            json!({"workspaceId":id,"commandId":"ex-1:cmd-1"}),
+        )["type"],
+        "commandStarted"
     );
 }
 

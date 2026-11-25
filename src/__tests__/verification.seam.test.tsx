@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { DEFAULT_SETTINGS, type LearningProgress } from "../core/contracts";
 import { createBuiltinGoCourseFixture, FakeCoreClient } from "./fakeCoreClient";
@@ -9,6 +9,8 @@ beforeEach(() => localStorage.clear());
 async function open() {
   const course = createBuiltinGoCourseFixture();
   const chapter = course.chapters.find(c => c.chapterId === "ex-0")!;
+  chapter.commands = [{ ...course.chapters[0].commands[0], id: "ex-0:cmd-1", command: "printf command" }];
+  chapter.threeStep!.step1CommandIds = ["ex-0:cmd-1"];
   chapter.threeStep!.step3Checks.unshift({ id: "auto", title: "API contract", kind: "commandTest", required: true, cwd: null, command: "go test -json -race ./...", method: null, url: null });
   const client = new FakeCoreClient({ settings: { ...DEFAULT_SETTINGS, locale: "en-US" }, builtinCourses: [course], pickedPaths: { workspaceDir: "/work/checks" } });
   client.writeDiskFile("/work/checks", "main.go", "package main\n");
@@ -17,6 +19,45 @@ async function open() {
   await user.click(await screen.findByRole("button", { name: "Choose Workspace" }));
   return { client, user };
 }
+
+it("disables Command Blocks while verification is in flight", async () => {
+  const { client, user } = await open();
+  const dispatch = client.dispatch.bind(client);
+  let workspaceId: number | null = null;
+  let release!: (response: Awaited<ReturnType<typeof client.dispatch>>) => void;
+  const pending = new Promise<Awaited<ReturnType<typeof client.dispatch>>>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(client, "dispatch").mockImplementation((command) => {
+    if (command.type === "runChecks") {
+      workspaceId = command.payload.workspaceId;
+      return pending;
+    }
+    return dispatch(command);
+  });
+
+  await user.click(screen.getByRole("button", { name: "Run checks" }));
+  const runCommand = screen.getByRole("button", { name: "Run command" });
+  expect(runCommand).toBeDisabled();
+
+  await waitFor(() => expect(workspaceId).not.toBeNull());
+  if (workspaceId === null) throw new Error("Expected Run Checks request");
+  const progress: LearningProgress = {
+    workspaceId,
+    completedExercises: 0,
+    totalExercises: 10,
+    runningChapterId: "ex-0",
+    chapters: {},
+  };
+  release({
+    type: "verificationStarted",
+    payload: { progress, saved: [] },
+  });
+  await waitFor(() => expect(runCommand).toBeDisabled());
+  act(() => client.emitEvent({ type: "progressUpdated", payload: { ...progress, runningChapterId: null } }));
+  await waitFor(() => expect(runCommand).not.toBeDisabled());
+});
+
 it("saves drafts before checking and renders structured failures, logs, and sticky completion from Core", async () => {
   const {client,user} = await open();
   await user.click(screen.getByRole("button", {name:"Files"}));
