@@ -1,17 +1,13 @@
 use std::collections::BTreeMap;
-use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use cap_fs_ext::DirExt;
-use cap_std::fs::Dir;
 use serde::{Deserialize, Serialize};
 
-use super::files::is_text;
-use super::model::{MAX_WORKSPACE_TEXT_BYTES, WorkspaceFile, WorkspaceFileContents};
-use super::paths::{WorkspacePaths, invalid_path, is_ignored, relative_path, wire_path};
+use super::model::WorkspaceFile;
+use super::paths::{WorkspacePaths, is_ignored, relative_path, wire_path};
+use super::reader::{SnapshotDir, decode_text, invalid_course_path};
 use super::starter::checked_relative;
 use crate::course::{ChapterReferences, CourseSource, LoadedCourse, Starter, builtin_solution};
-use crate::filesystem::{open_canonical_dir, open_dir_at, open_regular};
 use crate::{DomainError, ErrorCode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +37,7 @@ impl WorkspacePaths {
         {
             return files
                 .iter()
-                .map(|(path, bytes)| self.comparison(path, checked_text(bytes, path)?))
+                .map(|(path, bytes)| self.compare_bytes(path, bytes))
                 .collect();
         }
         if let Some(Starter::Local { root, .. }) = starter {
@@ -49,18 +45,14 @@ impl WorkspacePaths {
                 .ok()
                 .filter(|path| path.components().count() == 1 && path.as_os_str() == chapter_id)
                 .ok_or_else(|| invalid_course_path(chapter_id))?;
-            let root = open_canonical_dir(root)
-                .map_err(|_| invalid_course_path(&root.to_string_lossy()))?;
             let directory = Path::new("solutions").join(chapter_dir);
-            if let Some(snapshot) =
-                open_optional_dir(&root, &directory).map_err(|_| invalid_course_path(chapter_id))?
-            {
-                return tree_files(&snapshot, false)
-                    .map_err(|_| invalid_course_path(chapter_id))?
+            if let Some(snapshot) = SnapshotDir::open_optional(root, &directory, chapter_id)? {
+                return snapshot
+                    .list_all_files()?
                     .into_iter()
                     .map(|path| {
                         let name = wire_path(&path).map_err(|_| invalid_course_path(chapter_id))?;
-                        self.comparison(&name, read_text(&snapshot, &path, &name)?)
+                        self.compare_snapshot_file(&snapshot, &name)
                     })
                     .collect();
             }
@@ -75,7 +67,7 @@ impl WorkspacePaths {
         }
         files
             .into_iter()
-            .map(|(path, text)| self.comparison(&path, checked_text(text.as_bytes(), &path)?))
+            .map(|(path, text)| self.compare_bytes(&path, text.as_bytes()))
             .collect()
     }
 
@@ -93,7 +85,7 @@ impl WorkspacePaths {
                 let Some(starter) = open_starter(root, directory)? else {
                     return Ok(Vec::new());
                 };
-                tree_files(&starter, true).map_err(|_| invalid_course_path(directory))?
+                starter.list_visible_files()?
             }
             None => return Ok(Vec::new()),
         };
@@ -123,121 +115,45 @@ impl WorkspacePaths {
         let name = wire_path(&target).map_err(|_| invalid_course_path(raw))?;
         let missing =
             || DomainError::new(ErrorCode::WorkspaceFileNotFound).with_detail("path", raw);
-        let proposed = match starter {
+        match starter {
             Some(Starter::Builtin(entries)) => {
                 let (_, bytes) = entries
                     .iter()
                     .find(|(path, _)| *path == name)
                     .ok_or_else(missing)?;
-                checked_text(bytes, &name)?
+                self.compare_bytes(&name, bytes)
             }
             Some(Starter::Local { root, directory }) => {
                 let starter = open_starter(root, directory)?.ok_or_else(missing)?;
-                read_text(&starter, &target, &name)?
+                self.compare_snapshot_file(&starter, &name)
             }
-            None => return Err(missing()),
-        };
-        self.comparison(&name, proposed)
+            None => Err(missing()),
+        }
     }
 
-    fn comparison(&self, path: &str, proposed: String) -> Result<WorkspaceComparison, DomainError> {
-        let current = self.read(path)?;
-        if current.path != path {
-            return Err(
-                DomainError::new(ErrorCode::WorkspacePathOutsideRoot).with_detail("path", path)
-            );
-        }
-        if matches!(
-            current.contents,
-            WorkspaceFileContents::Binary | WorkspaceFileContents::TooLarge
-        ) {
-            return Err(not_text(path));
-        }
+    fn compare_bytes(
+        &self,
+        path: &str,
+        proposed: &[u8],
+    ) -> Result<WorkspaceComparison, DomainError> {
+        let proposed = decode_text(proposed, path)?;
+        let current = self.read_comparison_target(path)?;
+        Ok(WorkspaceComparison { current, proposed })
+    }
+
+    fn compare_snapshot_file(
+        &self,
+        snapshot: &SnapshotDir,
+        path: &str,
+    ) -> Result<WorkspaceComparison, DomainError> {
+        let proposed = snapshot.read_text(path)?;
+        let current = self.read_comparison_target(path)?;
         Ok(WorkspaceComparison { current, proposed })
     }
 }
 
-fn open_starter(root: &Path, directory: &str) -> Result<Option<Dir>, DomainError> {
+fn open_starter(root: &Path, directory: &str) -> Result<Option<SnapshotDir>, DomainError> {
     let path =
         checked_relative(Path::new(directory)).map_err(|_| invalid_course_path(directory))?;
-    let root = open_canonical_dir(root).map_err(|_| invalid_course_path(directory))?;
-    open_optional_dir(&root, &path).map_err(|_| invalid_course_path(directory))
-}
-
-fn open_optional_dir(root: &Dir, path: &Path) -> io::Result<Option<Dir>> {
-    let mut dir = root.try_clone()?;
-    for name in path {
-        match dir.symlink_metadata(name) {
-            Ok(metadata) if metadata.is_dir() => dir = dir.open_dir_nofollow(name)?,
-            Ok(_) => return Err(invalid_path()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(Some(dir))
-}
-
-fn tree_files(root: &Dir, skip_ignored: bool) -> io::Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut pending = vec![(root.try_clone()?, PathBuf::new())];
-    while let Some((dir, prefix)) = pending.pop() {
-        for entry in dir.entries()? {
-            let entry = entry?;
-            let name = entry.file_name();
-            let path = prefix.join(&name);
-            if skip_ignored && is_ignored(&path) {
-                continue;
-            }
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
-                pending.push((dir.open_dir_nofollow(&name)?, path));
-            } else if file_type.is_file() {
-                paths.push(path);
-            } else {
-                return Err(invalid_path());
-            }
-        }
-    }
-    paths.sort();
-    Ok(paths)
-}
-
-fn read_text(root: &Dir, path: &Path, name: &str) -> Result<String, DomainError> {
-    let read = || -> io::Result<Vec<u8>> {
-        let parent = open_dir_at(root, path.parent().ok_or_else(invalid_path)?)?;
-        let file = open_regular(
-            &parent,
-            Path::new(path.file_name().ok_or_else(invalid_path)?),
-        )?;
-        let mut bytes = Vec::new();
-        file.take((MAX_WORKSPACE_TEXT_BYTES + 1) as u64)
-            .read_to_end(&mut bytes)?;
-        Ok(bytes)
-    };
-    let bytes = read().map_err(|error| {
-        if error.kind() == io::ErrorKind::NotFound {
-            DomainError::new(ErrorCode::WorkspaceFileNotFound).with_detail("path", name)
-        } else {
-            invalid_course_path(name)
-        }
-    })?;
-    checked_text(&bytes, name)
-}
-
-fn checked_text(bytes: &[u8], path: &str) -> Result<String, DomainError> {
-    if bytes.len() <= MAX_WORKSPACE_TEXT_BYTES
-        && let Ok(text) = std::str::from_utf8(bytes)
-        && is_text(text)
-    {
-        return Ok(text.to_owned());
-    }
-    Err(not_text(path))
-}
-
-fn invalid_course_path(path: &str) -> DomainError {
-    DomainError::new(ErrorCode::CoursePathInvalid).with_detail("path", path)
-}
-
-fn not_text(path: &str) -> DomainError {
-    DomainError::new(ErrorCode::WorkspaceFileNotText).with_detail("path", path)
+    SnapshotDir::open_optional(root, &path, directory)
 }

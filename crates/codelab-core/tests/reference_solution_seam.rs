@@ -2,8 +2,9 @@ use std::fs;
 use std::path::Path;
 
 use codelab_core::{
-    App, AppCommand, AppConfig, AppResponse, OpenCourseRequest, TrustSource, TrustSourceKind,
-    WorkspaceComparison, WorkspaceFileContents, WorkspaceFileWrite, WorkspacePath,
+    App, AppCommand, AppConfig, AppResponse, ErrorCode, MAX_WORKSPACE_TEXT_BYTES,
+    OpenCourseRequest, TrustSource, TrustSourceKind, WorkspaceComparison, WorkspaceFileContents,
+    WorkspaceFileWrite, WorkspacePath,
 };
 use tempfile::TempDir;
 
@@ -253,7 +254,6 @@ fn restores_a_deleted_starter_test_file_without_touching_its_neighbors() {
 #[cfg(unix)]
 #[test]
 fn refuses_symlinked_course_sources_and_workspace_targets() {
-    use codelab_core::ErrorCode;
     use std::os::unix::fs::symlink;
 
     let pack = TempDir::new().unwrap();
@@ -313,10 +313,197 @@ fn refuses_symlinked_course_sources_and_workspace_targets() {
 
     fs::remove_file(root.join("starter/main_test.go")).unwrap();
     symlink(&outside_file, root.join("starter/main_test.go")).unwrap();
-    assert!(
+    assert_eq!(
         app.execute(AppCommand::PreviewStarterFile(target(id, "main_test.go")))
-            .is_err()
+            .unwrap_err()
+            .code,
+        ErrorCode::CoursePathInvalid
     );
+
+    let missing_outside = outside.path().join("dangling.go");
+    fs::remove_file(root.join("solutions/stable/main.go")).unwrap();
+    symlink(&missing_outside, root.join("solutions/stable/main.go")).unwrap();
+    assert_eq!(
+        app.execute(request()).unwrap_err().code,
+        ErrorCode::CoursePathInvalid
+    );
+    fs::remove_file(root.join("solutions/stable/main.go")).unwrap();
+    fs::write(root.join("solutions/stable/main.go"), "package main\n").unwrap();
+
+    fs::remove_file(root.join("starter/main_test.go")).unwrap();
+    symlink(&missing_outside, root.join("starter/main_test.go")).unwrap();
+    assert_eq!(
+        app.execute(AppCommand::PreviewStarterFile(target(id, "main_test.go")))
+            .unwrap_err()
+            .code,
+        ErrorCode::CoursePathInvalid
+    );
+    fs::remove_file(root.join("starter/main_test.go")).unwrap();
+    fs::write(root.join("starter/main_test.go"), "package test\n").unwrap();
+
+    // Dangling and internal symlinks inside the Workspace must never be compared or overwritten.
+    fs::remove_file(workspace.join("main.go")).unwrap();
+    symlink(&missing_outside, workspace.join("main.go")).unwrap();
+    assert_eq!(
+        app.execute(request()).unwrap_err().code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    assert_eq!(
+        app.execute(AppCommand::ApplyWorkspaceComparison(WorkspaceFileWrite {
+            target: target(id, "main.go"),
+            text: "package main\n".into(),
+            expected_revision: None,
+        }))
+        .unwrap_err()
+        .code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    assert!(!missing_outside.exists());
+
+    fs::write(workspace.join("other.go"), "package other\n").unwrap();
+    fs::remove_file(workspace.join("main.go")).unwrap();
+    symlink("other.go", workspace.join("main.go")).unwrap();
+    fs::remove_file(workspace.join("main_test.go")).unwrap();
+    symlink("other.go", workspace.join("main_test.go")).unwrap();
+    assert_eq!(
+        app.execute(request()).unwrap_err().code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    assert_eq!(
+        app.execute(AppCommand::PreviewStarterFile(target(id, "main_test.go")))
+            .unwrap_err()
+            .code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    assert_eq!(
+        app.execute(AppCommand::ApplyWorkspaceComparison(WorkspaceFileWrite {
+            target: target(id, "main.go"),
+            text: "package main\n".into(),
+            expected_revision: files[0].current.revision.clone(),
+        }))
+        .unwrap_err()
+        .code,
+        ErrorCode::WorkspacePathOutsideRoot
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("other.go")).unwrap(),
+        "package other\n"
+    );
+}
+
+#[test]
+fn rejects_binary_control_byte_and_oversized_comparison_files_while_allowing_exact_limit() {
+    let pack = TempDir::new().unwrap();
+    let root = pack.path();
+    fs::write(
+        root.join("codelab.json"),
+        r#"{
+        "schemaVersion":"1.0","courseId":"sample","title":"Sample",
+        "chapters":[{"chapterId":"stable","match":{"anchor":"stable"}}]
+    }"#,
+    )
+    .unwrap();
+    fs::write(root.join("README.md"), "# Sample\n\n## Lesson {#stable}\n").unwrap();
+    fs::create_dir_all(root.join("starter")).unwrap();
+    fs::create_dir_all(root.join("solutions/stable")).unwrap();
+    let exact_text = "a".repeat(MAX_WORKSPACE_TEXT_BYTES);
+    fs::write(root.join("starter/exact.txt"), &exact_text).unwrap();
+    fs::write(root.join("starter/binary.txt"), b"bad\x01byte").unwrap();
+    fs::write(
+        root.join("starter/large.txt"),
+        vec![b'b'; MAX_WORKSPACE_TEXT_BYTES + 1],
+    )
+    .unwrap();
+    fs::write(root.join("starter/main.go"), "package starter\n").unwrap();
+    fs::write(root.join("solutions/stable/main.go"), &exact_text).unwrap();
+
+    let (app, temp, id) = open(
+        root,
+        OpenCourseRequest::LocalPack {
+            path: root.to_str().unwrap().into(),
+        },
+    );
+    let workspace = temp.path().join("workspace");
+
+    // Exact MAX_WORKSPACE_TEXT_BYTES succeeds for both Starter and Reference Solution snapshots.
+    let AppResponse::WorkspaceComparisons(starter_exact) = app
+        .execute(AppCommand::PreviewStarterFile(target(id, "exact.txt")))
+        .unwrap()
+    else {
+        panic!("expected Starter comparison");
+    };
+    assert_eq!(starter_exact[0].proposed.len(), MAX_WORKSPACE_TEXT_BYTES);
+    let solution_exact = preview(&app, id, "stable");
+    assert_eq!(solution_exact[0].proposed.len(), MAX_WORKSPACE_TEXT_BYTES);
+
+    // Replace the seeded Workspace copies with valid text so Starter snapshot
+    // validation is exercised independently of Workspace target validation.
+    for path in ["binary.txt", "large.txt"] {
+        fs::write(workspace.join(path), "valid learner text\n").unwrap();
+        assert_eq!(
+            app.execute(AppCommand::PreviewStarterFile(target(id, path)))
+                .unwrap_err()
+                .code,
+            ErrorCode::WorkspaceFileNotText,
+            "{path}"
+        );
+    }
+
+    // Binary, control-byte, and oversized Reference Solution snapshots are rejected as non-text.
+    for bad in [
+        b"nul\0byte".as_slice(),
+        b"ctrl\x07byte".as_slice(),
+        [0xff, 0xfe].as_slice(),
+    ] {
+        fs::write(root.join("solutions/stable/main.go"), bad).unwrap();
+        assert_eq!(
+            app.execute(AppCommand::PreviewChapterSolution {
+                workspace_id: id,
+                chapter_id: "stable".into(),
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::WorkspaceFileNotText
+        );
+    }
+    fs::write(
+        root.join("solutions/stable/main.go"),
+        vec![b'c'; MAX_WORKSPACE_TEXT_BYTES + 1],
+    )
+    .unwrap();
+    assert_eq!(
+        app.execute(AppCommand::PreviewChapterSolution {
+            workspace_id: id,
+            chapter_id: "stable".into(),
+        })
+        .unwrap_err()
+        .code,
+        ErrorCode::WorkspaceFileNotText
+    );
+    fs::write(root.join("solutions/stable/main.go"), "package main\n").unwrap();
+
+    // Non-text and oversized learner Workspace targets cannot be compared against Starter or Reference Solution.
+    for payload in [
+        b"NUL\0data".to_vec(),
+        vec![b'd'; MAX_WORKSPACE_TEXT_BYTES + 1],
+    ] {
+        fs::write(workspace.join("main.go"), payload).unwrap();
+        assert_eq!(
+            app.execute(AppCommand::PreviewChapterSolution {
+                workspace_id: id,
+                chapter_id: "stable".into(),
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::WorkspaceFileNotText
+        );
+        assert_eq!(
+            app.execute(AppCommand::PreviewStarterFile(target(id, "main.go")))
+                .unwrap_err()
+                .code,
+            ErrorCode::WorkspaceFileNotText
+        );
+    }
 }
 
 #[test]
