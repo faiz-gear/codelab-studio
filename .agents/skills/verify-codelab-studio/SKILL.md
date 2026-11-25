@@ -1,6 +1,6 @@
 ---
 name: verify-codelab-studio
-description: Verify CodeLab Studio through its real Tauri desktop window. Use for desktop acceptance or smoke checks of the built-in Go / GoFrame course, native Workspace selection, Monaco saves, and reopening a Workspace after restart.
+description: Verify CodeLab Studio through its real Tauri desktop window. Use for desktop acceptance checks of courses, Workspace editing and resume, Reference Solutions, command execution, runtime setup, Git import, and authored Trial Workspaces.
 ---
 
 # Verify CodeLab Studio
@@ -9,9 +9,16 @@ Run the [feature map](features/README.md) from the repo root. Use the Tauri wind
 
 ## Launch
 
-Use a macOS graphical session with pnpm, Rust and the Tauri build prerequisites. Install missing frontend dependencies with `pnpm install --frozen-lockfile`. Use a desktop driver with window capture and input access, or operate the window directly. On macOS, an automated driver needs Accessibility access for interaction and Screen Recording access for capture. Keep the driver focused on the window owned by this run.
+Use an unlocked macOS graphical session with pnpm, Rust and the Tauri build prerequisites. Install missing frontend dependencies with `pnpm install --frozen-lockfile`. Use a desktop driver with window capture and input access, or operate the window directly. On macOS, an automated driver needs Accessibility access for interaction and Screen Recording access for capture. Keep the driver focused on the window owned by this run.
 
-Check `lsof -nP -iTCP:1420 -sTCP:LISTEN` first. Proceed when there is no listener. The configured dev URL is fixed at `http://localhost:1420/`; use the port for one verification run at a time.
+Check the macOS console lock before starting a launch. If this prints the lock flag, record it and report the run as blocked until the console is unlocked.
+
+```sh
+ioreg -n Root -d1 | rg -o '\{[^{}]*"kCGSSessionOnConsoleKey"=Yes[^{}]*\}' |
+  rg -o '"CGSSessionScreenIsLocked"=Yes'
+```
+
+Before launching, check `lsof -nP -iTCP:1420 -sTCP:LISTEN`. Proceed when there is no listener. The configured dev URL is fixed at `http://localhost:1420/`, so use the port for one verification run at a time.
 
 From the repo root, run these commands in a shell that you can reuse for the second launch. The launch command runs in the foreground.
 
@@ -50,19 +57,30 @@ curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:1420/
 
 Confirm the app executable is the one in the launch log. Use the listener PID reported by `lsof` in `ps -p PID -o pid=,ppid=,pgid=,command=` and match it to the same launch process tree or group. Record both PIDs for teardown. Confirm the expected welcome controls in the native window before reporting readiness. Keep the launch log and report the last observed step if boot, desktop input or capture is blocked.
 
+If input or capture fails while the app and listener checks pass, repeat the [console lock check](#launch) and record its result in the Doctor log.
+
 ## Drive and evidence
 
-Follow the [desktop journey](features/workspace-save.md) in order. Save the screenshots, file assertions, process details and launch logs to the per-run directory printed as `evidence`. Record the chosen entry point, the visible UI outcome, and each failed or blocked assertion in `run.txt`. Each screenshot must show this run's app window or the native picker it opened. Where screenshots use macOS window IDs, capture with `screencapture -x -l "$VERIFY_WINDOW_ID" "$VERIFY_EVIDENCE/01-welcome.png"`; use the picker window ID or select the picker interactively for the folder-selection screenshot.
+For a full pass, start with the [save and restart journey](features/workspace-save.md), then follow the remaining recipes in the [feature map](features/README.md). Save screenshots, file assertions, process details and launch logs to the per-run directory printed as `evidence`. Record the chosen entry point, visible outcome, and each failed or blocked assertion in `run.txt`. Each screenshot must show this run's app window or the native picker it opened. For macOS window capture, use `screencapture -x -l "$VERIFY_WINDOW_ID" "$VERIFY_EVIDENCE/01-welcome.png"`. For the picker, use its window ID or capture the app window with the attached picker visible.
 
 ## Cleanup
 
 After each launch, quit the verified app through the OS (on macOS, `⌘Q` with its window active). Wait for the launch command to return. If it remains active, use Ctrl+C in its launch terminal. Check that the recorded app and Vite PIDs are gone and that this run no longer owns port 1420. For a surviving process, verify its recorded PID, executable and launch ownership before sending `kill -TERM PID`.
 
-Keep the scratch directory across the two launches. After the last launch or a blocked attempt, remove only the scratch directory created by setup and check the evidence separately.
+Keep the scratch directory across the two launches. After the last launch or a blocked attempt, remove the scratch directory recorded by setup. Git import can leave read-only cache directories, so restore owner write access inside that scratch cache before removal. Verify the evidence separately.
 
 ```sh
 case "${VERIFY_TMP:-}" in
-  /tmp/codelab-studio-verify.??????) rm -rf -- "$VERIFY_TMP" ;;
+  /tmp/codelab-studio-verify.??????)
+    if [ -d "$VERIFY_TMP" ] && [ ! -L "$VERIFY_TMP" ] &&
+      rg -qxF -- "scratch=$VERIFY_TMP" "$VERIFY_EVIDENCE/run.txt"
+    then
+      if [ -d "$VERIFY_TMP/data/git-courses" ]; then
+        find "$VERIFY_TMP/data/git-courses" -type d -exec chmod u+w {} +
+      fi
+      find "$VERIFY_TMP" -depth -delete
+    fi
+    ;;
   *) printf 'Unexpected scratch path: %s\n' "${VERIFY_TMP:-}" >&2 ;;
 esac
 test ! -e "$VERIFY_TMP" &&
