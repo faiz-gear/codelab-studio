@@ -75,6 +75,11 @@ export const ERROR_CODES = [
   "RUNTIME_DOWNLOAD_FAILED",
   "RUNTIME_INTEGRITY_FAILED",
   "RUNTIME_INSTALL_FAILED",
+  "EXECUTION_FAILED",
+  "COMMAND_BLOCK_NOT_FOUND",
+  "COMMAND_CWD_INVALID",
+  "COMMAND_SHELL_UNAVAILABLE",
+  "TERMINAL_NOT_FOUND",
   "SHUTDOWN_FAILED",
   "IPC_UNAVAILABLE",
   "UNEXPECTED_ERROR",
@@ -430,6 +435,62 @@ export interface WorkspaceFilesChanged {
 
 export type ExternalIde = "vsCode" | "cursor" | "goLand" | "intelliJIdea";
 
+
+export interface WorkspaceTerminalRequest {
+  workspaceId: number;
+}
+
+export interface TerminalTarget extends WorkspaceTerminalRequest {
+  terminalId: number;
+}
+
+export interface CommandDraft {
+  path: string;
+  text: string;
+  expectedRevision: string | null;
+}
+
+export interface RunCommandBlock extends WorkspaceTerminalRequest {
+  commandId: string;
+  confirmation?: number;
+  restartTerminalId?: number;
+  drafts: CommandDraft[];
+}
+
+export interface CommandConfirmation {
+  token: number;
+  cwd: string;
+  command: string;
+}
+
+export interface TerminalSummary {
+  id: number;
+  commandId: string | null;
+  label: string | null;
+  mode: CommandMode | null;
+  cwd: string;
+  startedAt: string;
+  port: number | null;
+  running: boolean;
+  exitCode: number | null;
+  portConflict: boolean;
+}
+
+export interface TerminalOutput {
+  cursor: number;
+  reset: boolean;
+  data: string;
+  more: boolean;
+}
+
+export interface TerminalUpdates {
+  terminals: TerminalSummary[];
+  output: TerminalOutput | null;
+  recentErrors: string[];
+}
+
+export type CommandCwdOverrides = Record<string, string>;
+
 export type AppCommand =
   | { type: "bootstrap" }
   | { type: "getSettings" }
@@ -464,6 +525,15 @@ export type AppCommand =
   | { type: "createWorkspaceFile"; payload: WorkspacePath }
   | { type: "renameWorkspaceFile"; payload: WorkspacePath & { newPath: string } }
   | { type: "openWorkspaceIde"; payload: WorkspacePath & { ide: ExternalIde } }
+  | { type: "openTerminal"; payload: WorkspaceTerminalRequest }
+  | { type: "readTerminals"; payload: WorkspaceTerminalRequest & { terminalId?: number; cursor?: number; includeRecentErrors?: boolean } }
+  | { type: "writeTerminal"; payload: TerminalTarget & { text: string } }
+  | { type: "resizeTerminal"; payload: TerminalTarget & { cols: number; rows: number } }
+  | { type: "stopTerminal"; payload: TerminalTarget }
+  | { type: "closeTerminal"; payload: TerminalTarget }
+  | { type: "runCommandBlock"; payload: RunCommandBlock }
+  | { type: "getCommandCwdOverrides"; payload: WorkspaceTerminalRequest }
+  | { type: "setCommandCwdOverride"; payload: WorkspaceTerminalRequest & { commandId: string; cwd: string | null } }
   | { type: "getPreflight" }
   | { type: "refreshPreflight" }
   | { type: "setRuntimePreference"; payload: RuntimePreference }
@@ -495,6 +565,13 @@ export type AppResponse =
   | { type: "workspaceComparisons"; payload: WorkspaceComparison[] }
   | { type: "starterFiles"; payload: string[] }
   | { type: "workspaceIdeOpened" }
+  | { type: "terminalOpened"; payload: TerminalSummary }
+  | { type: "terminals"; payload: TerminalUpdates }
+  | { type: "terminalUpdated" }
+  | { type: "commandCwdOverrides"; payload: CommandCwdOverrides }
+  | { type: "commandConfirmationRequired"; payload: CommandConfirmation }
+  | { type: "commandSaveConflict"; payload: { file: WorkspaceFile; saved: WorkspaceFile[] } }
+  | { type: "commandStarted"; payload: { terminal: TerminalSummary; saved: WorkspaceFile[] } }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };
 

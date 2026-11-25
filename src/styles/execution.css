@@ -1,0 +1,186 @@
+.cmd-card--runnable .cmd-head {
+  height: auto;
+  min-height: 38px;
+  flex-wrap: wrap;
+  padding-block: 4px;
+  overflow: visible;
+}
+
+.cwd-pill--editable {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.terminal-panel {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.terminal-panel--open {
+  height: 212px;
+  min-height: 115px;
+  max-height: 76%;
+}
+
+.terminal-panel--maximized {
+  height: 76%;
+}
+
+.terminal-panel-toolbar,
+.terminal-process,
+.terminal-recovery {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+}
+
+.terminal-panel-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding-inline-start: 4px;
+  color: var(--muted);
+}
+
+.terminal-tabs {
+  display: flex;
+  min-width: 90px;
+  flex: 1 1 110px;
+  gap: 4px;
+  padding: 3px;
+  overflow: auto hidden;
+}
+
+.terminal-tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.terminal-tab[aria-selected="true"] {
+  border-color: var(--border-subtle);
+  color: var(--foreground);
+  background: var(--surface-muted);
+}
+
+.terminal-content {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.terminal-viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 8px;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--surface);
+}
+
+.terminal-viewport .xterm {
+  height: 100%;
+}
+
+.terminal-exit {
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.terminal-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: terminal-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes terminal-pulse {
+  50% { opacity: .45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-pulse { animation: none; }
+}
+
+.terminal-recovery {
+  color: var(--warning);
+  background: color-mix(in oklch, var(--warning) 8%, var(--surface));
+}
+
+.execution-danger-dialog {
+  border-color: var(--danger);
+}
+
+.execution-danger-dialog h2,
+.btn.execution-danger-button {
+  color: var(--danger);
+}
+
+.terminal-command-preview {
+  max-height: min(240px, 40vh);
+  margin-block: 8px 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: var(--radius-xs);
+  color: var(--foreground);
+  background: var(--surface-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal-cwd-field {
+  display: grid;
+  gap: 4px;
+  margin-block-start: 8px;
+}
+
+.terminal-cwd-error {
+  margin-block: 8px 0;
+  color: var(--danger);
+}
+
+.terminal-cwd-field input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--foreground);
+  background: var(--surface-muted);
+}
+
+.workspace-conflict:focus {
+  outline: 2px solid var(--warning);
+  outline-offset: -2px;
+}
+
+.cwd-pill--editable:focus-visible,
+.terminal-tab:focus-visible,
+.terminal-cwd-field input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
+}

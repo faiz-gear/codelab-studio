@@ -420,3 +420,48 @@ fn is_heuristic_secondary_debug_command(command: &str) -> bool {
         )
     })
 }
+
+pub(crate) fn execution_script(block: &CommandBlock) -> String {
+    if block.cwd_origin == ValueOrigin::Inferred
+        && let Some((target, _)) = extract_leading_cd(&block.command)
+        && block.cwd.as_deref() == Some(&target)
+        && let Some((start, end)) = literal_leading_cd(&block.command)
+    {
+        let mut script = block.command.clone();
+        script.replace_range(start..end, ":");
+        return script;
+    }
+    block.command.clone()
+}
+
+fn literal_leading_cd(script: &str) -> Option<(usize, usize)> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_bash::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(script, None)?;
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    let mut node = root
+        .named_children(&mut cursor)
+        .find(|node| node.kind() != "comment")?;
+    while node.kind() == "list" {
+        node = node.named_child(0)?;
+    }
+    let raw = |node: tree_sitter::Node| &script[node.byte_range()];
+    if node.kind() != "command" || raw(node.child_by_field_name("name")?) != "cd" {
+        return None;
+    }
+    let mut cursor = node.walk();
+    let mut args = node.children_by_field_name("argument", &mut cursor);
+    let arg = args.next()?;
+    let value = raw(arg);
+    if args.next().is_some()
+        || !matches!(arg.kind(), "word" | "raw_string" | "string")
+        || value.contains(['$', '`', '\\', '*', '?', '[', '~'])
+        || node.named_child_count() != 2
+    {
+        return None;
+    }
+    Some((node.start_byte(), node.end_byte()))
+}

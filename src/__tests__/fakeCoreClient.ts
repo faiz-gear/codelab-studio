@@ -18,6 +18,7 @@ import {
   type WorkspaceEntry,
   type WorkspaceFile,
   type WorkspaceSummary,
+  type TerminalSummary,
 } from "../core/contracts";
 
 export function createBuiltinGoCourseFixture(): LoadedCourse {
@@ -262,6 +263,33 @@ export class FakeCoreClient implements CoreClient {
 
   private workspace: WorkspaceSummary | null = null;
   private nextWorkspaceId = 1;
+  private nextTerminalId = 1;
+  private pendingConfirmation: number | null = null;
+  private terminals: (TerminalSummary & { workspaceId: number })[] = [];
+  private cwdOverrides = new Map<string, Record<string, string>>();
+  private terminalErrors: string[] = [];
+  private terminalOutput = new Map<number, string>();
+
+  writeTerminalOutput(text: string) {
+    const id = this.terminals.at(-1)?.id;
+    if (id !== undefined) this.terminalOutput.set(id, (this.terminalOutput.get(id) ?? "") + text);
+  }
+
+  markPortConflict(terminalId: number, error: string) {
+    this.terminals = this.terminals.map((terminal) =>
+      terminal.id === terminalId ? { ...terminal, portConflict: true } : terminal);
+    this.terminalErrors.push(error);
+  }
+
+  private addTerminal(workspaceId: number, cwd: string, block?: LoadedCourse["chapters"][number]["commands"][number]) {
+    const terminal = {
+      workspaceId, id: this.nextTerminalId++, cwd, commandId: block?.id ?? null,
+      label: block?.label ?? null, mode: block?.mode ?? null, port: block?.port ?? null,
+      startedAt: new Date().toISOString(), running: true, exitCode: null, portConflict: false,
+    };
+    this.terminals.push(terminal);
+    return terminal;
+  }
   private nextFileRevision = 1;
   private readonly disk = new Map<string, Map<string, WorkspaceFile>>();
 
@@ -660,6 +688,67 @@ export class FakeCoreClient implements CoreClient {
       case "openWorkspaceIde":
         this.workspaceRoot(command.payload.workspaceId);
         return { type: "workspaceIdeOpened" };
+      case "openTerminal": {
+        const { workspaceId } = command.payload;
+        return { type: "terminalOpened", payload: this.addTerminal(workspaceId, this.workspaceRoot(workspaceId)) };
+      }
+      case "getCommandCwdOverrides":
+      case "setCommandCwdOverride": {
+        const root = this.workspaceRoot(command.payload.workspaceId);
+        const overrides = { ...this.cwdOverrides.get(root) };
+        if (command.type === "setCommandCwdOverride") {
+          const { commandId, cwd } = command.payload;
+          if (cwd === null) delete overrides[commandId];
+          else overrides[commandId] = cwd;
+          this.cwdOverrides.set(root, overrides);
+        }
+        return { type: "commandCwdOverrides", payload: overrides };
+      }
+      case "runCommandBlock": {
+        const { workspaceId, commandId, confirmation, drafts } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        const block = this.activeCourse()?.chapters.flatMap(({ commands }) => commands).find(({ id }) => id === commandId);
+        if (!block) throw new CoreCommandError({ code: "COMMAND_BLOCK_NOT_FOUND" });
+        const dir = this.cwdOverrides.get(root)?.[commandId] ?? block.cwd;
+        const cwd = dir && dir !== "." ? `${root}/${dir}` : root;
+        if (block.command === "printf test | sh" && (!confirmation || this.pendingConfirmation !== confirmation)) {
+          const token = this.nextTerminalId++;
+          this.pendingConfirmation = token;
+          return { type: "commandConfirmationRequired", payload: { token, cwd, command: block.command } };
+        }
+        this.pendingConfirmation = null;
+        for (const draft of drafts) {
+          const file = this.files(root).get(draft.path) ?? { kind: "missing" as const, path: draft.path, revision: null, sizeBytes: 0 };
+          if (file.revision !== draft.expectedRevision) return { type: "commandSaveConflict", payload: { file, saved: [] } };
+        }
+        const saved = drafts.map((draft) => this.writeDiskFile(root, draft.path, draft.text));
+        return { type: "commandStarted", payload: { terminal: this.addTerminal(workspaceId, cwd, block), saved } };
+      }
+      case "readTerminals": {
+        const { workspaceId, terminalId, cursor = 0, includeRecentErrors } = command.payload;
+        this.workspaceRoot(workspaceId);
+        const bytes = terminalId === undefined ? null : new TextEncoder().encode(this.terminalOutput.get(terminalId) ?? "");
+        return { type: "terminals", payload: {
+          terminals: this.terminals.filter((item) => item.workspaceId === workspaceId),
+          output: bytes === null ? null : {
+            cursor: bytes.length, reset: false,
+            data: btoa(Array.from(bytes.slice(cursor), (byte) => String.fromCharCode(byte)).join("")),
+            more: false,
+          },
+          recentErrors: includeRecentErrors ? this.terminalErrors : [],
+        } };
+      }
+      case "closeTerminal":
+        this.terminals = this.terminals.filter((item) => item.id !== command.payload.terminalId);
+        return { type: "terminalUpdated" };
+      case "stopTerminal":
+        this.terminals = this.terminals.map((item) => item.id === command.payload.terminalId
+          ? { ...item, running: false, exitCode: 130 }
+          : item);
+        return { type: "terminalUpdated" };
+      case "resizeTerminal":
+      case "writeTerminal":
+        return { type: "terminalUpdated" };
       case "getPreflight":
       case "refreshPreflight":
         return { type: "preflight", payload: this.preflight };

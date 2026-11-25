@@ -1,3 +1,4 @@
+pub(crate) mod command_cwd;
 mod comparison;
 mod files;
 mod metadata;
@@ -29,6 +30,7 @@ pub(crate) struct Workspace {
     pub summary: WorkspaceSummary,
     pub completed_exercises: u32,
     pub files: WorkspacePaths,
+    pub command_cwds: command_cwd::CommandCwds,
     events_enabled: Arc<AtomicBool>,
     _watcher: WorkspaceWatcher,
 }
@@ -93,6 +95,7 @@ impl Workspace {
             },
             completed_exercises: metadata.completed_exercises,
             files,
+            command_cwds: metadata.command_cwds,
             events_enabled,
             _watcher: watcher,
         })

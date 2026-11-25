@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { CloseIcon, FolderIcon } from "../components/Icons";
 import type { ExternalIde, GlobalSettings } from "../core/contracts";
 import { formatDomainError, interpolate, type Messages } from "../i18n";
@@ -30,6 +30,11 @@ export function WorkspaceEditor({
   switching: boolean;
 }) {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
+  const conflictBanner = useRef<HTMLDivElement>(null);
+  const { executionConflict } = state;
+  useEffect(() => {
+    if (executionConflict > 0) conflictBanner.current?.focus();
+  }, [executionConflict]);
   const [treeOpen, setTreeOpen] = useState(false);
   const [ide, setIde] = useState<ExternalIde>("vsCode");
   const [fileForm, setFileForm] = useState<{ rename: string | null; value: string } | null>(null);
@@ -157,7 +162,7 @@ export function WorkspaceEditor({
       {state.error && <p className="workspace-error" role="alert">{formatDomainError(state.error, settings.locale)}</p>}
       {active?.unavailable && <p className="workspace-error" role="alert">{formatDomainError(active.unavailable, settings.locale)}</p>}
       {conflicted?.conflict && (
-        <div className="workspace-conflict" role="region" aria-label={t.changedOnDisk}>
+        <div ref={conflictBanner} className="workspace-conflict" role="region" tabIndex={-1} aria-label={t.changedOnDisk}>
           <div role="status">
             <strong>{conflicted.conflict.kind === "missing" ? t.deletedOnDisk : t.changedOnDisk}</strong>
             <span className="mono">{conflicted.file.path}</span>

@@ -277,6 +277,77 @@ fn preferred_managed_runtime_downloads_once_and_survives_a_course_switch() {
         b"portable bun fixture"
     );
 
+    #[cfg(unix)]
+    {
+        use base64::Engine as _;
+        use codelab_core::{RunCommandBlock, TerminalRead, TrustSource, TrustSourceKind};
+
+        let manual = dir.path().join("managed.md");
+        std::fs::write(&manual, "# Managed Runtime\n\n```sh\ncommand -v bun\n```\n").unwrap();
+        let manual = manual.to_str().unwrap().to_owned();
+        let AppResponse::LoadedCourse(course) = app
+            .execute(AppCommand::OpenCourse(OpenCourseRequest::LocalMarkdown {
+                path: manual.clone(),
+            }))
+            .unwrap()
+        else {
+            panic!("expected Course")
+        };
+        app.execute(AppCommand::GrantTrust(TrustSource {
+            source_kind: TrustSourceKind::LocalPath,
+            source: manual,
+        }))
+        .unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let AppResponse::WorkspaceBound(workspace) = app
+            .execute(AppCommand::BindWorkspace {
+                path: root.to_str().unwrap().into(),
+            })
+            .unwrap()
+        else {
+            panic!("expected Workspace")
+        };
+        let AppResponse::CommandStarted(started) = app
+            .execute(AppCommand::RunCommandBlock(RunCommandBlock {
+                workspace_id: workspace.id,
+                command_id: course.chapters[0].commands[0].id.clone(),
+                restart_terminal_id: None,
+                confirmation: None,
+                drafts: Vec::new(),
+            }))
+            .unwrap()
+        else {
+            panic!("expected started Command Block")
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let AppResponse::Terminals(status) = app
+                .execute(AppCommand::ReadTerminals(TerminalRead {
+                    workspace_id: workspace.id,
+                    terminal_id: Some(started.terminal.id),
+                    cursor: 0,
+                    include_recent_errors: None,
+                }))
+                .unwrap()
+            else {
+                panic!("expected PTY output")
+            };
+            if !status.terminals[0].running {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&status.output.unwrap().data)
+                    .unwrap();
+                assert_eq!(
+                    String::from_utf8_lossy(&bytes).trim(),
+                    managed.executable.to_str().unwrap()
+                );
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     let restored = report(&app, preference(false));
     assert_eq!(
         language(&restored, CourseLanguage::JsTs).selected,

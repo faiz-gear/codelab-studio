@@ -1,6 +1,7 @@
 mod app;
 mod course;
 mod error;
+mod execution;
 mod filesystem;
 mod model;
 mod runtime;
@@ -22,6 +23,7 @@ pub use course::{
     ValueOrigin,
 };
 pub use error::{DomainError, ErrorCode};
+pub use execution::model::*;
 pub use model::{
     AccentPreset, AppBootstrap, CourseLanguage, DEFAULT_CODE_FONT_SIZE, GLOBAL_DATA_SCHEMA_VERSION,
     GlobalSettings, Locale, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,

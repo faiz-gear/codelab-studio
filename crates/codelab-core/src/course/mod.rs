@@ -73,3 +73,5 @@ fn protect_git_cache(data_dir: &Path, path: &str) -> Result<(), DomainError> {
     }
     Ok(())
 }
+
+pub(crate) use shell::execution_script;

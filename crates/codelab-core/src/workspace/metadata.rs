@@ -5,6 +5,7 @@ use cap_fs_ext::DirExt;
 use cap_std::fs::Dir;
 use serde::{Deserialize, Serialize};
 
+use super::command_cwd::{CommandCwds, valid_cwds};
 use super::paths::{METADATA_DIR, WorkspacePaths};
 use crate::course::{CourseSource, LoadedCourse, Starter};
 use crate::storage::JsonStore;
@@ -46,6 +47,7 @@ struct Metrics {
 pub(super) struct WorkspaceMetadata {
     pub recovery_notices: Vec<StorageRecoveryNotice>,
     pub completed_exercises: u32,
+    pub command_cwds: CommandCwds,
 }
 
 impl WorkspaceMetadata {
@@ -84,6 +86,9 @@ impl WorkspaceMetadata {
         let metrics_store =
             JsonStore::new(&location, "metrics.json", StoreKind::Metrics).scoped(Arc::clone(&dir));
 
+        let command_cwd_store =
+            JsonStore::new(&location, "command-cwds.json", StoreKind::Workspace)
+                .scoped(Arc::clone(&dir));
         let bound = Binding {
             course_id: course.course_id.clone(),
             source: course.source.clone(),
@@ -101,6 +106,7 @@ impl WorkspaceMetadata {
         let progress = progress_store.load_or_recover(|progress: &Progress| {
             progress.chapters.keys().all(|id| !id.trim().is_empty())
         })?;
+        let command_cwds = command_cwd_store.load_or_recover(valid_cwds)?;
         let mut metrics = metrics_store.load_or_recover(|_: &Metrics| true)?;
 
         if let Some(starter) = starter {
@@ -122,11 +128,20 @@ impl WorkspaceMetadata {
 
         let completed_exercises = progress.value.completed_for(course);
         Ok(Self {
-            recovery_notices: [binding.recovery, progress.recovery, metrics.recovery]
-                .into_iter()
-                .flatten()
-                .collect(),
+            recovery_notices: [
+                binding.recovery,
+                progress.recovery,
+                metrics.recovery,
+                command_cwds.recovery,
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
             completed_exercises,
+            command_cwds: CommandCwds {
+                store: command_cwd_store,
+                values: command_cwds.value,
+            },
         })
     }
 }

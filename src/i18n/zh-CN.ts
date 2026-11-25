@@ -137,6 +137,34 @@ export interface Messages {
     stale: string;
     draft: string;
   };
+  execution: {
+    run: string;
+    changeCwd: string;
+    cwd: string;
+    cwdHint: string;
+    resetCwd: string;
+    confirmTitle: string;
+    confirmDetail: string;
+    confirmAction: string;
+    terminal: string;
+    terminals: string;
+    newTerminal: string;
+    clear: string;
+    maximize: string;
+    restore: string;
+    close: string;
+    stop: string;
+    restart: string;
+    daemon: string;
+    running: string;
+    exited: string;
+    port: string;
+    portConflict: string;
+    showService: string;
+    askAI: string;
+    tutorUnavailable: string;
+    copyErrors: string;
+  };
   workspace: {
     choose: string;
     change: string;
@@ -423,6 +451,34 @@ export const zhCN: Messages = {
     replaceFile: "确认后将用右侧版本替换所选文件。",
     draft: "包含未保存的草稿。",
   },
+  execution: {
+    run: "运行命令",
+    changeCwd: "修改工作目录",
+    cwd: "工作目录",
+    cwdHint: "输入此 Workspace 内的目录。使用 . 表示 Workspace 根目录。",
+    resetCwd: "使用课程目录",
+    confirmTitle: "确认高危命令",
+    confirmDetail: "此命令将以你的本机权限运行，可能造成破坏性更改。",
+    confirmAction: "仍要运行",
+    terminal: "终端",
+    terminals: "Workspace 终端",
+    newTerminal: "新建终端",
+    clear: "清屏",
+    maximize: "最大化终端",
+    restore: "还原终端大小",
+    close: "关闭终端",
+    stop: "停止（中断）",
+    restart: "重启",
+    daemon: "Managed Daemon",
+    running: "运行中",
+    exited: "已退出（{code}）",
+    port: "端口 {port}",
+    portConflict: "本机端口已被占用。",
+    showService: "切到服务终端",
+    askAI: "问 AI",
+    tutorUnavailable: "助教暂不可用。你可以复制终端报错以便排查。",
+    copyErrors: "复制终端报错",
+  },
   workspace: {
     choose: "选择 Workspace",
     change: "切换 Workspace",
@@ -646,6 +702,11 @@ export const zhCN: Messages = {
     RUNTIME_DOWNLOAD_FAILED: "运行时下载失败，请检查网络后重试。",
     RUNTIME_INTEGRITY_FAILED: "运行时校验失败，请重试下载。",
     RUNTIME_INSTALL_FAILED: "运行时安装失败，请检查磁盘空间与目录权限后重试。",
+    EXECUTION_FAILED: "终端操作失败。",
+    COMMAND_BLOCK_NOT_FOUND: "该命令块已不可用。请重新加载课程后重试。",
+    COMMAND_CWD_INVALID: "工作目录「{path}」必须存在于当前 Workspace 内。",
+    COMMAND_SHELL_UNAVAILABLE: "找不到 {shell}。在 Windows 上，Git for Windows 提供 bash 和 sh。",
+    TERMINAL_NOT_FOUND: "该终端已不可用。",
     SHUTDOWN_FAILED: "退出回收部分后台资源时发生异常：{failures}",
     IPC_UNAVAILABLE: "桌面运行时连接不可用，请在 CodeLab Studio 桌面应用中打开。",
     UNEXPECTED_ERROR: "操作未能完成，请重试。",

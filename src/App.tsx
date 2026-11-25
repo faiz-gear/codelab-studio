@@ -122,6 +122,10 @@ export function App({ client }: AppProps) {
     }, TOAST_TTL_MS);
   }, []);
 
+  const handleExecutionError = useCallback((error: unknown) => {
+    pushToast(formatDomainError(domainError(error), localeRef.current), "err");
+  }, [pushToast]);
+
   const applyLoadedCourse = useCallback((loaded: LoadedCourse, addToLibrary = true) => {
     const prevCourse = activeCourseRef.current;
     const isSameCourse = prevCourse && courseSourceKey(prevCourse.source) === courseSourceKey(loaded.source);
@@ -572,6 +576,8 @@ export function App({ client }: AppProps) {
             onTrial={() => handleStartTrial(draft.id)} onCopyCommand={(text) => void handleCopyCommand(text)} />
         ) : activeCourse ? (
           <CourseWorkbench
+            client={client}
+            onExecutionError={handleExecutionError}
             course={activeCourse}
             session={workspace}
             settings={settings}

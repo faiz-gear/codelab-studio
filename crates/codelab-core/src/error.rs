@@ -46,6 +46,11 @@ pub enum ErrorCode {
     RuntimeDownloadFailed,
     RuntimeIntegrityFailed,
     RuntimeInstallFailed,
+    ExecutionFailed,
+    CommandBlockNotFound,
+    CommandCwdInvalid,
+    CommandShellUnavailable,
+    TerminalNotFound,
     ShutdownFailed,
 }
 

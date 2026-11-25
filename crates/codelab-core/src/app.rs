@@ -16,6 +16,7 @@ use crate::course::{
     GitFetchAdapter, LoadedCourse, OpenCourseRequest, OpenedCourse, Starter,
 };
 use crate::error::{DomainError, ErrorCode};
+use crate::execution::{Execution, editors, model::*};
 use crate::model::{
     AppBootstrap, GlobalSettings, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, TrustEntry,
@@ -104,6 +105,15 @@ pub enum AppCommand {
     CreateWorkspaceFile(WorkspacePath),
     RenameWorkspaceFile(WorkspaceFileRename),
     OpenWorkspaceIde(WorkspaceIdeRequest),
+    OpenTerminal(WorkspaceTerminalRequest),
+    ReadTerminals(TerminalRead),
+    WriteTerminal(TerminalInput),
+    ResizeTerminal(TerminalSize),
+    StopTerminal(TerminalTarget),
+    CloseTerminal(TerminalTarget),
+    GetCommandCwdOverrides(WorkspaceTerminalRequest),
+    SetCommandCwdOverride(CommandCwdOverride),
+    RunCommandBlock(RunCommandBlock),
     GetPreflight,
     RefreshPreflight,
     SetRuntimePreference(RuntimePreference),
@@ -135,6 +145,13 @@ pub enum AppResponse {
     WorkspaceComparisons(Vec<WorkspaceComparison>),
     StarterFiles(Vec<String>),
     WorkspaceIdeOpened,
+    TerminalOpened(TerminalSummary),
+    Terminals(TerminalUpdates),
+    TerminalUpdated,
+    CommandCwdOverrides(CommandCwdOverrides),
+    CommandConfirmationRequired(CommandConfirmation),
+    CommandSaveConflict(CommandSaveConflict),
+    CommandStarted(CommandStarted),
     Preflight(PreflightReport),
     Shutdown(ShutdownReport),
 }
@@ -196,6 +213,7 @@ struct AppState {
     draft: Option<Draft>,
     next_draft_id: u64,
     next_workspace_id: u64,
+    execution: Execution,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
@@ -304,6 +322,7 @@ impl App {
                 draft: None,
                 next_draft_id: 1,
                 next_workspace_id: 1,
+                execution: Execution::default(),
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
             }),
@@ -457,6 +476,37 @@ impl App {
                     .open_in_ide(&request)?;
                 Ok(AppResponse::WorkspaceIdeOpened)
             }
+            AppCommand::OpenTerminal(request) => self.open_terminal(request.workspace_id),
+            AppCommand::RunCommandBlock(request) => self.run_command_block(request),
+            AppCommand::ReadTerminals(request) => {
+                let mut state = self.lock_state();
+                state.workspace(request.workspace_id)?;
+                Ok(AppResponse::Terminals(state.execution.read(request)))
+            }
+            AppCommand::WriteTerminal(request) => self
+                .update_terminal(request.target.workspace_id, |execution| {
+                    execution.input(request)
+                }),
+            AppCommand::ResizeTerminal(request) => self
+                .update_terminal(request.target.workspace_id, |execution| {
+                    execution.resize(request)
+                }),
+            AppCommand::StopTerminal(target) => self
+                .update_terminal(target.workspace_id, |execution| {
+                    execution.stop(target.terminal_id)
+                }),
+            AppCommand::CloseTerminal(target) => self
+                .update_terminal(target.workspace_id, |execution| {
+                    execution.close(target.terminal_id)
+                }),
+            AppCommand::GetCommandCwdOverrides(request) => {
+                let state = self.lock_state();
+                let workspace = state.workspace(request.workspace_id)?;
+                Ok(AppResponse::CommandCwdOverrides(
+                    workspace.command_cwds.for_course(&state.course()?.course),
+                ))
+            }
+            AppCommand::SetCommandCwdOverride(request) => self.set_command_cwd(request),
             AppCommand::GetPreflight => Ok(AppResponse::Preflight(self.runtime.snapshot())),
             AppCommand::RefreshPreflight => self.runtime.refresh().map(AppResponse::Preflight),
             AppCommand::SetRuntimePreference(preference) => self
@@ -468,6 +518,87 @@ impl App {
             }
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
+    }
+
+    fn open_terminal(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let workspace = state.workspace(workspace_id)?;
+        let dir = crate::workspace::command_cwd::directory(&workspace.files, ".")?;
+        let language = state.course()?.course.language;
+        state
+            .execution
+            .start(None, dir, &self.runtime.snapshot(), language)
+            .map(AppResponse::TerminalOpened)
+    }
+
+    fn run_command_block(&self, request: RunCommandBlock) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        let workspace = state.workspace(request.workspace_id)?;
+        let course = &state.course()?.course;
+        let language = course.language;
+        let (launch, dir) = if let Some(id) = request.restart_terminal_id {
+            let previous = state.execution.restart_launch(id, &request.command_id)?;
+            workspace.command_cwds.resolve_saved(
+                &workspace.files,
+                &previous.block,
+                previous.cwd_key.clone(),
+                Some(id),
+            )?
+        } else {
+            let block = find_block(course, &request.command_id)?;
+            workspace
+                .command_cwds
+                .resolve(&workspace.files, course, block, None)?
+        };
+        let launch = match state.execution.approve(launch, request.confirmation) {
+            Ok(launch) => launch,
+            Err(confirmation) => return Ok(AppResponse::CommandConfirmationRequired(confirmation)),
+        };
+        let workspace = state.workspace(request.workspace_id)?;
+        let saved = match editors::save(workspace, request.drafts)? {
+            Ok(saved) => saved,
+            Err(conflict) => return Ok(AppResponse::CommandSaveConflict(conflict)),
+        };
+        let terminal =
+            state
+                .execution
+                .start(Some(launch), dir, &self.runtime.snapshot(), language)?;
+        Ok(AppResponse::CommandStarted(CommandStarted {
+            terminal,
+            saved,
+        }))
+    }
+
+    fn set_command_cwd(&self, request: CommandCwdOverride) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        state.workspace(request.workspace_id)?;
+        let AppState {
+            active_course,
+            active_workspace,
+            execution,
+            ..
+        } = &mut *state;
+        let course = &active_course.as_ref().unwrap().course;
+        let workspace = active_workspace.as_mut().unwrap();
+        let block = find_block(course, &request.command_id)?;
+        workspace
+            .command_cwds
+            .set(&workspace.files, course, block, request.cwd.as_deref())?;
+        execution.invalidate_confirmation();
+        Ok(AppResponse::CommandCwdOverrides(
+            workspace.command_cwds.for_course(course),
+        ))
+    }
+
+    fn update_terminal(
+        &self,
+        id: u64,
+        update: impl FnOnce(&mut Execution) -> Result<(), DomainError>,
+    ) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        state.workspace(id)?;
+        update(&mut state.execution)?;
+        Ok(AppResponse::TerminalUpdated)
     }
 
     pub fn subscribe(&self) -> EventSubscription {
@@ -505,6 +636,7 @@ impl App {
                 });
             }
             state.shut_down = true;
+            state.execution.clear();
             (
                 std::mem::take(&mut state.cleanup_hooks),
                 state.active_course.take(),
@@ -741,6 +873,9 @@ impl App {
             if let Some(workspace) = &state.active_workspace {
                 workspace.set_trusted(changed.trusted);
             }
+            if !changed.trusted {
+                state.execution.clear();
+            }
             self.emit(AppEvent::CourseTrustChanged(changed));
         }
         self.emit(AppEvent::TrustUpdated(next.clone()));
@@ -791,7 +926,7 @@ impl App {
             .as_ref()
             .is_some_and(|active| active.course.source != opened.course.source)
         {
-            state.active_workspace = None;
+            state.deactivate_workspace();
         }
         Ok(AppResponse::LoadedCourse(
             self.activate_course(state, opened),
@@ -822,6 +957,7 @@ impl App {
                 move |changed| emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed)),
             ))
         };
+        state.execution.invalidate_confirmation();
         let course = opened.course;
         state.active_course = Some(ActiveCourseState {
             course: course.clone(),
@@ -835,7 +971,7 @@ impl App {
 
     fn close_active_course(&self) -> AppResponse {
         let mut state = self.lock_state();
-        state.active_workspace = None;
+        state.deactivate_workspace();
         state.trial_workspace = None;
         state.active_course = None;
         AppResponse::CourseClosed
@@ -887,7 +1023,7 @@ impl App {
             self.store_recent(&mut state, workspace_recent(&workspace, &opened.course))?;
             Some(self.activate_workspace(&mut state, workspace))
         } else {
-            state.active_workspace = None;
+            state.deactivate_workspace();
             None
         };
         state.trial_workspace = None;
@@ -913,9 +1049,9 @@ impl App {
         let draft = open(state.next_draft_id, workspace)?;
         let summary = draft.summary()?;
         state.next_draft_id += 1;
-        state.close_trial();
+        state.deactivate_workspace();
+        state.trial_workspace = None;
         state.active_course = None;
-        state.active_workspace = None;
         state.draft = Some(draft);
         Ok(AppResponse::CourseDraft(summary))
     }
@@ -956,6 +1092,7 @@ impl App {
     }
 
     fn activate_workspace(&self, state: &mut AppState, workspace: Workspace) -> WorkspaceSummary {
+        state.execution.clear();
         state.next_workspace_id += 1;
         let summary = workspace.summary.clone();
         state.active_workspace = Some(workspace);
@@ -974,9 +1111,14 @@ impl App {
 }
 
 impl AppState {
+    fn deactivate_workspace(&mut self) {
+        self.execution.clear();
+        self.active_workspace = None;
+    }
+
     fn close_trial(&mut self) {
         if self.trial_workspace.is_some() {
-            self.active_workspace = None;
+            self.deactivate_workspace();
             self.trial_workspace = None;
         }
     }
@@ -1019,6 +1161,18 @@ impl AppState {
             .filter(|workspace| workspace.summary.id == id)
             .ok_or_else(|| DomainError::new(ErrorCode::NoActiveWorkspace))
     }
+}
+
+fn find_block<'a>(
+    course: &'a LoadedCourse,
+    id: &str,
+) -> Result<&'a crate::CommandBlock, DomainError> {
+    course
+        .chapters
+        .iter()
+        .flat_map(|chapter| &chapter.commands)
+        .find(|block| block.id == id)
+        .ok_or_else(|| DomainError::new(ErrorCode::CommandBlockNotFound))
 }
 
 fn is_course_trusted(source: &CourseSource, entries: &[TrustEntry]) -> bool {

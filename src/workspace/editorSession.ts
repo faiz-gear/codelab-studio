@@ -2,6 +2,8 @@ import { expectResponse, type CoreClient } from "../core/client";
 import {
   CoreCommandError,
   type DomainError,
+  type AppResponse,
+  type RunCommandBlock,
   type ExternalIde,
   type WorkspaceComparison,
   type WorkspaceFile,
@@ -26,6 +28,7 @@ interface EditorState {
   treeVersion: number;
   busy: boolean;
   error: DomainError | null;
+  executionConflict: number;
 }
 
 export function editorText(tab: EditorTab): string | null {
@@ -54,6 +57,7 @@ export class WorkspaceEditorSession {
     treeVersion: 0,
     busy: false,
     error: null,
+    executionConflict: 0,
   };
 
   constructor(private client: CoreClient, readonly workspace: WorkspaceSummary) {}
@@ -194,6 +198,41 @@ export class WorkspaceEditorSession {
       }
     });
     return saved;
+  }
+
+  async runCommand(request: Omit<RunCommandBlock, "workspaceId" | "drafts">) {
+    type RunResponse = Extract<AppResponse, { type: "commandStarted" | "commandConfirmationRequired" }>;
+    const result: { response: RunResponse | null } = { response: null };
+    await this.enqueue(async () => {
+      this.update({ busy: true, error: null });
+      try {
+        const drafts = this.state.tabs.flatMap(({ file, draft }) => draft === null ? [] : [{
+          path: file.path, text: draft, expectedRevision: file.revision,
+        }]);
+        const response = await this.client.dispatch({
+          type: "runCommandBlock",
+          payload: { ...request, workspaceId: this.workspace.id, drafts },
+        });
+        if (response.type === "commandConfirmationRequired") {
+          result.response = response;
+          return;
+        }
+        const outcome = response.type === "commandSaveConflict" ? response : expectResponse(response, "commandStarted");
+        for (const file of outcome.payload.saved) {
+          this.updateTab(file.path, (tab) => diskUpdate({ ...tab, file }, file));
+        }
+        if (outcome.type === "commandSaveConflict") {
+          const file = outcome.payload.file;
+          this.updateTab(file.path, (tab) => diskUpdate(tab, file));
+          this.update({ activePath: file.path, executionConflict: this.state.executionConflict + 1 });
+        } else {
+          result.response = outcome;
+        }
+      } finally {
+        this.update({ busy: false });
+      }
+    });
+    return result.response;
   }
 
   private async saveTab(path: string): Promise<boolean> {
