@@ -14,7 +14,7 @@ use super::{Ports, Spawn};
 
 pub(super) struct Process {
     child: Child,
-    master: File,
+    master: Option<File>,
     session: libc::pid_t,
     reaped: bool,
 }
@@ -73,7 +73,7 @@ impl Process {
         Ok((
             Self {
                 child,
-                master,
+                master: Some(master),
                 session,
                 reaped: false,
             },
@@ -81,10 +81,48 @@ impl Process {
         ))
     }
 
+    pub fn spawn_headless(spec: Spawn, output: File) -> io::Result<Self> {
+        let mut command = Command::new(spec.program);
+        command
+            .args(spec.args)
+            .envs(spec.env)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(output.try_clone()?))
+            .stderr(Stdio::from(output));
+        // SAFETY: the validated directory handle is retained across fork; only
+        // async-signal-safe syscalls run before exec.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setsid() < 0 || libc::fchdir(spec.directory.handle.as_raw_fd()) < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let child = command.spawn()?;
+        let session = child.id() as libc::pid_t;
+        Ok(Self {
+            child,
+            master: None,
+            session,
+            reaped: false,
+        })
+    }
+
     pub fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
         let size = winsize(cols, rows);
         // SAFETY: ioctl reads a valid winsize and the master descriptor is open.
-        if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &size) } < 0 {
+        if unsafe {
+            libc::ioctl(
+                self.master
+                    .as_ref()
+                    .ok_or(io::ErrorKind::InvalidInput)?
+                    .as_raw_fd(),
+                libc::TIOCSWINSZ,
+                &size,
+            )
+        } < 0
+        {
             Err(io::Error::last_os_error())
         } else {
             Ok(())

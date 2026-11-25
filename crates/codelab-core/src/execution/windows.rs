@@ -84,6 +84,8 @@ impl Drop for Attributes {
 }
 
 pub(super) struct Process {
+    finished: bool,
+    owns_console: bool,
     job: OwnedHandle,
     child: OwnedHandle,
     console: Option<Console>,
@@ -188,12 +190,126 @@ impl Process {
         );
         Ok((
             Self {
+                finished: false,
+                owns_console: false,
                 job,
                 child,
                 console: Some(console),
             },
             ports,
         ))
+    }
+
+    pub fn spawn_headless(spec: Spawn, output: File) -> io::Result<Self> {
+        use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+        use windows_sys::Win32::System::Threading::{
+            CREATE_NEW_PROCESS_GROUP, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+        };
+        let _console_guard = CONSOLE_CONTROL.lock().unwrap_or_else(|p| p.into_inner());
+        let owns_console = unsafe { windows_sys::Win32::System::Console::GetConsoleCP() } == 0;
+        let guards = pin_cwd(&spec.directory)?;
+        let input = File::open("NUL")?;
+        let handles = [input.as_raw_handle(), output.as_raw_handle()];
+        for handle in handles {
+            check(unsafe {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)
+            })?;
+        }
+        let job = owned(unsafe { CreateJobObjectW(null(), null()) })?;
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        check(unsafe {
+            SetInformationJobObject(
+                job.as_raw_handle(),
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                std::mem::size_of_val(&limits) as u32,
+            )
+        })?;
+        let mut bytes = 0;
+        unsafe {
+            InitializeProcThreadAttributeList(null_mut(), 1, 0, &mut bytes);
+        }
+        let mut storage = vec![0usize; bytes.div_ceil(std::mem::size_of::<usize>())];
+        check(unsafe {
+            InitializeProcThreadAttributeList(storage.as_mut_ptr().cast(), 1, 0, &mut bytes)
+        })?;
+        let attributes = Attributes(storage);
+        check(unsafe {
+            UpdateProcThreadAttribute(
+                attributes.ptr(),
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+                handles.as_ptr().cast_mut().cast(),
+                std::mem::size_of_val(&handles),
+                null_mut(),
+                null(),
+            )
+        })?;
+        let mut startup = STARTUPINFOEXW::default();
+        startup.StartupInfo.cb = std::mem::size_of_val(&startup) as u32;
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.dwFlags |= windows_sys::Win32::System::Threading::STARTF_USESHOWWINDOW;
+        startup.StartupInfo.wShowWindow = 0; // SW_HIDE: the dedicated console stays invisible.
+        startup.StartupInfo.hStdInput = input.as_raw_handle();
+        startup.StartupInfo.hStdOutput = output.as_raw_handle();
+        startup.StartupInfo.hStdError = output.as_raw_handle();
+        startup.lpAttributeList = attributes.ptr();
+        let application = wide(spec.program.as_os_str());
+        let mut command = Vec::new();
+        for argument in std::iter::once(spec.program.into_os_string()).chain(spec.args) {
+            if !command.is_empty() {
+                command.push(b' ' as u16);
+            }
+            quote(&argument, &mut command);
+        }
+        command.push(0);
+        let cwd = wide(dunce::simplified(&spec.directory.path).as_os_str());
+        let env = environment(spec.env);
+        let mut info = PROCESS_INFORMATION::default();
+        check(unsafe {
+            CreateProcessW(
+                application.as_ptr(),
+                command.as_mut_ptr(),
+                null(),
+                null(),
+                1,
+                CREATE_SUSPENDED
+                    | CREATE_UNICODE_ENVIRONMENT
+                    | EXTENDED_STARTUPINFO_PRESENT
+                    | if owns_console {
+                        windows_sys::Win32::System::Threading::CREATE_NEW_CONSOLE
+                    } else {
+                        CREATE_NEW_PROCESS_GROUP
+                    },
+                env.as_ptr().cast(),
+                cwd.as_ptr(),
+                &startup.StartupInfo,
+                &mut info,
+            )
+        })?;
+        drop(guards);
+        let child = owned(info.hProcess)?;
+        let primary = owned(info.hThread)?;
+        if let Err(error) =
+            check(unsafe { AssignProcessToJobObject(job.as_raw_handle(), child.as_raw_handle()) })
+        {
+            unsafe {
+                TerminateProcess(child.as_raw_handle(), 1);
+                WaitForSingleObject(child.as_raw_handle(), INFINITE);
+            }
+            return Err(error);
+        }
+        if unsafe { ResumeThread(primary.as_raw_handle()) } == u32::MAX {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Self {
+            job,
+            child,
+            console: None,
+            finished: false,
+            owns_console,
+        })
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
@@ -212,16 +328,47 @@ impl Process {
     }
 
     pub fn interrupt(&mut self) -> u32 {
+        use windows_sys::Win32::System::Console::{
+            AttachConsole, CTRL_BREAK_EVENT, FreeConsole, GenerateConsoleCtrlEvent,
+            SetConsoleCtrlHandler,
+        };
+        let _console_guard = CONSOLE_CONTROL.lock().unwrap_or_else(|p| p.into_inner());
+        let mut attached = false;
+        if self.console.is_none() {
+            let pid = unsafe {
+                windows_sys::Win32::System::Threading::GetProcessId(self.child.as_raw_handle())
+            };
+            if self.owns_console {
+                attached = unsafe { AttachConsole(pid) } != 0;
+                if attached {
+                    unsafe {
+                        SetConsoleCtrlHandler(Some(ignore_break), 1);
+                        GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0);
+                    }
+                }
+            } else {
+                unsafe {
+                    GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid);
+                }
+            }
+        }
         // The caller sends Ctrl-C through ConPTY before waiting. Windows delivers
         // a console interrupt to console programs that support it.
         let until = Instant::now() + Duration::from_millis(400);
         while !self.exited() && Instant::now() < until {
             thread::sleep(Duration::from_millis(10));
         }
+        if attached {
+            unsafe {
+                FreeConsole();
+                SetConsoleCtrlHandler(Some(ignore_break), 0);
+            }
+        }
         self.finish()
     }
 
     fn finish(&mut self) -> u32 {
+        self.finished = true;
         let mut code = 1;
         unsafe {
             TerminateJobObject(self.job.as_raw_handle(), 1);
@@ -263,7 +410,7 @@ fn pin_cwd(directory: &Directory) -> io::Result<Vec<Dir>> {
 
 impl Drop for Process {
     fn drop(&mut self) {
-        if self.console.is_some() {
+        if !self.finished {
             self.finish();
         }
     }
@@ -357,4 +504,11 @@ fn quote(argument: &OsStr, out: &mut Vec<u16>) {
     }
     out.extend(std::iter::repeat_n(slash, slashes * 2));
     out.push(quote);
+}
+
+// Console attachment belongs to the process, so serialize headless creation and
+// interrupt delivery to avoid one task inheriting another task's temporary console.
+static CONSOLE_CONTROL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+unsafe extern "system" fn ignore_break(event: u32) -> i32 {
+    i32::from(event == windows_sys::Win32::System::Console::CTRL_BREAK_EVENT)
 }

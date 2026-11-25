@@ -19,11 +19,12 @@ pub use course::authoring::{
 pub use course::{
     Chapter, ChapterKind, ChapterPresentation, CheckKind, CommandBlock, CommandMode, ContentBlock,
     CourseCheckSpec, CourseSource, CourseSourceChangedEvent, CourseSummary, DaemonRequirement,
-    GitFetchAdapter, LoadedCourse, MAX_MARKDOWN_BYTES, OpenCourseRequest, ThreeStepProjection,
-    ValueOrigin,
+    GitFetchAdapter, HttpExpectation, LoadedCourse, MAX_MARKDOWN_BYTES, OpenCourseRequest,
+    ThreeStepProjection, ValueOrigin,
 };
 pub use error::{DomainError, ErrorCode};
 pub use execution::model::*;
+pub use execution::verification::model::*;
 pub use model::{
     AccentPreset, AppBootstrap, CourseLanguage, DEFAULT_CODE_FONT_SIZE, GLOBAL_DATA_SCHEMA_VERSION,
     GlobalSettings, Locale, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,

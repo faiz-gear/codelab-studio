@@ -689,7 +689,9 @@ fn opening_an_existing_draft_requires_registered_trust_for_trial_and_honors_revo
     let events = app.subscribe();
     app.execute(AppCommand::RevokeTrust(trust.clone())).unwrap();
     assert_eq!(
-        events.try_recv().unwrap(),
+        std::iter::from_fn(|| events.try_recv().ok())
+            .find(|event| matches!(event, AppEvent::CourseTrustChanged(_)))
+            .expect("expected trust revocation event"),
         AppEvent::CourseTrustChanged(codelab_core::CourseTrustChanged {
             source: trial.course.source,
             trusted: false,

@@ -1,3 +1,5 @@
+mod verification;
+use crate::execution::verification::{VerificationTask, model::*};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
@@ -5,6 +7,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::course::authoring::{
     CourseDraft, CourseDraftRequest, Draft, DraftFilePath, DraftFileWrite, DraftPreview,
@@ -114,6 +117,12 @@ pub enum AppCommand {
     GetCommandCwdOverrides(WorkspaceTerminalRequest),
     SetCommandCwdOverride(CommandCwdOverride),
     RunCommandBlock(RunCommandBlock),
+    RunChecks(RunChecks),
+    GetProgress(WorkspaceTerminalRequest),
+    SetSelfCheck(SetSelfCheck),
+    CompleteExercise(ExerciseTarget),
+    ResetProgress(WorkspaceTerminalRequest),
+    ExportLearningRecord(WorkspaceTerminalRequest),
     GetPreflight,
     RefreshPreflight,
     SetRuntimePreference(RuntimePreference),
@@ -154,6 +163,9 @@ pub enum AppResponse {
     CommandSaveConflict(CommandSaveConflict),
     CommandFailed(CommandFailed),
     CommandStarted(CommandStarted),
+    VerificationStarted(VerificationStarted),
+    Progress(LearningProgress),
+    LearningRecord(Value),
     Preflight(PreflightReport),
     Shutdown(ShutdownReport),
 }
@@ -161,6 +173,7 @@ pub enum AppResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum AppEvent {
+    ProgressUpdated(LearningProgress),
     SettingsUpdated(GlobalSettings),
     RecentsUpdated(Vec<RecentWorkspace>),
     TrustUpdated(Vec<TrustEntry>),
@@ -217,6 +230,7 @@ struct AppState {
     next_draft_id: u64,
     next_workspace_id: u64,
     execution: Execution,
+    verification: Option<VerificationTask>,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
@@ -228,7 +242,7 @@ pub struct App {
     settings_store: JsonStore<GlobalSettings>,
     recents_store: JsonStore<Vec<RecentWorkspace>>,
     trust_store: JsonStore<Vec<TrustEntry>>,
-    state: Mutex<AppState>,
+    state: Arc<Mutex<AppState>>,
     subscribers: Arc<Subscribers>,
     runtime: Arc<RuntimeManager>,
     git: Arc<dyn GitFetchAdapter>,
@@ -313,7 +327,7 @@ impl App {
             settings_store,
             recents_store,
             trust_store,
-            state: Mutex::new(AppState {
+            state: Arc::new(Mutex::new(AppState {
                 settings: settings_loaded.value,
                 recents: recents_loaded.value,
                 trust_entries: trust_loaded.value,
@@ -327,9 +341,10 @@ impl App {
                 next_draft_id: 1,
                 next_workspace_id: 1,
                 execution: Execution::default(),
+                verification: None,
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
-            }),
+            })),
             subscribers,
             runtime,
             git,
@@ -460,7 +475,14 @@ impl App {
                     applying_comparison,
                 )?;
                 Ok(match result {
-                    Ok(file) => AppResponse::WorkspaceFile(file),
+                    Ok(file) => {
+                        *state
+                            .workspace(request.target.workspace_id)?
+                            .last_saved_at
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = Utc::now();
+                        AppResponse::WorkspaceFile(file)
+                    }
                     Err(file) => AppResponse::WorkspaceFileConflict(file),
                 })
             }
@@ -484,6 +506,14 @@ impl App {
             }
             AppCommand::OpenTerminal(request) => self.open_terminal(request.workspace_id),
             AppCommand::RunCommandBlock(request) => self.run_command_block(request),
+            AppCommand::RunChecks(request) => self.run_checks(request),
+            AppCommand::GetProgress(request) => self.get_progress(request.workspace_id),
+            AppCommand::SetSelfCheck(request) => self.set_self_check(request),
+            AppCommand::CompleteExercise(request) => self.complete_exercise(request),
+            AppCommand::ResetProgress(request) => self.reset_progress(request.workspace_id),
+            AppCommand::ExportLearningRecord(request) => {
+                self.export_learning_record(request.workspace_id)
+            }
             AppCommand::ReadTerminals(request) => {
                 let mut state = self.lock_state();
                 state.workspace(request.workspace_id)?;
@@ -565,6 +595,12 @@ impl App {
             let workspace = state.workspace(request.workspace_id)?;
             if let Some(file) = editors::save(workspace, request.drafts, &mut saved)? {
                 return Ok(Err(file));
+            }
+            if !saved.is_empty() {
+                *workspace
+                    .last_saved_at
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Utc::now();
             }
             state
                 .execution
@@ -652,6 +688,7 @@ impl App {
                 });
             }
             state.shut_down = true;
+            state.verification = None;
             state.execution.clear();
             (
                 std::mem::take(&mut state.cleanup_hooks),
@@ -891,6 +928,7 @@ impl App {
                 workspace.set_trusted(changed.trusted);
             }
             if !changed.trusted {
+                state.verification = None;
                 state.execution.clear();
             }
             self.emit(AppEvent::CourseTrustChanged(changed));
@@ -991,6 +1029,7 @@ impl App {
                 move |changed| emit_to_subscribers(&subs, AppEvent::CourseSourceChanged(changed)),
             ))
         };
+        state.verification = None;
         state.execution.invalidate_confirmation();
         let course = opened.course;
         state.active_course = Some(ActiveCourseState {
@@ -1157,6 +1196,7 @@ impl App {
     }
 
     fn activate_workspace(&self, state: &mut AppState, workspace: Workspace) -> WorkspaceSummary {
+        state.verification = None;
         state.execution.clear();
         state.next_workspace_id += 1;
         let summary = workspace.summary.clone();
@@ -1177,6 +1217,7 @@ impl App {
 
 impl AppState {
     fn deactivate_workspace(&mut self) {
+        self.verification = None;
         self.execution.clear();
         self.active_workspace = None;
     }

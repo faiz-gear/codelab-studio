@@ -5,6 +5,7 @@ mod process;
 mod risk;
 #[cfg(unix)]
 mod unix;
+pub(crate) mod verification;
 #[cfg(windows)]
 mod windows;
 
@@ -111,9 +112,29 @@ impl Execution {
         launch: CommandLaunch,
         token: Option<u64>,
     ) -> Result<CommandLaunch, CommandConfirmation> {
+        let high_risk = risk::is_high_risk(&launch.block.command);
+        self.approve_risk(launch, token, high_risk)
+    }
+
+    pub fn approve_checks(
+        &mut self,
+        launch: CommandLaunch,
+        token: Option<u64>,
+        commands: &[String],
+    ) -> Result<CommandLaunch, CommandConfirmation> {
+        let high_risk = commands.iter().any(|command| risk::is_high_risk(command));
+        self.approve_risk(launch, token, high_risk)
+    }
+
+    fn approve_risk(
+        &mut self,
+        launch: CommandLaunch,
+        token: Option<u64>,
+        high_risk: bool,
+    ) -> Result<CommandLaunch, CommandConfirmation> {
         let pending = self.confirmation.take();
         if pending.is_some_and(|(id, expected)| token == Some(id) && expected == launch)
-            || (token.is_none() && !risk::is_high_risk(&launch.block.command))
+            || (token.is_none() && !high_risk)
         {
             return Ok(launch);
         }
@@ -204,6 +225,24 @@ impl Execution {
             },
         );
         Ok(summary)
+    }
+
+    pub fn daemon(&mut self, launch: &CommandLaunch, port: u16) -> Option<(TerminalSummary, bool)> {
+        self.reap();
+        self.terminals
+            .values()
+            .find(|terminal| {
+                terminal.summary.mode == Some(CommandMode::Daemon)
+                    && terminal.summary().port == Some(port)
+            })
+            .map(|terminal| {
+                let same_launch = terminal.launch.as_ref().is_some_and(|previous| {
+                    previous.cwd == launch.cwd
+                        && previous.script == launch.script
+                        && previous.block.shell == launch.block.shell
+                });
+                (terminal.summary(), same_launch)
+            })
     }
 
     pub fn restart_launch(

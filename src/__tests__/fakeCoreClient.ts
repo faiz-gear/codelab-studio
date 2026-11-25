@@ -342,6 +342,7 @@ export class FakeCoreClient implements CoreClient {
   }
 
   emitEvent(event: AppEvent): void {
+    if (event.type === "progressUpdated") this.progress = event.payload;
     if (event.type === "preflightUpdated") {
       this.preflight = event.payload;
     }
@@ -441,6 +442,8 @@ export class FakeCoreClient implements CoreClient {
     if (!this.workspace || this.workspace.id !== workspaceId) throw new CoreCommandError({ code: "NO_ACTIVE_WORKSPACE" });
     return this.workspace.root;
   }
+
+  progress: import("../core/contracts").LearningProgress | null = null;
 
   private fileSnapshot(root: string, path: string): WorkspaceFile {
     return this.files(root).get(path) ?? { kind: "missing", path, revision: null, sizeBytes: 0 };
@@ -749,6 +752,27 @@ export class FakeCoreClient implements CoreClient {
       case "resizeTerminal":
       case "writeTerminal":
         return { type: "terminalUpdated" };
+      case "getProgress":
+      case "resetProgress":
+      case "setSelfCheck":
+      case "completeExercise": {
+        const progress = this.progress ?? { workspaceId: command.payload.workspaceId, completedExercises: 0, totalExercises: 10, runningChapterId: null, chapters: {} };
+        this.progress = progress;
+        return { type: "progress", payload: progress };
+      }
+      case "runChecks": {
+        const { workspaceId, chapterId, drafts } = command.payload;
+        const root = this.workspaceRoot(workspaceId);
+        for (const draft of drafts) {
+          const file = this.fileSnapshot(root, draft.path);
+          if (file.revision !== draft.expectedRevision) return { type: "commandSaveConflict", payload: { file, saved: [] } };
+        }
+        const saved = drafts.map((draft) => this.writeDiskFile(root, draft.path, draft.text));
+        const progress = this.progress ?? { workspaceId, completedExercises: 0, totalExercises: 10, runningChapterId: null, chapters: {} };
+        this.progress = { ...progress, runningChapterId: chapterId };
+        return { type: "verificationStarted", payload: { progress: this.progress, saved } };
+      }
+      case "exportLearningRecord": return { type: "learningRecord", payload: { progress: this.progress } };
       case "getPreflight":
       case "refreshPreflight":
         return { type: "preflight", payload: this.preflight };

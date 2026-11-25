@@ -640,3 +640,18 @@ HTTP 层稳定后，再替换数据库访问方式。
 ## 教程示例的验证范围
 
 编写本教程时，`/healthz` 示例已实际运行，验证了 JSON 响应、`405` 和 `404`。GoFrame 的命令与关键机制已核对官方文档；当时本机访问 Go 模块代理超时，GoFrame 部分未完成本机运行验证。
+
+## 工作台自动验收与测试覆盖
+
+练习 0 使用自查与手动完成。练习 1–2 验证真实 HTTP 请求；练习 3–9 的 Go 测试必须运行并通过本节对应的用例，不能仅凭 Starter 的健康检查通过。测试代码与参考实现可在「对照参考实现」中逐文件查看，合并到 Workspace 后也可在外部 IDE 中直接运行 `go test -json -race ./...`。
+
+| 练习 | 必须通过的用例 |
+| --- | --- |
+| 3 | `TestTitleRules`、`TestCompleteIsIdempotent`、`TestConcurrentCreatesAssignDistinctIDs`、`TestTaskHTTPContract` |
+| 4 | `TestTasksSurviveReopeningSQLite` |
+| 5 | `TestTasksSurviveReopeningSQLite`、`TestCompletionRollsBackAndFiresOnlyOnce` |
+| 6 | `TestCanceledContextStopsTheStore`、`TestCompletionRollsBackAndFiresOnlyOnce` |
+| 7 | `TestGoFrameTaskHTTPContract` |
+| 8–9 | `TestTasksSurviveReopeningORM`、`TestCompletionRollsBackAndFiresOnlyOnce` |
+
+练习 9 还检查交付 README 与独立配置文件。自查项默认辅助学习；自动验收通过后完成记录保持粘性，后续重跑失败仅更新最新结果。

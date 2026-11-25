@@ -4,6 +4,7 @@ mod files;
 mod metadata;
 mod model;
 mod paths;
+pub(crate) mod progress;
 mod starter;
 mod watcher;
 
@@ -29,6 +30,9 @@ use crate::{DomainError, ErrorCode};
 pub(crate) struct Workspace {
     pub summary: WorkspaceSummary,
     pub completed_exercises: u32,
+    pub progress: progress::Progress,
+    pub progress_store: crate::storage::JsonStore<progress::Progress>,
+    pub last_saved_at: Arc<std::sync::Mutex<chrono::DateTime<chrono::Utc>>>,
     pub files: WorkspacePaths,
     pub command_cwds: command_cwd::CommandCwds,
     pub git_starter_snapshot: Option<String>,
@@ -73,7 +77,47 @@ impl Workspace {
 
         let events_enabled = Arc::new(AtomicBool::new(true));
         let enabled = Arc::clone(&events_enabled);
+        let last_saved_at = Arc::new(std::sync::Mutex::new(chrono::Utc::now()));
+        let saved_at = Arc::clone(&last_saved_at);
+        let watched_root = root.clone();
         let watcher = WorkspaceWatcher::start(root, move |paths| {
+            let latest = paths
+                .iter()
+                .filter(|path| {
+                    Path::new(path)
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|ext| {
+                            matches!(
+                                ext,
+                                "go" | "js"
+                                    | "ts"
+                                    | "tsx"
+                                    | "jsx"
+                                    | "py"
+                                    | "java"
+                                    | "json"
+                                    | "yaml"
+                                    | "yml"
+                                    | "toml"
+                                    | "mod"
+                                    | "sum"
+                            )
+                        })
+                })
+                .map(|path| {
+                    std::fs::metadata(watched_root.join(path))
+                        .and_then(|metadata| metadata.modified())
+                        .map(chrono::DateTime::<chrono::Utc>::from)
+                        .unwrap_or_else(|_| chrono::Utc::now())
+                })
+                .max();
+            if let Some(latest) = latest {
+                let mut saved = saved_at.lock().unwrap_or_else(|p| p.into_inner());
+                if latest > *saved {
+                    *saved = latest;
+                }
+            }
             if enabled.load(Ordering::Acquire) {
                 on_change(WorkspaceFilesChanged {
                     workspace_id: id,
@@ -95,6 +139,9 @@ impl Workspace {
                 recovery_notices: metadata.recovery_notices,
             },
             completed_exercises: metadata.completed_exercises,
+            progress: metadata.progress,
+            progress_store: metadata.progress_store,
+            last_saved_at,
             files,
             command_cwds: metadata.command_cwds,
             git_starter_snapshot: metadata.git_starter_snapshot,
