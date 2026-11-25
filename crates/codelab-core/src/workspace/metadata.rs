@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::command_cwd::{CommandCwds, valid_cwds};
 use super::paths::{METADATA_DIR, WorkspacePaths};
-use crate::course::{CourseSource, LoadedCourse, Starter};
+use crate::course::{CourseSource, LoadedCourse, Starter, git_pack};
 use crate::storage::JsonStore;
 use crate::{ChapterKind, DomainError, ErrorCode, StorageRecoveryNotice, StoreKind};
 
@@ -16,6 +16,8 @@ use crate::{ChapterKind, DomainError, ErrorCode, StorageRecoveryNotice, StoreKin
 struct Binding {
     course_id: String,
     source: CourseSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    git_starter_snapshot: Option<String>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -48,6 +50,7 @@ pub(super) struct WorkspaceMetadata {
     pub recovery_notices: Vec<StorageRecoveryNotice>,
     pub completed_exercises: u32,
     pub command_cwds: CommandCwds,
+    pub git_starter_snapshot: Option<String>,
 }
 
 impl WorkspaceMetadata {
@@ -64,7 +67,7 @@ impl WorkspaceMetadata {
             .is_none();
 
         let (dir, created) = metadata_dir(&paths.dir)?;
-        let result = Self::load(paths, course, starter.filter(|_| is_empty), Arc::new(dir));
+        let result = Self::load(paths, course, starter, is_empty, Arc::new(dir));
         // An invalid Starter can be fixed and retried when this directory was empty.
         if result.is_err() && created {
             let _ = paths.dir.remove_dir(METADATA_DIR);
@@ -76,6 +79,7 @@ impl WorkspaceMetadata {
         paths: &WorkspacePaths,
         course: &LoadedCourse,
         starter: Option<&Starter>,
+        is_empty: bool,
         dir: Arc<Dir>,
     ) -> Result<Self, DomainError> {
         let location = paths.root.join(METADATA_DIR);
@@ -89,19 +93,34 @@ impl WorkspaceMetadata {
         let command_cwd_store =
             JsonStore::new(&location, "command-cwds.json", StoreKind::Workspace)
                 .scoped(Arc::clone(&dir));
-        let bound = Binding {
+        let mut bound = Binding {
             course_id: course.course_id.clone(),
             source: course.source.clone(),
+            git_starter_snapshot: None,
         };
         let binding = binding_store.load_or_recover_with(
             Binding {
                 course_id: bound.course_id.clone(),
                 source: bound.source.clone(),
+                git_starter_snapshot: None,
             },
-            |binding| !binding.course_id.trim().is_empty() && valid_source(&binding.source),
+            |binding| {
+                !binding.course_id.trim().is_empty()
+                    && valid_source(&binding.source)
+                    && binding.git_starter_snapshot.as_deref().is_none_or(|key| {
+                        matches!(binding.source, CourseSource::GitPack { .. })
+                            && git_pack::valid_snapshot_key(key)
+                    })
+            },
         )?;
         if binding.value.source != bound.source {
             return Err(DomainError::new(ErrorCode::WorkspaceBoundToAnotherCourse));
+        }
+        if matches!(bound.source, CourseSource::GitPack { .. }) {
+            bound.git_starter_snapshot = binding
+                .value
+                .git_starter_snapshot
+                .or_else(|| git_pack::snapshot_key(starter).map(str::to_owned));
         }
         let progress = progress_store.load_or_recover(|progress: &Progress| {
             progress.chapters.keys().all(|id| !id.trim().is_empty())
@@ -109,7 +128,7 @@ impl WorkspaceMetadata {
         let command_cwds = command_cwd_store.load_or_recover(valid_cwds)?;
         let mut metrics = metrics_store.load_or_recover(|_: &Metrics| true)?;
 
-        if let Some(starter) = starter {
+        if let Some(starter) = starter.filter(|_| is_empty) {
             super::starter::instantiate(starter, &paths.dir, &dir).map_err(|err| {
                 DomainError::new(ErrorCode::WorkspaceStarterFailed)
                     .with_detail("reason", err.to_string())
@@ -138,6 +157,7 @@ impl WorkspaceMetadata {
             .flatten()
             .collect(),
             completed_exercises,
+            git_starter_snapshot: bound.git_starter_snapshot,
             command_cwds: CommandCwds {
                 store: command_cwd_store,
                 values: command_cwds.value,

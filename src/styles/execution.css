@@ -1,13 +1,5 @@
-.cmd-card--runnable .cmd-head {
-  height: auto;
-  min-height: 38px;
-  flex-wrap: wrap;
-  padding-block: 4px;
-  overflow: visible;
-}
-
 .cwd-pill--editable {
-  flex-shrink: 0;
+  min-width: 0;
   cursor: pointer;
 }
 

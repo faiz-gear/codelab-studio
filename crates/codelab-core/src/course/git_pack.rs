@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use tempfile::{NamedTempFile, TempDir};
 use url::Url;
 
-use super::{CourseSource, OpenedCourse, pack};
+use super::{CourseSource, OpenedCourse, Starter, pack};
 use crate::filesystem::{open_canonical_dir, open_canonical_file};
 use crate::{DomainError, ErrorCode};
 
@@ -80,22 +80,35 @@ struct CachedSnapshot {
     fetch_url: String,
 }
 
-pub(crate) fn load(
+pub(crate) struct PreparedCourse {
+    opened: OpenedCourse,
+    snapshot: Option<PreparedSnapshot>,
+}
+
+struct PreparedSnapshot {
+    staging: TempDir,
+    permissions: Vec<(PathBuf, fs::Permissions)>,
+    new_pointer: NamedTempFile,
+    pointer: PathBuf,
+}
+
+pub(crate) fn prepare(
     data_dir: &Path,
     raw_url: &str,
     fetcher: &dyn GitFetchAdapter,
     refresh: bool,
-) -> Result<OpenedCourse, DomainError> {
+) -> Result<PreparedCourse, DomainError> {
     let url = normalize_git_url(raw_url)
         .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
-    let namespace = data_dir
-        .join(CACHE_DIRECTORY)
-        .join(format!("{:x}", Sha256::digest(url.as_bytes())));
+    let namespace = namespace(data_dir, &url);
     create_cache_directory(&namespace)?;
     let pointer = namespace.join("current");
     let cached = read_pointer(&pointer, &url).map_err(cache_error)?;
     if !refresh && let Some(cached) = &cached {
-        return open_snapshot(&namespace.join(&cached.snapshot), url);
+        return Ok(PreparedCourse {
+            opened: open_snapshot(&namespace.join(&cached.snapshot), url)?,
+            snapshot: None,
+        });
     }
 
     let fetch_url = cached
@@ -123,29 +136,50 @@ pub(crate) fn load(
     new_pointer.flush().map_err(cache_error)?;
     new_pointer.as_file().sync_all().map_err(cache_error)?;
 
-    // Publish only a completely parsed snapshot. Previous snapshots remain available
-    // to processes that already opened them.
-    let publish = || -> Result<(), DomainError> {
-        for (path, original) in &permissions {
-            let mut readonly = original.clone();
-            readonly.set_readonly(true);
-            fs::set_permissions(path, readonly).map_err(cache_error)?;
+    Ok(PreparedCourse {
+        opened,
+        snapshot: Some(PreparedSnapshot {
+            staging,
+            permissions,
+            new_pointer,
+            pointer,
+        }),
+    })
+}
+
+impl PreparedCourse {
+    pub(crate) fn publish(self) -> Result<OpenedCourse, DomainError> {
+        if let Some(PreparedSnapshot {
+            staging,
+            permissions,
+            new_pointer,
+            pointer,
+        }) = self.snapshot
+        {
+            // Keep previous snapshots available for Workspaces seeded from them.
+            let publish = || -> Result<(), DomainError> {
+                for (path, original) in &permissions {
+                    let mut readonly = original.clone();
+                    readonly.set_readonly(true);
+                    fs::set_permissions(path, readonly).map_err(cache_error)?;
+                }
+                new_pointer.persist(&pointer).map_err(cache_error)?;
+                Ok(())
+            };
+            if let Err(error) = publish() {
+                for (path, original) in permissions.into_iter().rev() {
+                    let _ = fs::set_permissions(path, original);
+                }
+                return Err(error);
+            }
+            let _ = staging.keep();
+            #[cfg(unix)]
+            if let Some(directory) = pointer.parent().and_then(|path| fs::File::open(path).ok()) {
+                let _ = directory.sync_all();
+            }
         }
-        new_pointer.persist(pointer).map_err(cache_error)?;
-        Ok(())
-    };
-    if let Err(error) = publish() {
-        for (path, original) in permissions.into_iter().rev() {
-            let _ = fs::set_permissions(path, original);
-        }
-        return Err(error);
+        Ok(self.opened)
     }
-    let _ = staging.keep();
-    #[cfg(unix)]
-    if let Ok(directory) = fs::File::open(&namespace) {
-        let _ = directory.sync_all();
-    }
-    Ok(opened)
 }
 
 fn snapshot_permissions(root: &Path) -> io::Result<Vec<(PathBuf, fs::Permissions)>> {
@@ -195,9 +229,8 @@ fn read_pointer(path: &Path, url: &str) -> io::Result<Option<CachedSnapshot>> {
     let mut lines = content.lines();
     let snapshot = lines.next().unwrap_or_default();
     let fetch_url = lines.next().unwrap_or_default();
-    if !snapshot.strip_prefix("snapshot-").is_some_and(|name| {
-        !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_alphanumeric())
-    }) || normalize_git_url(fetch_url).as_deref() != Some(url)
+    if !valid_snapshot_key(snapshot)
+        || normalize_git_url(fetch_url).as_deref() != Some(url)
         || lines.next().is_some()
     {
         return Err(io::Error::from(io::ErrorKind::InvalidData));
@@ -206,6 +239,40 @@ fn read_pointer(path: &Path, url: &str) -> io::Result<Option<CachedSnapshot>> {
         snapshot: snapshot.into(),
         fetch_url: fetch_url.into(),
     }))
+}
+
+pub(crate) fn valid_snapshot_key(key: &str) -> bool {
+    key.strip_prefix("snapshot-").is_some_and(|name| {
+        !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    })
+}
+
+pub(crate) fn snapshot_key(starter: Option<&Starter>) -> Option<&str> {
+    let Starter::Local { root, .. } = starter? else {
+        return None;
+    };
+    root.file_name()?
+        .to_str()
+        .filter(|key| valid_snapshot_key(key))
+}
+
+pub(crate) fn snapshot_starter(
+    data_dir: &Path,
+    url: &str,
+    key: &str,
+) -> Result<Option<Starter>, DomainError> {
+    if !valid_snapshot_key(key) {
+        return Err(DomainError::new(ErrorCode::GitCourseCacheFailed));
+    }
+    let path = namespace(data_dir, url).join(key);
+    open_canonical_dir(&path).map_err(cache_error)?;
+    pack::starter_from_manifest(&path).map(Some)
+}
+
+fn namespace(data_dir: &Path, url: &str) -> PathBuf {
+    data_dir
+        .join(CACHE_DIRECTORY)
+        .join(format!("{:x}", Sha256::digest(url.as_bytes())))
 }
 
 fn open_snapshot(path: &Path, url: String) -> Result<OpenedCourse, DomainError> {

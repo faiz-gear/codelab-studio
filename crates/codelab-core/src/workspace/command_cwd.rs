@@ -111,15 +111,14 @@ pub(crate) fn directory(paths: &WorkspacePaths, raw: &str) -> Result<Directory, 
         .input(raw)
         .and_then(|path| paths.canonical(&path))
         .map_err(|_| invalid_cwd(raw))?;
-    let _handle = open_dir_at(&paths.dir, &relative).map_err(|_| invalid_cwd(raw))?;
+    let handle = open_dir_at(&paths.dir, &relative).map_err(|_| invalid_cwd(raw))?;
     Ok(Directory {
         path: if relative.as_os_str().is_empty() {
             paths.root.clone()
         } else {
             paths.root.join(relative)
         },
-        #[cfg(unix)]
-        handle: _handle,
+        handle,
     })
 }
 

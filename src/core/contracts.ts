@@ -267,6 +267,7 @@ export interface CourseDraft {
   root: string;
   files: string[];
   preview: DraftPreview;
+  requiresRegistryTrust: boolean;
 }
 
 export interface DraftFilePath {
@@ -555,6 +556,7 @@ export type AppResponse =
   | { type: "loadedCourse"; payload: LoadedCourse }
   | { type: "courseDraft"; payload: CourseDraft }
   | { type: "draftPreview"; payload: DraftPreview }
+  | { type: "trialTrustRequired"; payload: TrustSource }
   | { type: "trialWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary } }
   | { type: "courseClosed" }
   | { type: "workspaceBound"; payload: WorkspaceSummary }
@@ -571,6 +573,7 @@ export type AppResponse =
   | { type: "commandCwdOverrides"; payload: CommandCwdOverrides }
   | { type: "commandConfirmationRequired"; payload: CommandConfirmation }
   | { type: "commandSaveConflict"; payload: { file: WorkspaceFile; saved: WorkspaceFile[] } }
+  | { type: "commandFailed"; payload: { error: DomainError; saved: WorkspaceFile[] } }
   | { type: "commandStarted"; payload: { terminal: TerminalSummary; saved: WorkspaceFile[] } }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "shutdown"; payload: ShutdownReport };

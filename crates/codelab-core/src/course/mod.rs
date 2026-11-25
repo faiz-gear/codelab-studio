@@ -37,6 +37,7 @@ pub(crate) struct OpenedCourse {
 
 pub(crate) type EmbeddedFiles = &'static [(&'static str, &'static [u8])];
 
+#[derive(Clone)]
 pub(crate) enum Starter {
     Builtin(EmbeddedFiles),
     Local { root: PathBuf, directory: String },
@@ -46,10 +47,9 @@ pub(crate) fn list_builtin_courses() -> Result<Vec<CourseSummary>, DomainError> 
     builtin::list_builtin_courses()
 }
 
-pub(crate) fn open_course(
+pub(crate) fn open_local_course(
     request: &OpenCourseRequest,
     data_dir: &Path,
-    git: &dyn GitFetchAdapter,
 ) -> Result<OpenedCourse, DomainError> {
     match request {
         OpenCourseRequest::Builtin { course_id } => builtin::load_builtin_course(course_id),
@@ -61,7 +61,7 @@ pub(crate) fn open_course(
             protect_git_cache(data_dir, path)?;
             pack::load_local_course_pack(path)
         }
-        OpenCourseRequest::GitPack { url } => git_pack::load(data_dir, url, git, false),
+        OpenCourseRequest::GitPack { .. } => unreachable!("Git courses are prepared separately"),
     }
 }
 

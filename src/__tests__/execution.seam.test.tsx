@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { DEFAULT_SETTINGS } from "../core/contracts";
 import { createBuiltinGoCourseFixture, FakeCoreClient } from "./fakeCoreClient";
@@ -64,6 +64,27 @@ it("focuses the editor conflict when the disk has changed after the draft was op
   expect(screen.queryByRole("tab", { name: "Terminal 1" })).not.toBeInTheDocument();
 });
 
+it("acknowledges saved editor revisions even when the terminal launch fails", async () => {
+  const { client, user, editor } = await openWorkbench();
+  const dispatch = client.dispatch.bind(client);
+  const failure = vi.spyOn(client, "dispatch").mockImplementation(async (command) => {
+    if (command.type === "runCommandBlock" && command.payload.confirmation) {
+      const saved = command.payload.drafts.map(({ path, text }) => client.writeDiskFile("/work/sample", path, text));
+      return { type: "commandFailed", payload: { error: { code: "EXECUTION_FAILED" }, saved } };
+    }
+    return dispatch(command);
+  });
+  fireEvent.change(editor, { target: { value: "// kept after launch failure\n" } });
+  await user.click(screen.getByRole("button", { name: "Run command" }));
+  const dialog = await screen.findByRole("dialog", { name: "Confirm high-risk command" });
+  await user.click(within(dialog).getByRole("button", { name: "Run anyway" }));
+  expect(await screen.findByText("The terminal operation failed.")).toBeVisible();
+  expect(await screen.findByText("All changes saved")).toBeVisible();
+  expect(editor).toHaveValue("// kept after launch failure\n");
+  expect(screen.queryByRole("tab", { name: "Terminal 1" })).not.toBeInTheDocument();
+  failure.mockRestore();
+});
+
 it("updates a Command Block directory and opens its port-conflict recovery actions", async () => {
   const { client, user } = await openWorkbench();
   await user.click(screen.getByRole("button", { name: "Change working directory" }));
@@ -84,6 +105,7 @@ it("updates a Command Block directory and opens its port-conflict recovery actio
   if (output.type !== "terminals") throw new Error("Expected terminal list");
   act(() => client.markPortConflict(output.payload.terminals[0].id, "ERROR: address already in use"));
   const recovery = await screen.findByRole("region", { name: "A local port is already in use." });
+  expect(within(recovery).queryByRole("button", { name: "Switch to service terminal" })).not.toBeInTheDocument();
   await user.click(within(recovery).getByRole("button", { name: "Ask AI" }));
   expect(within(await screen.findByRole("dialog", { name: "Ask AI" })).getByText("ERROR: address already in use")).toBeInTheDocument();
 });

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CommandMode, WorkspaceFile};
+use crate::{CommandMode, DomainError, WorkspaceFile};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +48,13 @@ pub struct CommandStarted {
 #[serde(rename_all = "camelCase")]
 pub struct CommandSaveConflict {
     pub file: WorkspaceFile,
+    pub saved: Vec<WorkspaceFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandFailed {
+    pub error: DomainError,
     pub saved: Vec<WorkspaceFile>,
 }
 

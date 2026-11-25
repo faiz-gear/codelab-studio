@@ -1,6 +1,9 @@
+#[cfg(target_os = "macos")]
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
+#[cfg(target_os = "linux")]
+use std::os::fd::OwnedFd;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
@@ -58,7 +61,7 @@ impl Process {
             command.pre_exec(move || {
                 if libc::setsid() < 0
                     || libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY as _, 0) < 0
-                    || libc::fchdir(spec.directory.as_raw_fd()) < 0
+                    || libc::fchdir(spec.directory.handle.as_raw_fd()) < 0
                 {
                     return Err(io::Error::last_os_error());
                 }
@@ -129,24 +132,9 @@ impl Process {
     }
 
     fn signal_session(&self, signal: libc::c_int) {
-        // Interactive shells create new process groups for jobs. Signal every
-        // process group in this PTY session, including background jobs.
-        let groups: BTreeSet<_> = process_ids()
-            .into_iter()
-            .filter_map(|pid| {
-                // SAFETY: these syscalls query numeric process IDs and can race exit.
-                if unsafe { libc::getsid(pid) } != self.session {
-                    return None;
-                }
-                let group = unsafe { libc::getpgid(pid) };
-                (group > 0).then_some(group)
-            })
-            .chain(std::iter::once(self.session))
-            .collect();
-        for group in groups {
-            // SAFETY: a negative PID limits delivery to the selected process group.
-            unsafe { libc::kill(-group, signal) };
-        }
+        signal_jobs(self.session, signal);
+        // The leader remains waitable here, so this group ID cannot be reused.
+        unsafe { libc::kill(-self.session, signal) };
     }
 }
 
@@ -168,7 +156,7 @@ fn winsize(cols: u16, rows: u16) -> libc::winsize {
 }
 
 #[cfg(target_os = "macos")]
-fn process_ids() -> Vec<libc::pid_t> {
+fn signal_jobs(session: libc::pid_t, signal: libc::c_int) {
     // SAFETY: the first call measures the buffer and the second fills it.
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
     let mut pids = vec![0; count.max(0) as usize + 128];
@@ -179,16 +167,93 @@ fn process_ids() -> Vec<libc::pid_t> {
         )
     };
     pids.truncate(count.max(0) as usize);
-    pids.retain(|pid| *pid > 0);
-    pids
+    let mut groups = BTreeSet::new();
+    for pid in pids.into_iter().filter(|&pid| pid > 0) {
+        // macOS only exposes numeric IDs for signals here. Recheck both the
+        // membership and the group immediately before signaling a job.
+        let group = unsafe { libc::getpgid(pid) };
+        if group <= 0 || group == session || groups.contains(&group) {
+            continue;
+        }
+        if unsafe {
+            libc::getsid(pid) == session
+                && libc::getpgid(pid) == group
+                && libc::getsid(pid) == session
+        } {
+            unsafe { libc::kill(-group, signal) };
+            groups.insert(group);
+        }
+    }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn process_ids() -> Vec<libc::pid_t> {
-    std::fs::read_dir("/proc")
+#[cfg(target_os = "linux")]
+fn signal_jobs(session: libc::pid_t, signal: libc::c_int) {
+    let pids = std::fs::read_dir("/proc")
         .into_iter()
         .flatten()
         .flatten()
-        .filter_map(|entry| entry.file_name().to_str()?.parse().ok())
-        .collect()
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<libc::pid_t>().ok());
+    // Gather handles before signaling so a killed parent cannot hide a detached child.
+    let jobs: Vec<_> = pids
+        .filter(|&pid| pid != session)
+        .filter_map(|pid| {
+            let handle = open_pid(pid)?;
+            (unsafe { libc::getsid(pid) } == session || child_of_session(pid, &handle, session))
+                .then_some(handle)
+        })
+        .collect();
+    for handle in jobs {
+        // A pidfd never redirects a signal to a new process after PID reuse.
+        unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                handle.as_raw_fd(),
+                signal,
+                std::ptr::null::<libc::siginfo_t>(),
+                0,
+            )
+        };
+    }
 }
+
+#[cfg(target_os = "linux")]
+fn open_pid(pid: libc::pid_t) -> Option<OwnedFd> {
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    (fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) })
+}
+
+#[cfg(target_os = "linux")]
+fn child_of_session(pid: libc::pid_t, handle: &OwnedFd, session: libc::pid_t) -> bool {
+    fn parent(pid: libc::pid_t) -> Option<libc::pid_t> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // The command name can contain spaces and parentheses.
+        let (_, fields) = stat.rsplit_once(')')?;
+        fields.split_whitespace().nth(1)?.parse().ok()
+    }
+
+    fn alive(handle: &OwnedFd) -> bool {
+        let mut entry = libc::pollfd {
+            fd: handle.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // A pidfd becomes readable when its process exits.
+        unsafe { libc::poll(&mut entry, 1, 0) == 0 }
+    }
+
+    // A child that created a new session is still identifiable while its parent
+    // remains in our terminal session. Verify the relationship through live handles.
+    let Some(parent_pid) = parent(pid).filter(|&parent| parent > 1) else {
+        return false;
+    };
+    let Some(parent_handle) = open_pid(parent_pid) else {
+        return false;
+    };
+    (unsafe { libc::getsid(parent_pid) == session })
+        && parent(pid) == Some(parent_pid)
+        && alive(handle)
+        && alive(&parent_handle)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn signal_jobs(_session: libc::pid_t, _signal: libc::c_int) {}

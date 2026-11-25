@@ -23,9 +23,9 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
   const panelId = useId();
   const active = state.terminals.find(({ id }) => id === state.active);
   const conflicted = active?.portConflict ? active : state.terminals.find(({ portConflict }) => portConflict);
-  const service = conflicted && state.terminals.find((item) =>
+  const service = conflicted && (state.terminals.find((item) =>
     item.mode === "daemon" && item.running && item.port !== null && item.port === conflicted.port
-  ) || conflicted;
+  ) ?? (conflicted.mode === "daemon" ? conflicted : undefined));
   const isDaemon = active?.mode === "daemon";
   const busy = disabled || state.busy;
   const canRender = typeof ResizeObserver !== "undefined";
@@ -125,10 +125,12 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
               if (active.commandId) void workbench.run({ commandId: active.commandId, restartTerminalId: active.id }).catch(onError);
             }}>{t.restart}</button>}
           </div>}
-          {conflicted && service && (
+          {conflicted && (
             <div className="terminal-recovery" role="region" aria-label={t.portConflict}>
               <span>{t.portConflict}</span>
-              <button className="btn btn--secondary btn--xs" type="button" onClick={() => workbench.select(service.id)}>{t.showService}</button>
+              {service && service.id !== active.id && (
+                <button className="btn btn--secondary btn--xs" type="button" onClick={() => workbench.select(service.id)}>{t.showService}</button>
+              )}
               <button className="btn btn--ghost btn--xs" type="button" onClick={() => void askAI()}>{t.askAI}</button>
             </div>
           )}

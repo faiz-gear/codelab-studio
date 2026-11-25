@@ -25,7 +25,7 @@ export function CommandBlockCard({
 
   return (
     <div
-      className={`cmd-card${isDaemon ? " cmd-card--daemon" : ""}${onRun ? " cmd-card--runnable" : ""}`}
+      className={`cmd-card${isDaemon ? " cmd-card--daemon" : ""}`}
       data-testid={`command-block-${command.id}`}
     >
       <div className="cmd-head">
@@ -60,7 +60,7 @@ export function CommandBlockCard({
             onClick={() => onCopy(command.command)}
           >
             <CopyIcon size={12} />
-            <span>{t.copyCommand}</span>
+            {!onRun && <span>{t.copyCommand}</span>}
           </button>
         </div>
       </div>

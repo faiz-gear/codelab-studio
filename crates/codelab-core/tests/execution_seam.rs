@@ -202,6 +202,56 @@ fn saves_all_drafts_before_launch_and_blocks_on_external_conflict() {
     });
 }
 
+#[test]
+fn returns_saved_revisions_when_a_later_draft_cannot_be_written() {
+    let (temp, app, id) = fixture("# Local\n\n```sh\nprintf OK\n```\n");
+    trust(&temp, &app);
+    let workspace = bind(&temp, &app, "work");
+    let root = temp.path().join("work");
+    fs::write(root.join("main.txt"), "original").unwrap();
+    fs::write(root.join("binary.txt"), [0, 255]).unwrap();
+    let read = |file| {
+        send(
+            &app,
+            "readWorkspaceFile",
+            serde_json::json!({"workspaceId": workspace, "path": file}),
+        )
+    };
+    let response = send(
+        &app,
+        "runCommandBlock",
+        serde_json::json!({
+            "workspaceId": workspace, "commandId": id,
+            "drafts": [
+                {"path": "main.txt", "text": "updated", "expectedRevision": read("main.txt")["payload"]["revision"]},
+                {"path": "binary.txt", "text": "invalid", "expectedRevision": read("binary.txt")["payload"]["revision"]}
+            ]
+        }),
+    );
+    assert_eq!(response["type"], "commandFailed");
+    assert_eq!(
+        response["payload"]["error"]["code"],
+        "WORKSPACE_FILE_NOT_TEXT"
+    );
+    assert_eq!(
+        response["payload"]["saved"],
+        serde_json::json!([read("main.txt")["payload"]])
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("main.txt")).unwrap(),
+        "updated"
+    );
+    assert_eq!(fs::read(root.join("binary.txt")).unwrap(), [0, 255]);
+    assert_eq!(
+        send(
+            &app,
+            "readTerminals",
+            serde_json::json!({"workspaceId": workspace})
+        )["payload"]["terminals"],
+        serde_json::json!([])
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn routes_oneshots_away_from_live_daemons_and_reports_port_conflicts() {
@@ -360,6 +410,10 @@ fn terminal_service_fixture() {
     let Ok(port) = std::env::var("CODELAB_TEST_LISTEN_PORT") else {
         return;
     };
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("CODELAB_TEST_NEW_SESSION").is_some() {
+        assert!(unsafe { libc::setsid() } > 0);
+    }
     let listener = std::net::TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
     println!(
         "Listening on http://127.0.0.1:{}",
@@ -368,6 +422,31 @@ fn terminal_service_fixture() {
     loop {
         std::thread::park();
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn shutdown_reclaims_a_detached_child_with_an_identifiable_parent() {
+    let executable = std::env::current_exe().unwrap();
+    let manual = format!(
+        "# Local\n\n```sh mode=daemon\nCODELAB_TEST_NEW_SESSION=1 CODELAB_TEST_LISTEN_PORT=0 '{}' --exact terminal_service_fixture --nocapture &\nwait\n```\n",
+        path(&executable).replace('\'', "'\\''"),
+    );
+    let (temp, app, command) = fixture(&manual);
+    trust(&temp, &app);
+    let workspace = bind(&temp, &app, "work");
+    let started = send(
+        &app,
+        "runCommandBlock",
+        serde_json::json!({"workspaceId": workspace, "commandId": command}),
+    );
+    let id = started["payload"]["terminal"]["id"].as_u64().unwrap();
+    let (updates, _) = wait_terminal(&app, workspace, id, |updates, _| {
+        updates["terminals"][0]["port"].is_number()
+    });
+    let port = updates["terminals"][0]["port"].as_u64().unwrap() as u16;
+    app.shutdown().unwrap();
+    assert_port_released(port);
 }
 
 fn assert_port_released(port: u16) {
@@ -457,10 +536,8 @@ fn retains_five_thousand_output_lines_and_two_hundred_recent_errors() {
 }
 
 #[cfg(unix)]
-#[test]
-fn derives_selected_system_toolchain_environment_in_the_child_only() {
+fn app_with_system_go(temp: &TempDir, executable: std::path::PathBuf) -> App {
     use codelab_core::{HostProbeResult, HostTool, HostToolchainProbe, RuntimeAdapters};
-    use std::os::unix::fs::PermissionsExt;
 
     struct SelectedGo(std::path::PathBuf);
     impl HostToolchainProbe for SelectedGo {
@@ -475,12 +552,6 @@ fn derives_selected_system_toolchain_environment_in_the_child_only() {
         }
     }
 
-    let temp = TempDir::new().unwrap();
-    let executable = temp.path().join("host tools/go");
-    fs::create_dir_all(executable.parent().unwrap()).unwrap();
-    fs::write(&executable, "#!/bin/sh\nprintf 'selected Go fixture\\n'\n").unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
-    let original_path = std::env::var_os("PATH");
     let app = App::open_with_runtime_adapters(
         AppConfig {
             data_dir: temp.path().join("data"),
@@ -496,6 +567,21 @@ fn derives_selected_system_toolchain_environment_in_the_child_only() {
     while !matches!(events.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
         codelab_core::AppEvent::PreflightUpdated(report) if report.checked && !report.probing
     ) {}
+    app
+}
+
+#[cfg(unix)]
+#[test]
+fn derives_selected_system_toolchain_environment_in_the_child_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempDir::new().unwrap();
+    let executable = temp.path().join("host tools/go");
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    fs::write(&executable, "#!/bin/sh\nprintf 'selected Go fixture\\n'\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let original_path = std::env::var_os("PATH");
+    let app = app_with_system_go(&temp, executable);
     let manual = temp.path().join("manual.md");
     fs::write(&manual, "# Local\n\n```sh\ngo\n```\n").unwrap();
     let AppResponse::LoadedCourse(course) = app
@@ -519,6 +605,57 @@ fn derives_selected_system_toolchain_environment_in_the_child_only() {
         output.contains("selected Go fixture")
     });
     assert_eq!(std::env::var_os("PATH"), original_path);
+}
+
+#[cfg(unix)]
+#[test]
+fn returns_saved_revisions_when_terminal_start_fails() {
+    let temp = TempDir::new().unwrap();
+    // A colon is valid in the tool directory but cannot be encoded as a PATH entry.
+    let app = app_with_system_go(&temp, temp.path().join("host:tools/go"));
+    let manual = temp.path().join("manual.md");
+    fs::write(&manual, "# Local\n\n```sh\nprintf OK\n```\n").unwrap();
+    let AppResponse::LoadedCourse(course) = app
+        .execute(AppCommand::OpenCourse(OpenCourseRequest::LocalMarkdown {
+            path: path(&manual),
+        }))
+        .unwrap()
+    else {
+        panic!("expected Course")
+    };
+    trust(&temp, &app);
+    let workspace = bind(&temp, &app, "work");
+    fs::write(temp.path().join("work/main.txt"), "original").unwrap();
+    let read = || {
+        send(
+            &app,
+            "readWorkspaceFile",
+            serde_json::json!({"workspaceId": workspace, "path": "main.txt"}),
+        )
+    };
+    let response = send(
+        &app,
+        "runCommandBlock",
+        serde_json::json!({
+            "workspaceId": workspace, "commandId": course.chapters[0].commands[0].id,
+            "drafts": [{"path": "main.txt", "text": "updated", "expectedRevision": read()["payload"]["revision"]}]
+        }),
+    );
+    assert_eq!(response["type"], "commandFailed");
+    assert_eq!(response["payload"]["error"]["code"], "EXECUTION_FAILED");
+    assert_eq!(
+        response["payload"]["saved"],
+        serde_json::json!([read()["payload"]])
+    );
+    assert_eq!(response["payload"]["saved"][0]["text"], "updated");
+    assert_eq!(
+        send(
+            &app,
+            "readTerminals",
+            serde_json::json!({"workspaceId": workspace})
+        )["payload"]["terminals"],
+        serde_json::json!([])
+    );
 }
 
 #[cfg(unix)]

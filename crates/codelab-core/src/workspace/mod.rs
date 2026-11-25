@@ -31,6 +31,7 @@ pub(crate) struct Workspace {
     pub completed_exercises: u32,
     pub files: WorkspacePaths,
     pub command_cwds: command_cwd::CommandCwds,
+    pub git_starter_snapshot: Option<String>,
     events_enabled: Arc<AtomicBool>,
     _watcher: WorkspaceWatcher,
 }
@@ -96,6 +97,7 @@ impl Workspace {
             completed_exercises: metadata.completed_exercises,
             files,
             command_cwds: metadata.command_cwds,
+            git_starter_snapshot: metadata.git_starter_snapshot,
             events_enabled,
             _watcher: watcher,
         })

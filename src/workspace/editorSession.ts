@@ -217,7 +217,8 @@ export class WorkspaceEditorSession {
           result.response = response;
           return;
         }
-        const outcome = response.type === "commandSaveConflict" ? response : expectResponse(response, "commandStarted");
+        const outcome = response.type === "commandSaveConflict" || response.type === "commandFailed"
+          ? response : expectResponse(response, "commandStarted");
         for (const file of outcome.payload.saved) {
           this.updateTab(file.path, (tab) => diskUpdate({ ...tab, file }, file));
         }
@@ -225,6 +226,8 @@ export class WorkspaceEditorSession {
           const file = outcome.payload.file;
           this.updateTab(file.path, (tab) => diskUpdate(tab, file));
           this.update({ activePath: file.path, executionConflict: this.state.executionConflict + 1 });
+        } else if (outcome.type === "commandFailed") {
+          throw new CoreCommandError(outcome.payload.error);
         } else {
           result.response = outcome;
         }

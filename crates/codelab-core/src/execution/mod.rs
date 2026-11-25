@@ -33,10 +33,7 @@ struct Spawn {
     program: PathBuf,
     args: Vec<OsString>,
     env: BTreeMap<OsString, OsString>,
-    #[cfg(unix)]
-    directory: cap_std::fs::Dir,
-    #[cfg(windows)]
-    cwd: PathBuf,
+    directory: Directory,
 }
 
 #[derive(PartialEq, Eq)]
@@ -50,7 +47,6 @@ pub(crate) struct CommandLaunch {
 
 pub(crate) struct Directory {
     pub path: PathBuf,
-    #[cfg(unix)]
     pub handle: cap_std::fs::Dir,
 }
 
@@ -180,10 +176,7 @@ impl Execution {
                 program,
                 args,
                 env,
-                #[cfg(unix)]
-                directory: dir.handle,
-                #[cfg(windows)]
-                cwd: dir.path,
+                directory: dir,
             },
             Arc::clone(&capture),
             Arc::clone(&self.errors),

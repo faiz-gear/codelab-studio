@@ -1,14 +1,22 @@
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+use std::path::Path;
 use std::ptr::{null, null_mut};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use cap_fs_ext::MetadataExt;
+use cap_std::fs::Dir;
 use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
+};
 use windows_sys::Win32::System::Console::{
     COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole,
 };
@@ -25,7 +33,7 @@ use windows_sys::Win32::System::Threading::{
     ResumeThread, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
-use super::{Ports, Spawn};
+use super::{Directory, Ports, Spawn};
 
 struct Console(HPCON);
 
@@ -82,6 +90,7 @@ pub(super) struct Process {
 
 impl Process {
     pub fn spawn(spec: Spawn) -> io::Result<(Self, Ports)> {
+        let cwd_guards = pin_cwd(&spec.directory)?;
         // Own the job before creating a child. No breakaway flags are enabled.
         let job = owned(unsafe { CreateJobObjectW(null(), null()) })?;
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -124,7 +133,7 @@ impl Process {
             quote(&argument, &mut command_line);
         }
         command_line.push(0);
-        let cwd = wide(spec.cwd.as_os_str());
+        let cwd = wide(spec.directory.path.as_os_str());
         let environment = environment(spec.env);
         // SAFETY: the UTF-16 buffers, startup attributes and output struct are alive
         // for the call. The primary thread starts suspended until the job owns it.
@@ -142,6 +151,7 @@ impl Process {
                 &mut information,
             )
         })?;
+        drop(cwd_guards);
         let child = owned(information.hProcess)?;
         let primary_thread = owned(information.hThread)?;
         let assigned =
@@ -206,6 +216,34 @@ impl Process {
         drop(self.console.take());
         code
     }
+}
+
+fn pin_cwd(directory: &Directory) -> io::Result<Vec<Dir>> {
+    // CreateProcessW takes a path. Open its components from the root down with
+    // write and delete sharing denied, and keep them open until process creation.
+    let mut chain: Vec<&Path> = directory.path.ancestors().collect();
+    let mut guards = Vec::with_capacity(chain.len());
+    while let Some(path) = chain.pop() {
+        let file = OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        guards.push(Dir::from_std_file(file));
+    }
+    let actual = guards
+        .last()
+        .ok_or(io::ErrorKind::InvalidInput)?
+        .dir_metadata()?;
+    let expected = directory.handle.dir_metadata()?;
+    if (actual.dev(), actual.ino()) != (expected.dev(), expected.ino()) {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    Ok(guards)
 }
 
 impl Drop for Process {

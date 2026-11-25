@@ -19,16 +19,21 @@ function pack(source: LoadedCourse["source"], chapterTitle: string): LoadedCours
 
 class DraftClient extends FakeCoreClient {
   private course = pack({ kind: "localPack", path: draftPath }, "Original exercise");
+  private existing = false;
+  private trusted = false;
 
   override async dispatch(command: AppCommand): Promise<AppResponse> {
     switch (command.type) {
       case "createCourseDraft":
+      case "openCourseDraft":
+        this.existing = command.type === "openCourseDraft";
         this.commandLog.push(command);
         this.writeDiskFile(draftPath, "README.md", "Original exercise");
         this.writeDiskFile(draftPath, ".codelab-checks.json", "valid");
         return { type: "courseDraft", payload: {
           id: 41, root: draftPath, files: ["README.md", ".codelab-checks.json"],
           preview: { course: this.course, diagnostics: [] },
+          requiresRegistryTrust: this.existing,
         } };
       case "readCourseDraftFile":
         return { type: "workspaceFile", payload: this.readDiskFile(draftPath, command.payload.path)! };
@@ -48,10 +53,16 @@ class DraftClient extends FakeCoreClient {
         return { type: "workspaceFile", payload: this.writeDiskFile(draftPath, command.payload.path, command.payload.text) };
       case "startTrialWorkspace":
         this.commandLog.push(command);
+        if (this.existing && !this.trusted) {
+          return { type: "trialTrustRequired", payload: { sourceKind: "localPath", source: draftPath } };
+        }
         return { type: "trialWorkspaceOpened", payload: {
           workspace: { id: 71, root: "/trial/isolated", recoveryNotices: [] },
           course: { ...pack(this.course.source, "Revised exercise"), trusted: true },
         } };
+      case "grantTrust":
+        this.trusted = command.payload.source === draftPath;
+        return super.dispatch(command);
       default:
         return super.dispatch(command);
     }
@@ -86,6 +97,32 @@ it("opens Git in preview, grants trust by URL, and refreshes in the same Workspa
   await user.click(screen.getByRole("button", { name: "Pull upstream updates" }));
   expect(await screen.findByRole("heading", { name: "Upstream exercise" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Change Workspace" })).toBeVisible();
+});
+
+it("prompts before trying an existing Course Pack and retries only after trust is granted", async () => {
+  const client = new DraftClient({ settings: { locale: "en-US" }, pickedPaths: { coursePackDir: draftPath } });
+  const user = userEvent.setup();
+  render(<App client={client} />);
+  await user.click(await screen.findByRole("button", { name: /Import Local Markdown/ }));
+  await user.click(screen.getByRole("button", { name: "Author Course Pack" }));
+  await user.click(screen.getByRole("button", { name: "Browse folder" }));
+  await user.click(screen.getByRole("button", { name: "Open existing draft" }));
+  const start = await screen.findByRole("button", { name: "Start trial" });
+  await waitFor(() => expect(start).toBeEnabled());
+  await user.click(start);
+  let dialog = await screen.findByRole("dialog", { name: "Trust this local Course?" });
+  expect(within(dialog).getByText(draftPath)).toBeVisible();
+  expect(client.commandLog.some(({ type }) => type === "grantTrust")).toBe(false);
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("button", { name: "Return to draft" })).not.toBeInTheDocument();
+  await user.click(start);
+  dialog = await screen.findByRole("dialog", { name: "Trust this local Course?" });
+  await user.click(within(dialog).getByRole("button", { name: "Trust this Course" }));
+  expect(await screen.findByRole("button", { name: "Return to draft" })).toBeVisible();
+  expect(client.commandLog.filter(({ type }) => type === "grantTrust" || type === "startTrialWorkspace").slice(-2)).toEqual([
+    { type: "grantTrust", payload: { sourceKind: "localPath", source: draftPath } },
+    { type: "startTrialWorkspace", payload: { draftId: 41 } },
+  ]);
 });
 
 it("creates a draft, previews unsaved Markdown and Schema errors, and saves before trial", async () => {

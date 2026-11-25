@@ -84,6 +84,7 @@ export function App({ client }: AppProps) {
   const [workspace, setWorkspace] = useState<WorkspaceEditorSession | null>(null);
   const [resumePath, setResumePath] = useState<string | null>(null);
   const [trustPrompt, setTrustPrompt] = useState(false);
+  const [trialTrustPrompt, setTrialTrustPrompt] = useState<{ draftId: number; source: TrustSource } | null>(null);
   const workspaceRef = useRef<WorkspaceEditorSession | null>(null);
   const [activeChapterId, setActiveChapterId] = useState<string>("");
   const [focusMode, setFocusMode] = useState(false);
@@ -474,17 +475,30 @@ export function App({ client }: AppProps) {
     });
   }
 
-  function handleStartTrial(id: number) {
-    return navigation.navigate(async () => {
-      const response = await client.dispatch({ type: "startTrialWorkspace", payload: { draftId: id } });
-      const opened = expectResponse(response, "trialWorkspaceOpened").payload;
-      applyLoadedCourse(opened.course, false);
-      applyBoundWorkspace(opened.workspace);
-      setTrial(true);
-      setFocusMode(false);
-      setDraft((current) => current?.id === id ? {
-        ...current, preview: { course: { ...opened.course, trusted: false }, diagnostics: [] },
-      } : current);
+  async function startTrial(id: number) {
+    const response = await client.dispatch({ type: "startTrialWorkspace", payload: { draftId: id } });
+    if (response.type === "trialTrustRequired") {
+      setTrialTrustPrompt({ draftId: id, source: response.payload });
+      return;
+    }
+    const opened = expectResponse(response, "trialWorkspaceOpened").payload;
+    applyLoadedCourse(opened.course, false);
+    applyBoundWorkspace(opened.workspace);
+    setTrial(true);
+    setFocusMode(false);
+    setDraft((current) => current?.id === id ? {
+      ...current, preview: { course: { ...opened.course, trusted: false }, diagnostics: [] },
+    } : current);
+  }
+
+  function grantTrialTrust() {
+    if (!trialTrustPrompt) return;
+    const { draftId, source } = trialTrustPrompt;
+    void navigation.navigate(async () => {
+      const result = await client.dispatch({ type: "grantTrust", payload: source });
+      expectResponse(result, "trustState");
+      setTrialTrustPrompt(null);
+      await startTrial(draftId);
     }, false);
   }
 
@@ -573,7 +587,7 @@ export function App({ client }: AppProps) {
           <DraftWorkbench key={draft.id} draft={draft} client={client} settings={settings}
             messages={messages} switching={navigation.switching} focusMode={focusMode}
             onToggleFocusMode={() => setFocusMode((prev) => !prev)} onGuard={setDraftGuard}
-            onTrial={() => handleStartTrial(draft.id)} onCopyCommand={(text) => void handleCopyCommand(text)} />
+            onTrial={() => navigation.navigate(() => startTrial(draft.id), false)} onCopyCommand={(text) => void handleCopyCommand(text)} />
         ) : activeCourse ? (
           <CourseWorkbench
             client={client}
@@ -588,7 +602,7 @@ export function App({ client }: AppProps) {
               if (resumePath) void navigation.navigate(() => bindWorkspace(resumePath));
             }}
             onRequestTrust={() => setTrustPrompt(true)}
-            onRevokeTrust={() => setCourseTrust(false)}
+            onRevokeTrust={!trial || draft?.requiresRegistryTrust ? () => setCourseTrust(false) : undefined}
             onReturnToDraft={trial ? () => void handleReturnToDraft() : undefined}
             activeChapterId={activeChapterId}
             focusMode={focusMode}
@@ -646,16 +660,16 @@ export function App({ client }: AppProps) {
         </WorkspaceDialog>
       )}
 
-      {trustPrompt && activeCourse && (
+      {((trustPrompt && activeCourse) || trialTrustPrompt) && (
         <WorkspaceDialog
-          title={activeCourse.source.kind === "gitPack" ? messages.coursePack.gitTrustTitle : messages.workspace.trustTitle}
-          detail={<>{messages.workspace.trustDetail}<span className="mono workspace-dialog-path">{courseSourceLocation(activeCourse.source)}</span></>}
+          title={activeCourse?.source.kind === "gitPack" ? messages.coursePack.gitTrustTitle : messages.workspace.trustTitle}
+          detail={<>{messages.workspace.trustDetail}<span className="mono workspace-dialog-path">{trialTrustPrompt?.source.source ?? (activeCourse && courseSourceLocation(activeCourse.source))}</span></>}
           cancel={messages.workspace.cancel}
           busy={navigation.switching}
-          onCancel={() => setTrustPrompt(false)}
+          onCancel={() => { setTrustPrompt(false); setTrialTrustPrompt(null); }}
         >
           <button type="button" className="btn btn--primary btn--sm" disabled={navigation.switching}
-            onClick={() => setCourseTrust(true)}>{messages.workspace.trust}</button>
+            onClick={() => trialTrustPrompt ? grantTrialTrust() : setCourseTrust(true)}>{messages.workspace.trust}</button>
         </WorkspaceDialog>
       )}
 

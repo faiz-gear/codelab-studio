@@ -47,7 +47,7 @@ export interface CourseWorkbenchProps {
   onChooseWorkspace: () => void;
   onResumeWorkspace: () => void;
   onRequestTrust: () => void;
-  onRevokeTrust: () => void;
+  onRevokeTrust?: () => void;
   activeChapterId: string;
   focusMode: boolean;
   pendingReload: CourseSourceChangedEvent | null;
@@ -705,7 +705,7 @@ export function CourseWorkbench({
               onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
               workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
-              onRevokeTrust={course.isBuiltin || onReturnToDraft ? undefined : onRevokeTrust}
+              onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
             />
             <TerminalPanel key={`terminal-${session.workspace.id}`} workbench={workbench} state={execution} messages={messages}
               settings={settings} disabled={switching} onError={onExecutionError} />
@@ -717,7 +717,7 @@ export function CourseWorkbench({
                 <span className="badge badge--neutral">{sourceBadge}</span>
                 {!course.trusted && <span className="badge badge--warning">{t.readOnlyPreviewBadge}</span>}
               </div>
-              {course.trusted && !course.isBuiltin && (
+              {course.trusted && !course.isBuiltin && onRevokeTrust && (
                 <button type="button" className="btn btn--ghost btn--xs" disabled={switching} onClick={onRevokeTrust}>{w.revokeTrust}</button>
               )}
             </div>
@@ -735,6 +735,8 @@ export function CourseWorkbench({
                       disabled={switching} onClick={onChooseWorkspace}>{w.choose}</button>
                   </>
                 ) : <button type="button" className="btn btn--primary btn--sm" disabled={switching} onClick={onRequestTrust}>{w.trust}</button>}
+                {onReturnToDraft && <button type="button" className="btn btn--secondary btn--sm"
+                  disabled={switching} onClick={onReturnToDraft}>{messages.coursePack.returnDraft}</button>}
               </div>
             </div>
           </>

@@ -165,6 +165,29 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
     load_pack(raw_path, &HashMap::new(), None)
 }
 
+pub(super) fn starter_from_manifest(root: &Path) -> Result<super::Starter, DomainError> {
+    let name = "codelab.json";
+    let path = resolve_contained_file(root, name)?;
+    let manifest = parse_manifest_bytes(&read_pack_bytes(
+        &path,
+        name,
+        &HashMap::new(),
+        ErrorCode::CourseManifestInvalid,
+        "MANIFEST_READ_FAILED",
+    )?)?;
+    Ok(local_starter(root, &manifest))
+}
+
+fn local_starter(root: &Path, manifest: &RawCourseManifest) -> super::Starter {
+    super::Starter::Local {
+        root: root.to_path_buf(),
+        directory: manifest
+            .starter_dir
+            .clone()
+            .unwrap_or_else(|| "starter".into()),
+    }
+}
+
 pub(super) fn load_pack(
     raw_path: &str,
     edits: &HashMap<PathBuf, String>,
@@ -226,7 +249,7 @@ pub(super) fn load_pack(
                     ErrorCode::CourseChecksInvalid,
                     "CHECKS_READ_FAILED",
                 )?;
-                parse_checks_bytes(&bytes)
+                parse_checks_bytes(&bytes, check_diagnostics.is_some())
             })
             .map_err(|error| error.with_detail("path", name));
         match checks {
@@ -242,13 +265,7 @@ pub(super) fn load_pack(
     } else {
         HashMap::new()
     };
-    let starter = super::Starter::Local {
-        root: canonical_root.clone(),
-        directory: manifest
-            .starter_dir
-            .clone()
-            .unwrap_or_else(|| "starter".into()),
-    };
+    let starter = local_starter(&canonical_root, &manifest);
     let (course, references) = build_course_with_checks(
         manifest,
         &markdown,
@@ -278,7 +295,7 @@ pub(crate) fn build_course_from_pack_parts(
     is_builtin: bool,
 ) -> Result<(LoadedCourse, super::ChapterReferences), DomainError> {
     let checks_by_chapter = match checks_bytes {
-        Some(bytes) => parse_checks_bytes(bytes)?,
+        Some(bytes) => parse_checks_bytes(bytes, false)?,
         None => HashMap::new(),
     };
     build_course_with_checks(
@@ -398,7 +415,10 @@ pub(crate) fn parse_manifest_bytes(bytes: &[u8]) -> Result<RawCourseManifest, Do
     Ok(manifest)
 }
 
-fn parse_checks_bytes(bytes: &[u8]) -> Result<HashMap<String, ChapterChecksOverlay>, DomainError> {
+fn parse_checks_bytes(
+    bytes: &[u8],
+    validate_kind_fields: bool,
+) -> Result<HashMap<String, ChapterChecksOverlay>, DomainError> {
     let raw: RawChecksFile = serde_json::from_slice(bytes)
         .map_err(|error| json_diagnostic(ErrorCode::CourseChecksInvalid, error))?;
     if raw.schema_version.trim() != SUPPORTED_PACK_SCHEMA_VERSION {
@@ -452,6 +472,21 @@ fn parse_checks_bytes(bytes: &[u8]) -> Result<HashMap<String, ChapterChecksOverl
                         .with_detail("value", other));
                 }
             };
+            let url = c
+                .request
+                .as_ref()
+                .and_then(|request| request.url.as_deref());
+            if validate_kind_fields {
+                let empty = |value: Option<&str>| value.is_none_or(|value| value.trim().is_empty());
+                let missing = match kind {
+                    CheckKind::CommandTest if empty(c.command.as_deref()) => Some("command"),
+                    CheckKind::HttpAssert if empty(url) => Some("request.url"),
+                    _ => None,
+                };
+                if let Some(missing) = missing {
+                    return Err(check_field_error("EMPTY_REQUIRED_FIELD", field(missing)));
+                }
+            }
             let required = c.required.unwrap_or(kind != CheckKind::SelfCheck);
             checks.push(CourseCheckSpec {
                 id: c.id,

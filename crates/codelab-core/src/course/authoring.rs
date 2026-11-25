@@ -30,6 +30,7 @@ pub struct CourseDraft {
     pub root: String,
     pub files: Vec<String>,
     pub preview: DraftPreview,
+    pub requires_registry_trust: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +87,7 @@ pub struct TrialWorkspaceOpened {
 pub(crate) struct Draft {
     pub id: u64,
     pub paths: WorkspacePaths,
+    pub scaffolded: bool,
 }
 
 impl Draft {
@@ -133,7 +135,11 @@ impl Draft {
             request.reference_solution,
         )
         .map_err(|_| DomainError::new(ErrorCode::DraftWriteFailed))?;
-        Ok(Self { id, paths })
+        Ok(Self {
+            id,
+            paths,
+            scaffolded: true,
+        })
     }
 
     pub fn open(
@@ -153,7 +159,11 @@ impl Draft {
         {
             return Err(invalid_draft_path());
         }
-        Ok(Self { id, paths })
+        Ok(Self {
+            id,
+            paths,
+            scaffolded: false,
+        })
     }
 
     pub fn summary(&self) -> Result<CourseDraft, DomainError> {
@@ -173,6 +183,7 @@ impl Draft {
             root: self.paths.root.to_string_lossy().into_owned(),
             files,
             preview: self.preview(&[])?,
+            requires_registry_trust: !self.scaffolded,
         })
     }
 
@@ -221,8 +232,16 @@ impl Draft {
 
     pub fn trial_course(&self) -> Result<OpenedCourse, DomainError> {
         self.paths.input("").map_err(|_| invalid_draft_path())?;
-        let mut opened = pack::load_local_course_pack(&self.paths.root.to_string_lossy())?;
-        opened.course.trusted = true;
+        let mut diagnostics = Vec::new();
+        let mut opened = pack::load_pack(
+            &self.paths.root.to_string_lossy(),
+            &HashMap::new(),
+            Some(&mut diagnostics),
+        )?;
+        if let Some(error) = diagnostics.into_iter().next() {
+            return Err(error);
+        }
+        self.paths.input("").map_err(|_| invalid_draft_path())?;
         opened.watched_files.clear();
         Ok(opened)
     }
