@@ -11,10 +11,15 @@ pub use app::{
     App, AppCommand, AppConfig, AppEvent, AppResponse, CleanupHook, CourseTrustChanged,
     EventSubscription, RecentWorkspaceOpened,
 };
+pub use course::authoring::{
+    CourseDraft, CourseDraftRequest, DraftDiagnostic, DraftEdit, DraftFilePath, DraftFileWrite,
+    DraftPreview, DraftPreviewRequest, TrialWorkspaceOpened,
+};
 pub use course::{
     Chapter, ChapterKind, ChapterPresentation, CheckKind, CommandBlock, CommandMode, ContentBlock,
     CourseCheckSpec, CourseSource, CourseSourceChangedEvent, CourseSummary, DaemonRequirement,
-    LoadedCourse, MAX_MARKDOWN_BYTES, OpenCourseRequest, ThreeStepProjection, ValueOrigin,
+    GitFetchAdapter, LoadedCourse, MAX_MARKDOWN_BYTES, OpenCourseRequest, ThreeStepProjection,
+    ValueOrigin,
 };
 pub use error::{DomainError, ErrorCode};
 pub use model::{

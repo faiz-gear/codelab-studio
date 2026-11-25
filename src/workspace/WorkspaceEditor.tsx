@@ -17,12 +17,14 @@ const IDES: Record<ExternalIde, string> = {
 };
 
 export function WorkspaceEditor({
-  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching,
+  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching, workspaceActionLabel, workspaceLabel,
 }: {
   session: WorkspaceEditorSession;
   settings: GlobalSettings;
   messages: Messages;
   onChangeWorkspace: () => void;
+  workspaceActionLabel?: string;
+  workspaceLabel?: string;
   onRevokeTrust?: () => void;
   switching: boolean;
 }) {
@@ -98,8 +100,9 @@ export function WorkspaceEditor({
   return (
     <div className="workspace-editor">
       <div className="workspace-location">
+        {workspaceLabel && <span className="badge badge--neutral">{workspaceLabel}</span>}
         <span className="mono workspace-root" title={session.workspace.root}>{session.workspace.root}</span>
-        <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onChangeWorkspace}>{t.change}</button>
+        <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onChangeWorkspace}>{workspaceActionLabel ?? t.change}</button>
         {onRevokeTrust && <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onRevokeTrust}>{t.revokeTrust}</button>}
       </div>
       <div className="workspace-controls">

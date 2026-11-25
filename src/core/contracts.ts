@@ -46,6 +46,14 @@ export const ERROR_CODES = [
   "COURSE_MARKDOWN_INVALID",
   "COURSE_MANIFEST_INVALID",
   "COURSE_CHECKS_INVALID",
+  "GIT_COURSE_FETCH_FAILED",
+  "GIT_COURSE_CACHE_FAILED",
+  "NO_ACTIVE_GIT_COURSE",
+  "NO_ACTIVE_DRAFT",
+  "INVALID_DRAFT_PATH",
+  "DRAFT_DIRECTORY_NOT_EMPTY",
+  "DRAFT_WRITE_FAILED",
+  "TRIAL_WORKSPACE_FAILED",
   "NO_ACTIVE_COURSE",
   "COURSE_UNTRUSTED",
   "NO_ACTIVE_WORKSPACE",
@@ -214,27 +222,56 @@ export interface ShutdownReport {
 export type CourseSource =
   | { kind: "builtin"; courseId: string }
   | { kind: "localMarkdown"; path: string }
-  | { kind: "localPack"; path: string };
+  | { kind: "localPack"; path: string }
+  | { kind: "gitPack"; url: string };
 
-export type OpenCourseRequest =
-  | { kind: "builtin"; courseId: string }
-  | { kind: "localMarkdown"; path: string }
-  | { kind: "localPack"; path: string };
+export type OpenCourseRequest = CourseSource;
 
 export function courseSourceKey(source: CourseSource): string {
-  return source.kind === "builtin"
-    ? `builtin:${source.courseId}`
-    : `${source.kind}:${source.path}`;
+  return source.kind === "builtin" ? `builtin:${source.courseId}` : `${source.kind}:${courseSourceLocation(source)}`;
 }
 
 export function courseSourceLocation(source: CourseSource): string {
-  return source.kind === "builtin"
-    ? `builtin://${source.courseId}`
-    : source.path;
+  if (source.kind === "builtin") return `builtin://${source.courseId}`;
+  return source.kind === "gitPack" ? source.url : source.path;
 }
 
 export function openRequestFromSource(source: CourseSource): OpenCourseRequest {
   return source;
+}
+
+export interface CourseDraftRequest {
+  path: string;
+  title: string;
+  language: CourseLanguage;
+  referenceSolution: boolean;
+}
+
+export interface DraftDiagnostic {
+  path: string;
+  error: DomainError;
+}
+
+export interface DraftPreview {
+  course: LoadedCourse | null;
+  diagnostics: DraftDiagnostic[];
+}
+
+export interface CourseDraft {
+  id: number;
+  root: string;
+  files: string[];
+  preview: DraftPreview;
+}
+
+export interface DraftFilePath {
+  draftId: number;
+  path: string;
+}
+
+export interface DraftEdit {
+  path: string;
+  text: string;
 }
 
 export type ChapterKind = "guide" | "exercise";
@@ -401,6 +438,13 @@ export type AppCommand =
   | { type: "listBuiltinCourses" }
   | { type: "openCourse"; payload: OpenCourseRequest }
   | { type: "reloadActiveCourse" }
+  | { type: "refreshGitCourse" }
+  | { type: "createCourseDraft"; payload: CourseDraftRequest }
+  | { type: "openCourseDraft"; payload: { path: string } }
+  | { type: "readCourseDraftFile"; payload: DraftFilePath }
+  | { type: "writeCourseDraftFile"; payload: DraftFilePath & { text: string; expectedRevision: string | null } }
+  | { type: "previewCourseDraft"; payload: { draftId: number; edits: DraftEdit[] } }
+  | { type: "startTrialWorkspace"; payload: { draftId: number } }
   | { type: "closeActiveCourse" }
   | { type: "bindWorkspace"; payload: { path: string } }
   | { type: "openRecentWorkspace"; payload: { path: string } }
@@ -429,6 +473,9 @@ export type AppResponse =
   | { type: "trustState"; payload: TrustState }
   | { type: "builtinCourses"; payload: CourseSummary[] }
   | { type: "loadedCourse"; payload: LoadedCourse }
+  | { type: "courseDraft"; payload: CourseDraft }
+  | { type: "draftPreview"; payload: DraftPreview }
+  | { type: "trialWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary } }
   | { type: "courseClosed" }
   | { type: "workspaceBound"; payload: WorkspaceSummary }
   | { type: "recentWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary | null } }

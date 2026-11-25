@@ -12,6 +12,9 @@ import {
 import {
   CoreCommandError,
   courseSourceKey,
+  courseSourceLocation,
+  type CourseDraft,
+  type TrustSource,
   openRequestFromSource,
   type CourseSourceChangedEvent,
   type CourseSummary,
@@ -26,9 +29,10 @@ import {
   type UpdateSettingsPatch,
   type WorkspaceSummary,
 } from "./core/contracts";
+import { DraftWorkbench, type DraftNavigation } from "./authoring/DraftWorkbench";
 import { AppearanceDrawer } from "./components/AppearanceDrawer";
 import { CourseWorkbench } from "./components/CourseWorkbench";
-import { ImportCourseModal } from "./components/ImportCourseModal";
+import { ImportCourseModal, type DraftOpenCommand, type ImportMode } from "./components/ImportCourseModal";
 import { RuntimeSettingsDialog } from "./components/RuntimeSettingsDialog";
 import {
   ToastStack,
@@ -91,7 +95,11 @@ export function App({ client }: AppProps) {
   const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false);
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [preflightError, setPreflightError] = useState<DomainError | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState<ImportMode | null>(null);
+  const [draft, setDraft] = useState<CourseDraft | null>(null);
+  const [trial, setTrial] = useState(false);
+  const [draftGuard, setDraftGuard] = useState<DraftNavigation | null>(null);
+  const authoring = draft !== null && !trial;
   const [importSubmitting, setImportSubmitting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -114,7 +122,7 @@ export function App({ client }: AppProps) {
     }, TOAST_TTL_MS);
   }, []);
 
-  const applyLoadedCourse = useCallback((loaded: LoadedCourse) => {
+  const applyLoadedCourse = useCallback((loaded: LoadedCourse, addToLibrary = true) => {
     const prevCourse = activeCourseRef.current;
     const isSameCourse = prevCourse && courseSourceKey(prevCourse.source) === courseSourceKey(loaded.source);
 
@@ -137,7 +145,7 @@ export function App({ client }: AppProps) {
       return pickInitialChapterId(loaded);
     });
 
-    if (!loaded.isBuiltin) {
+    if (addToLibrary && !loaded.isBuiltin) {
       const summary = toCourseSummary(loaded);
       const key = courseSourceKey(summary.source);
       setImportedCourses((prev) => [
@@ -237,9 +245,9 @@ export function App({ client }: AppProps) {
 
   // Global ⌘/Ctrl + B Focus Mode shortcut while inside the Workbench
   useEffect(() => {
-    if (!activeCourse) return;
+    if (!activeCourse && !authoring) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (importOpen || appearanceOpen || runtimeSettingsOpen || event.defaultPrevented || document.querySelector("dialog[open]")) return;
+      if (importMode || appearanceOpen || runtimeSettingsOpen || event.defaultPrevented || document.querySelector("dialog[open]")) return;
       if (
         (event.metaKey || event.ctrlKey) &&
         !event.altKey &&
@@ -251,7 +259,7 @@ export function App({ client }: AppProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeCourse, importOpen, appearanceOpen, runtimeSettingsOpen]);
+  }, [activeCourse, authoring, importMode, appearanceOpen, runtimeSettingsOpen]);
 
   const messages = getMessages(settings.locale);
   const runtimePanel = {
@@ -318,7 +326,7 @@ export function App({ client }: AppProps) {
     settings,
   ]);
 
-  const navigation = useWorkspaceNavigation(workspace, (error) => {
+  const navigation = useWorkspaceNavigation(workspace ?? (authoring ? draftGuard : null), (error) => {
     pushToast(formatDomainError(domainError(error), localeRef.current), "err");
   });
 
@@ -340,15 +348,18 @@ export function App({ client }: AppProps) {
       try {
         const loaded = await openCourse(client, request);
         applyLoadedCourse(loaded);
+        if (trial) applyBoundWorkspace(null);
+        setDraft(null);
+        setTrial(false);
         setFocusMode(false);
-        if (fromImportModal) setImportOpen(false);
+        if (fromImportModal) setImportMode(null);
       } catch (error) {
         if (!fromImportModal) throw error;
         setImportError(formatDomainError(domainError(error), localeRef.current));
       } finally {
         if (fromImportModal) setImportSubmitting(false);
       }
-    }, !activeCourse || courseSourceKey(activeCourse.source) !== courseSourceKey(request));
+    }, Boolean(draft) || !activeCourse || courseSourceKey(activeCourse.source) !== courseSourceKey(request));
   }
 
   function handleSelectCourseSummary(summary: CourseSummary) {
@@ -379,6 +390,8 @@ export function App({ client }: AppProps) {
       const opened = expectResponse(response, "recentWorkspaceOpened").payload;
       applyLoadedCourse(opened.course);
       applyBoundWorkspace(opened.workspace);
+      setDraft(null);
+      setTrial(false);
       setResumePath(opened.workspace ? null : path);
       setFocusMode(false);
     });
@@ -387,7 +400,10 @@ export function App({ client }: AppProps) {
   function setCourseTrust(trust: boolean) {
     const course = activeCourseRef.current;
     if (!course || course.source.kind === "builtin") return;
-    const source = { sourceKind: "localPath" as const, source: course.source.path };
+    const source: TrustSource = {
+      sourceKind: course.source.kind === "gitPack" ? "gitRepo" : "localPath",
+      source: courseSourceLocation(course.source),
+    };
     void navigation.navigate(async () => {
       try {
         const response = await client.dispatch({ type: trust ? "grantTrust" : "revokeTrust", payload: source });
@@ -399,7 +415,7 @@ export function App({ client }: AppProps) {
   }
 
   function handleGoHome() {
-    if (!activeCourseRef.current) {
+    if (!activeCourseRef.current && !draft) {
       window.scrollTo({ top: 0 });
       return;
     }
@@ -408,6 +424,8 @@ export function App({ client }: AppProps) {
       activeCourseRef.current = null;
       applyBoundWorkspace(null);
       setActiveCourse(null);
+      setTrial(false);
+      setDraft(null);
       setResumePath(null);
       setActiveChapterId("");
       setPendingReload(null);
@@ -415,25 +433,72 @@ export function App({ client }: AppProps) {
     });
   }
 
-  const handleReloadCourse = useCallback(async () => {
-    setReloadingCourse(true);
-    try {
-      const reloaded = await reloadActiveCourse(client);
-      applyLoadedCourse(reloaded);
-      pushToast(
-        interpolate(messages.workbench.reloadedToast, {
-          title: reloaded.title,
-        }),
-        "ok"
-      );
-    } catch (err) {
-      if (err instanceof CoreCommandError) {
-        pushToast(formatDomainError(err.domainError, localeRef.current), "err");
+  function handleReloadCourse() {
+    return navigation.navigate(async () => {
+      setReloadingCourse(true);
+      try {
+        const reloaded = activeCourseRef.current?.source.kind === "gitPack"
+          ? expectResponse(await client.dispatch({ type: "refreshGitCourse" }), "loadedCourse").payload
+          : await reloadActiveCourse(client);
+        applyLoadedCourse(reloaded);
+        pushToast(interpolate(messages.workbench.reloadedToast, { title: reloaded.title }), "ok");
+      } finally {
+        setReloadingCourse(false);
       }
-    } finally {
-      setReloadingCourse(false);
-    }
-  }, [applyLoadedCourse, client, messages.workbench.reloadedToast, pushToast]);
+    }, false);
+  }
+
+  function handleOpenDraft(command: DraftOpenCommand) {
+    return navigation.navigate(async () => {
+      setImportSubmitting(true);
+      setImportError(null);
+      try {
+        const response = await client.dispatch(command);
+        setDraft(expectResponse(response, "courseDraft").payload);
+        setTrial(false);
+        activeCourseRef.current = null;
+        setActiveCourse(null);
+        applyBoundWorkspace(null);
+        setFocusMode(false);
+        setPendingReload(null);
+        setImportMode(null);
+      } catch (error) {
+        setImportError(formatDomainError(domainError(error), localeRef.current));
+      } finally {
+        setImportSubmitting(false);
+      }
+    });
+  }
+
+  function handleStartTrial(id: number) {
+    return navigation.navigate(async () => {
+      const response = await client.dispatch({ type: "startTrialWorkspace", payload: { draftId: id } });
+      const opened = expectResponse(response, "trialWorkspaceOpened").payload;
+      applyLoadedCourse(opened.course, false);
+      applyBoundWorkspace(opened.workspace);
+      setTrial(true);
+      setFocusMode(false);
+      setDraft((current) => current?.id === id ? {
+        ...current, preview: { course: { ...opened.course, trusted: false }, diagnostics: [] },
+      } : current);
+    }, false);
+  }
+
+  function handleReturnToDraft() {
+    return navigation.navigate(async () => {
+      await closeActiveCourse(client);
+      activeCourseRef.current = null;
+      setActiveCourse(null);
+      applyBoundWorkspace(null);
+      setTrial(false);
+      setFocusMode(false);
+    });
+  }
+
+  function showImport(mode: ImportMode) {
+    setImportError(null);
+    setImportMode(mode);
+  }
 
   const handleCopyCommand = useCallback(
     async (commandText: string) => {
@@ -484,16 +549,14 @@ export function App({ client }: AppProps) {
         messages={messages}
         builtinCourses={builtinCourses}
         importedCourses={importedCourses}
-        activeCourse={activeCourse}
+        activeCourse={authoring ? draft.preview.course : activeCourse}
+        completedExercises={workspace ? recents.find((item) => item.workspacePath === workspace.workspace.root)?.completedExercises : undefined}
         focusMode={focusMode}
         appearanceOpen={appearanceOpen}
         appearanceTriggerRef={appearanceTriggerRef}
         onGoHome={handleGoHome}
         onSelectCourse={handleSelectCourseSummary}
-        onOpenImportModal={() => {
-          setImportError(null);
-          setImportOpen(true);
-        }}
+        onOpenImportModal={() => showImport("localMarkdown")}
         onToggleFocusMode={() => setFocusMode((prev) => !prev)}
         onOpenAppearance={() => setAppearanceOpen(true)}
         runtimePanel={runtimePanel}
@@ -502,7 +565,12 @@ export function App({ client }: AppProps) {
       />
 
       <main className="view-host" id="mainView">
-        {activeCourse ? (
+        {authoring ? (
+          <DraftWorkbench key={draft.id} draft={draft} client={client} settings={settings}
+            messages={messages} switching={navigation.switching} focusMode={focusMode}
+            onToggleFocusMode={() => setFocusMode((prev) => !prev)} onGuard={setDraftGuard}
+            onTrial={() => handleStartTrial(draft.id)} onCopyCommand={(text) => void handleCopyCommand(text)} />
+        ) : activeCourse ? (
           <CourseWorkbench
             course={activeCourse}
             session={workspace}
@@ -515,6 +583,7 @@ export function App({ client }: AppProps) {
             }}
             onRequestTrust={() => setTrustPrompt(true)}
             onRevokeTrust={() => setCourseTrust(false)}
+            onReturnToDraft={trial ? () => void handleReturnToDraft() : undefined}
             activeChapterId={activeChapterId}
             focusMode={focusMode}
             pendingReload={pendingReload}
@@ -539,43 +608,42 @@ export function App({ client }: AppProps) {
                 false
               )
             }
-            onOpenImportModal={() => {
-              setImportError(null);
-              setImportOpen(true);
-            }}
+            onOpenImportModal={() => showImport("localMarkdown")}
+            onOpenAuthorModal={() => showImport("author")}
             onPlaceholderAction={handlePlaceholderAction}
           />
         )}
       </main>
 
-      <ImportCourseModal
-        open={importOpen}
+      {importMode && <ImportCourseModal
+        initialMode={importMode}
         messages={messages}
         errorText={importError}
         submitting={importSubmitting}
         onClose={() => {
-          setImportOpen(false);
+          setImportMode(null);
           setImportError(null);
         }}
         onBrowsePath={handleBrowsePath}
         onSubmit={(request) => handleOpenCourseRequest(request, true)}
+        onOpenDraft={handleOpenDraft}
         onClearError={() => setImportError(null)}
-      />
+      />}
 
       {navigation.pending && (
         <WorkspaceDialog title={messages.workspace.switchTitle} cancel={messages.workspace.cancel}
           busy={navigation.switching} onCancel={navigation.cancel}>
           <button type="button" className="btn btn--secondary btn--sm" disabled={navigation.switching}
             onClick={() => navigation.decide(false)}>{messages.workspace.discard}</button>
-          <button type="button" className="btn btn--primary btn--sm" disabled={navigation.switching || !activeCourse?.trusted}
+          <button type="button" className="btn btn--primary btn--sm" disabled={navigation.switching || (!authoring && !activeCourse?.trusted)}
             onClick={() => navigation.decide(true)}>{messages.workspace.saveAndSwitch}</button>
         </WorkspaceDialog>
       )}
 
       {trustPrompt && activeCourse && (
         <WorkspaceDialog
-          title={messages.workspace.trustTitle}
-          detail={<>{messages.workspace.trustDetail}<span className="mono workspace-dialog-path">{activeCourse.source.kind !== "builtin" && activeCourse.source.path}</span></>}
+          title={activeCourse.source.kind === "gitPack" ? messages.coursePack.gitTrustTitle : messages.workspace.trustTitle}
+          detail={<>{messages.workspace.trustDetail}<span className="mono workspace-dialog-path">{courseSourceLocation(activeCourse.source)}</span></>}
           cancel={messages.workspace.cancel}
           busy={navigation.switching}
           onCancel={() => setTrustPrompt(false)}

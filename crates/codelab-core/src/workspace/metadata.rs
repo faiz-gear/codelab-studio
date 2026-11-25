@@ -120,18 +120,7 @@ impl WorkspaceMetadata {
         metrics.value.course_opened = metrics.value.course_opened.saturating_add(1);
         metrics_store.save_atomic(&metrics.value)?;
 
-        let completed_exercises = course
-            .chapters
-            .iter()
-            .filter(|chapter| {
-                chapter.kind == ChapterKind::Exercise
-                    && progress
-                        .value
-                        .chapters
-                        .get(&chapter.chapter_id)
-                        .is_some_and(|status| status.completion_state == CompletionState::Completed)
-            })
-            .count() as u32;
+        let completed_exercises = progress.value.completed_for(course);
         Ok(Self {
             recovery_notices: [binding.recovery, progress.recovery, metrics.recovery]
                 .into_iter()
@@ -142,9 +131,46 @@ impl WorkspaceMetadata {
     }
 }
 
+impl Progress {
+    fn completed_for(&self, course: &LoadedCourse) -> u32 {
+        course
+            .chapters
+            .iter()
+            .filter(|chapter| {
+                chapter.kind == ChapterKind::Exercise
+                    && self
+                        .chapters
+                        .get(&chapter.chapter_id)
+                        .is_some_and(|status| status.completion_state == CompletionState::Completed)
+            })
+            .count() as u32
+    }
+}
+
+pub(super) fn completed_for(
+    paths: &WorkspacePaths,
+    course: &LoadedCourse,
+) -> Result<u32, DomainError> {
+    let dir = paths
+        .dir
+        .open_dir_nofollow(METADATA_DIR)
+        .map_err(|err| metadata_error(ErrorCode::StorageReadFailed, err))?;
+    let progress = JsonStore::<Progress>::new(
+        &paths.root.join(METADATA_DIR),
+        "progress.json",
+        StoreKind::Progress,
+    )
+    .scoped(Arc::new(dir))
+    .load_or_recover(|progress| progress.chapters.keys().all(|id| !id.trim().is_empty()))?;
+    Ok(progress.value.completed_for(course))
+}
+
 fn valid_source(source: &CourseSource) -> bool {
     match source {
         CourseSource::Builtin { course_id } => !course_id.trim().is_empty(),
+        CourseSource::GitPack { url } => {
+            crate::course::git_pack::normalize_git_url(url).as_ref() == Some(url)
+        }
         CourseSource::LocalMarkdown { path } | CourseSource::LocalPack { path } => {
             std::path::Path::new(path).is_absolute()
         }

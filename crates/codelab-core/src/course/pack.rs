@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -161,59 +161,86 @@ pub(crate) fn load_local_markdown_file(raw_path: &str) -> Result<OpenedCourse, D
 }
 
 pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, DomainError> {
+    load_pack(raw_path, &HashMap::new(), None)
+}
+
+pub(super) fn load_pack(
+    raw_path: &str,
+    edits: &HashMap<PathBuf, String>,
+    mut check_diagnostics: Option<&mut Vec<DomainError>>,
+) -> Result<OpenedCourse, DomainError> {
     let canonical_root = resolve_existing_path(raw_path)?;
     if !canonical_root.is_dir() {
-        return Err(DomainError::new(ErrorCode::CoursePathInvalid)
-            .with_detail("path", raw_path.to_string()));
+        return Err(DomainError::new(ErrorCode::CoursePathInvalid).with_detail("path", raw_path));
     }
 
-    let manifest_path = match resolve_contained_file(&canonical_root, "codelab.json") {
-        Ok(path) => path,
-        Err(err) if err.code == ErrorCode::CourseNotFound => {
-            return Err(DomainError::new(ErrorCode::CourseManifestInvalid)
-                .with_detail("reasonCode", "MISSING_MANIFEST"));
+    let manifest_name = "codelab.json";
+    let manifest_path = resolve_contained_file(&canonical_root, manifest_name).map_err(|err| {
+        if err.code == ErrorCode::CourseNotFound {
+            DomainError::new(ErrorCode::CourseManifestInvalid)
+                .with_detail("reasonCode", "MISSING_MANIFEST")
+                .with_detail("path", manifest_name)
+        } else {
+            err
         }
-        Err(err) => return Err(err),
+    })?;
+    let manifest_bytes = read_pack_bytes(
+        &manifest_path,
+        manifest_name,
+        edits,
+        ErrorCode::CourseManifestInvalid,
+        "MANIFEST_READ_FAILED",
+    )?;
+    let manifest = parse_manifest_bytes(&manifest_bytes)
+        .map_err(|error| error.with_detail("path", manifest_name))?;
+
+    let entry_name = manifest.entry_file.trim();
+    let entry_path = resolve_contained_file(&canonical_root, entry_name)
+        .map_err(|error| error.with_detail("path", entry_name))?;
+    let markdown = match edits.get(&entry_path) {
+        Some(text) => text.clone(),
+        None => read_bounded_markdown(&entry_path)
+            .map_err(|error| error.with_detail("path", entry_name))?,
     };
 
-    let manifest_bytes = read_course_file(&manifest_path).map_err(|_| {
-        DomainError::new(ErrorCode::CourseManifestInvalid)
-            .with_detail("reasonCode", "MANIFEST_READ_FAILED")
-    })?;
-    let manifest = parse_manifest_bytes(&manifest_bytes)?;
-
-    let entry_path = resolve_contained_file(&canonical_root, &manifest.entry_file)?;
-    let markdown = read_bounded_markdown(&entry_path)?;
-
     let mut watched_files = vec![manifest_path, entry_path.clone()];
-
     let checks_filename = manifest
         .checks_file
         .as_deref()
         .map(str::trim)
-        .filter(|s| !s.is_empty());
-
-    let checks_bytes = if let Some(rel_checks) = checks_filename {
-        let checks_path = resolve_contained_file(&canonical_root, rel_checks)?;
-        watched_files.push(checks_path.clone());
-        Some(read_course_file(&checks_path).map_err(|_| {
-            DomainError::new(ErrorCode::CourseChecksInvalid)
-                .with_detail("reasonCode", "CHECKS_READ_FAILED")
-        })?)
-    } else {
-        let default_checks = canonical_root.join(".codelab-checks.json");
-        if default_checks.exists() || default_checks.is_symlink() {
-            let safe_checks = resolve_contained_file(&canonical_root, ".codelab-checks.json")?;
-            watched_files.push(safe_checks.clone());
-            Some(read_course_file(&safe_checks).map_err(|_| {
-                DomainError::new(ErrorCode::CourseChecksInvalid)
-                    .with_detail("reasonCode", "CHECKS_READ_FAILED")
-            })?)
-        } else {
-            None
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            let default_checks = canonical_root.join(".codelab-checks.json");
+            (default_checks.exists() || default_checks.is_symlink())
+                .then_some(".codelab-checks.json")
+        });
+    let checks_by_chapter = if let Some(name) = checks_filename {
+        let checks = resolve_contained_file(&canonical_root, name)
+            .and_then(|path| {
+                watched_files.push(path.clone());
+                let bytes = read_pack_bytes(
+                    &path,
+                    name,
+                    edits,
+                    ErrorCode::CourseChecksInvalid,
+                    "CHECKS_READ_FAILED",
+                )?;
+                parse_checks_bytes(&bytes)
+            })
+            .map_err(|error| error.with_detail("path", name));
+        match checks {
+            Ok(checks) => checks,
+            Err(error) => match check_diagnostics.as_mut() {
+                Some(diagnostics) => {
+                    diagnostics.push(error);
+                    HashMap::new()
+                }
+                None => return Err(error),
+            },
         }
+    } else {
+        HashMap::new()
     };
-
     let starter = super::Starter::Local {
         root: canonical_root.clone(),
         directory: manifest
@@ -221,16 +248,17 @@ pub(crate) fn load_local_course_pack(raw_path: &str) -> Result<OpenedCourse, Dom
             .clone()
             .unwrap_or_else(|| "starter".into()),
     };
-    let course = build_course_from_pack_parts(
+    let course = build_course_with_checks(
         manifest,
         &markdown,
-        checks_bytes.as_deref(),
+        checks_by_chapter,
         CourseSource::LocalPack {
             path: canonical_root.to_string_lossy().into_owned(),
         },
         Some(entry_path.to_string_lossy().into_owned()),
         false,
-    )?;
+    )
+    .map_err(|error| error.with_detail("path", manifest_name))?;
 
     Ok(OpenedCourse {
         course,
@@ -247,16 +275,33 @@ pub(crate) fn build_course_from_pack_parts(
     entry_markdown_path: Option<String>,
     is_builtin: bool,
 ) -> Result<LoadedCourse, DomainError> {
+    let checks_by_chapter = match checks_bytes {
+        Some(bytes) => parse_checks_bytes(bytes)?,
+        None => HashMap::new(),
+    };
+    build_course_with_checks(
+        manifest,
+        markdown,
+        checks_by_chapter,
+        source,
+        entry_markdown_path,
+        is_builtin,
+    )
+}
+
+fn build_course_with_checks(
+    manifest: RawCourseManifest,
+    markdown: &str,
+    checks_by_chapter: HashMap<String, ChapterChecksOverlay>,
+    source: CourseSource,
+    entry_markdown_path: Option<String>,
+    is_builtin: bool,
+) -> Result<LoadedCourse, DomainError> {
     if markdown.len() > MAX_MARKDOWN_BYTES {
         return Err(DomainError::new(ErrorCode::CourseMarkdownTooLarge)
             .with_detail("maxMb", "5")
             .with_detail("actualBytes", markdown.len().to_string()));
     }
-
-    let checks_by_chapter = match checks_bytes {
-        Some(bytes) => parse_checks_bytes(bytes)?,
-        None => HashMap::new(),
-    };
 
     let mut chapter_hints = Vec::with_capacity(manifest.chapters.len());
     for raw_ch in manifest.chapters {
@@ -334,9 +379,8 @@ pub(crate) fn build_course_from_pack_parts(
 }
 
 pub(crate) fn parse_manifest_bytes(bytes: &[u8]) -> Result<RawCourseManifest, DomainError> {
-    let manifest: RawCourseManifest = serde_json::from_slice(bytes).map_err(|_| {
-        DomainError::new(ErrorCode::CourseManifestInvalid).with_detail("reasonCode", "INVALID_JSON")
-    })?;
+    let manifest: RawCourseManifest = serde_json::from_slice(bytes)
+        .map_err(|error| json_diagnostic(ErrorCode::CourseManifestInvalid, error))?;
     if manifest.schema_version.trim() != SUPPORTED_PACK_SCHEMA_VERSION {
         return Err(DomainError::new(ErrorCode::CourseManifestInvalid)
             .with_detail("reasonCode", "UNSUPPORTED_SCHEMA_VERSION")
@@ -350,21 +394,28 @@ pub(crate) fn parse_manifest_bytes(bytes: &[u8]) -> Result<RawCourseManifest, Do
 }
 
 fn parse_checks_bytes(bytes: &[u8]) -> Result<HashMap<String, ChapterChecksOverlay>, DomainError> {
-    let raw: RawChecksFile = serde_json::from_slice(bytes).map_err(|_| {
-        DomainError::new(ErrorCode::CourseChecksInvalid).with_detail("reasonCode", "INVALID_JSON")
-    })?;
+    let raw: RawChecksFile = serde_json::from_slice(bytes)
+        .map_err(|error| json_diagnostic(ErrorCode::CourseChecksInvalid, error))?;
     if raw.schema_version.trim() != SUPPORTED_PACK_SCHEMA_VERSION {
         return Err(DomainError::new(ErrorCode::CourseChecksInvalid)
             .with_detail("reasonCode", "UNSUPPORTED_SCHEMA_VERSION")
-            .with_detail("schemaVersion", raw.schema_version));
+            .with_detail("schemaVersion", raw.schema_version)
+            .with_detail("field", "schemaVersion"));
     }
 
     let mut map = HashMap::new();
-    for ch in raw.chapters {
+    for (chapter_index, ch) in raw.chapters.into_iter().enumerate() {
         let chapter_id = ch.chapter_id.trim().to_string();
         if chapter_id.is_empty() {
             return Err(DomainError::new(ErrorCode::CourseChecksInvalid)
-                .with_detail("reasonCode", "EMPTY_CHAPTER_ID"));
+                .with_detail("reasonCode", "EMPTY_CHAPTER_ID")
+                .with_detail("field", format!("chapters[{chapter_index}].chapterId")));
+        }
+        if map.contains_key(&chapter_id) {
+            return Err(check_field_error(
+                "DUPLICATE_ID",
+                format!("chapters[{chapter_index}].chapterId"),
+            ));
         }
         let requires_daemon = ch.requires_daemon.map(|d| DaemonRequirement {
             label: d.label,
@@ -373,16 +424,27 @@ fn parse_checks_bytes(bytes: &[u8]) -> Result<HashMap<String, ChapterChecksOverl
         });
 
         let mut checks = Vec::with_capacity(ch.checks.len());
-        for c in ch.checks {
+        let mut ids = HashSet::new();
+        for (check_index, c) in ch.checks.into_iter().enumerate() {
+            let field =
+                |name: &str| format!("chapters[{chapter_index}].checks[{check_index}].{name}");
+            if c.id.trim().is_empty() {
+                return Err(check_field_error("EMPTY_REQUIRED_FIELD", field("id")));
+            }
+            if !ids.insert(c.id.trim().to_owned()) {
+                return Err(check_field_error("DUPLICATE_ID", field("id")));
+            }
+            if c.title.trim().is_empty() {
+                return Err(check_field_error("EMPTY_REQUIRED_FIELD", field("title")));
+            }
             let kind = match c.check_type.trim() {
                 "http_assert" => CheckKind::HttpAssert,
                 "command_test" => CheckKind::CommandTest,
                 "test_suite" => CheckKind::TestSuite,
                 "self_check" => CheckKind::SelfCheck,
                 other => {
-                    return Err(DomainError::new(ErrorCode::CourseChecksInvalid)
-                        .with_detail("reasonCode", "UNSUPPORTED_CHECK_TYPE")
-                        .with_detail("value", other.to_string()));
+                    return Err(check_field_error("UNSUPPORTED_CHECK_TYPE", field("type"))
+                        .with_detail("value", other));
                 }
             };
             let required = c.required.unwrap_or(kind != CheckKind::SelfCheck);
@@ -407,6 +469,41 @@ fn parse_checks_bytes(bytes: &[u8]) -> Result<HashMap<String, ChapterChecksOverl
         );
     }
     Ok(map)
+}
+
+fn check_field_error(reason: &str, field: String) -> DomainError {
+    DomainError::new(ErrorCode::CourseChecksInvalid)
+        .with_detail("reasonCode", reason)
+        .with_detail("field", field)
+}
+
+fn json_diagnostic(code: ErrorCode, error: serde_json::Error) -> DomainError {
+    let reason = if error.is_data() {
+        "INVALID_STRUCTURE"
+    } else {
+        "INVALID_JSON"
+    };
+    DomainError::new(code)
+        .with_detail("reasonCode", reason)
+        .with_detail("line", error.line().to_string())
+        .with_detail("column", error.column().to_string())
+}
+
+fn read_pack_bytes(
+    path: &Path,
+    name: &str,
+    edits: &HashMap<PathBuf, String>,
+    code: ErrorCode,
+    reason: &str,
+) -> Result<Vec<u8>, DomainError> {
+    if let Some(text) = edits.get(path) {
+        return Ok(text.as_bytes().to_vec());
+    }
+    read_course_file(path).map_err(|_| {
+        DomainError::new(code)
+            .with_detail("reasonCode", reason)
+            .with_detail("path", name)
+    })
 }
 
 fn resolve_existing_path(raw_path: &str) -> Result<PathBuf, DomainError> {
@@ -468,7 +565,12 @@ fn resolve_contained_file(
 
 fn read_course_file(path: &Path) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    open_canonical_file(path)?.read_to_end(&mut bytes)?;
+    open_canonical_file(path)?
+        .take((MAX_MARKDOWN_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_MARKDOWN_BYTES {
+        return Err(io::Error::from(io::ErrorKind::InvalidData));
+    }
     Ok(bytes)
 }
 

@@ -113,7 +113,14 @@ fn copy_tree(
             )?;
         } else if file_type.is_file() {
             let mut file = open_regular(source, &name)?;
-            let permissions = file.metadata()?.permissions();
+            let mut permissions = file.metadata()?.permissions();
+            #[cfg(unix)]
+            {
+                use cap_std::fs::PermissionsExt;
+                permissions = cap_std::fs::Permissions::from_mode(permissions.mode() | 0o200);
+            }
+            #[cfg(not(unix))]
+            permissions.set_readonly(false);
             let mut options = OpenOptions::new();
             options.write(true).create_new(true);
             let mut copy = target.open_with(&name, &options)?;

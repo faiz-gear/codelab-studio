@@ -342,8 +342,8 @@ export class FakeCoreClient implements CoreClient {
       };
     }
 
-    const trimmed = request.path.trim();
-    if (!trimmed.startsWith("/")) {
+    const trimmed = (request.kind === "gitPack" ? request.url : request.path).trim();
+    if (request.kind !== "gitPack" && !trimmed.startsWith("/")) {
       throw new CoreCommandError({
         code: "COURSE_PATH_INVALID",
         details: { path: trimmed },
@@ -370,7 +370,9 @@ export class FakeCoreClient implements CoreClient {
     return {
       ...course,
       trusted: source.kind === "builtin" || this.trustEntries.some(
-        (entry) => entry.sourceKind === "localPath" && entry.normalizedSource === source.path
+        (entry) => source.kind === "gitPack"
+          ? entry.sourceKind === "gitRepo" && entry.normalizedSource === source.url
+          : entry.sourceKind === "localPath" && entry.normalizedSource === source.path
       ),
     };
   }
@@ -556,6 +558,7 @@ export class FakeCoreClient implements CoreClient {
         this.emitEvent({ type: "courseLoaded", payload: course });
         return { type: "loadedCourse", payload: course };
       }
+      case "refreshGitCourse":
       case "reloadActiveCourse": {
         if (!this.activeCourseKey) {
           throw new CoreCommandError({ code: "NO_ACTIVE_COURSE" });
@@ -657,6 +660,13 @@ export class FakeCoreClient implements CoreClient {
         });
         return { type: "preflight", payload: this.preflight };
       }
+      case "createCourseDraft":
+      case "openCourseDraft":
+      case "readCourseDraftFile":
+      case "writeCourseDraftFile":
+      case "previewCourseDraft":
+      case "startTrialWorkspace":
+        throw new CoreCommandError({ code: "NO_ACTIVE_DRAFT" });
       case "shutdown": {
         const report = {
           alreadyShutDown: this.shutDown,

@@ -4,7 +4,7 @@ import type { WorkspaceEditorSession } from "./editorSession";
 type Transition = () => Promise<void>;
 
 export function useWorkspaceNavigation(
-  editor: WorkspaceEditorSession | null,
+  editor: Pick<WorkspaceEditorSession, "hasDrafts" | "save"> | null,
   onError: (error: unknown) => void,
 ) {
   const [pending, setPending] = useState<{ run: Transition } | null>(null);

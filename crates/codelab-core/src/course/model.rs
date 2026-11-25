@@ -17,6 +17,9 @@ pub enum CourseSource {
     LocalPack {
         path: String,
     },
+    GitPack {
+        url: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +34,9 @@ pub enum OpenCourseRequest {
     },
     LocalPack {
         path: String,
+    },
+    GitPack {
+        url: String,
     },
 }
 

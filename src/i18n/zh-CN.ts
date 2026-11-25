@@ -72,7 +72,6 @@ export interface Messages {
     courseTexts: Record<string, CoursePlaceholderText>;
   };
   importModal: {
-    dialogLabel: string;
     title: string;
     subtitle: string;
     close: string;
@@ -91,6 +90,35 @@ export interface Messages {
     submit: string;
     submitting: string;
     pathRequired: string;
+  };
+  coursePack: {
+    gitMode: string;
+    gitUrl: string;
+    gitHint: string;
+    gitRefresh: string;
+    gitBadge: string;
+    gitLoading: string;
+    gitTrustTitle: string;
+    gitUrlRequired: string;
+    authorMode: string;
+    courseName: string;
+    language: string;
+    draftDirectory: string;
+    draftHint: string;
+    referenceSolution: string;
+    createDraft: string;
+    openDraft: string;
+    draftTitle: string;
+    sourceFile: string;
+    sourceEditor: string;
+    diagnostics: string;
+    previewUnavailable: string;
+    trial: string;
+    trialTitle: string;
+    returnDraft: string;
+    trialHint: string;
+    draftConflict: string;
+    diagnosticReasons: Record<string, string>;
   };
   workspace: {
     choose: string;
@@ -184,7 +212,6 @@ export interface Messages {
   runtime: {
     settingsTab: string;
     refresh: string;
-    checking: string;
     readyCount: string;
     installingCount: string;
     manage: string;
@@ -207,6 +234,7 @@ export interface Messages {
     status: Record<ProbeStatus, string>;
     problems: Record<ProbeProblem, string>;
     toolNames: Record<HostTool, string>;
+    checking: string;
     lspGuidance: Record<OptionalLsp, string>;
   };
   appearance: {
@@ -250,8 +278,8 @@ export const zhCN: Messages = {
     courseMenuLabel: "切换或导入 Course",
     courseMenuEmpty: "选择 Course",
     builtinGroupLabel: "内置 Course Pack",
-    importedGroupLabel: "已导入本地 Course",
-    importLocalAction: "导入本地 Markdown / Course Pack…",
+    importedGroupLabel: "已导入课程",
+    importLocalAction: "导入本地 Markdown / Git 或创作课程包…",
     backToHomeAction: "返回课程主页",
     progressLabel: "实战 Exercise 进度",
     focusModeLabel: "专注模式",
@@ -305,9 +333,8 @@ export const zhCN: Messages = {
     },
   },
   importModal: {
-    dialogLabel: "导入本地 Course",
-    title: "导入本地 Course",
-    subtitle: "零改造解析本地单文件 Markdown（≤ 5 MB），或打开包含 codelab.json 的本地 Course Pack 目录。",
+    title: "导入或创作课程包",
+    subtitle: "打开 Markdown，导入本地或 Git 课程包，或开始创作草稿。",
     close: "关闭导入窗口",
     modeGroupLabel: "选择导入方式",
     modeMarkdown: "单文件 Markdown",
@@ -324,6 +351,43 @@ export const zhCN: Messages = {
     submit: "打开只读手册",
     submitting: "解析中…",
     pathRequired: "请先输入或选择一个有效的本地绝对路径。",
+  },
+  coursePack: {
+    gitMode: "Git 仓库",
+    gitUrl: "Git 仓库 URL",
+    gitHint: "缓存仓库，授信前可预览课程语言和章节。",
+    gitRefresh: "拉取上游更新",
+    gitBadge: "Git Course Pack",
+    gitLoading: "正在获取仓库…",
+    gitTrustTitle: "信任此 Git Course Pack？",
+    gitUrlRequired: "请输入 Git 仓库 URL。",
+    authorMode: "创作课程包",
+    courseName: "课程名称",
+    language: "语言",
+    draftDirectory: "课程包目录",
+    draftHint: "选择空目录或输入新目录路径。",
+    referenceSolution: "包含 Reference Solution",
+    createDraft: "创建草稿",
+    openDraft: "打开已有草稿",
+    draftTitle: "课程包草稿",
+    sourceFile: "源文件",
+    sourceEditor: "源码编辑器",
+    diagnostics: "Schema 诊断",
+    previewUnavailable: "修复源文件诊断后可恢复课程预览。",
+    trial: "试跑",
+    trialTitle: "Trial Workspace",
+    returnDraft: "返回草稿",
+    trialHint: "保存源文件编辑，在临时 Workspace 中以学习者视角试跑课程。",
+    draftConflict: "磁盘上的源文件已变更。请重新加载文件或保留编辑。",
+    diagnosticReasons: {
+      INVALID_JSON: "JSON 格式无效。",
+      INVALID_STRUCTURE: "缺少必填项目或类型有误。",
+      UNSUPPORTED_SCHEMA_VERSION: "不支持该 Schema 版本。",
+      UNSUPPORTED_CHECK_TYPE: "不支持该 Check 类型。",
+      EMPTY_REQUIRED_FIELD: "必填字段为空。",
+      EMPTY_CHAPTER_ID: "必须填写章节 ID。",
+      DUPLICATE_ID: "此标识符已被使用。",
+    },
   },
   workspace: {
     choose: "选择 Workspace",
@@ -531,6 +595,14 @@ export const zhCN: Messages = {
       "Course Pack 清单（codelab.json）缺失或格式无效，请检查必填字段与版本号。",
     COURSE_CHECKS_INVALID:
       "验收规则文件（.codelab-checks.json）格式无效，请检查字段与检查类型。",
+    GIT_COURSE_FETCH_FAILED: "无法获取 “{url}”。请检查 Git 是否已安装且仓库可以访问。",
+    GIT_COURSE_CACHE_FAILED: "无法读写 Git 课程缓存。",
+    NO_ACTIVE_GIT_COURSE: "请先打开 Git Course Pack。",
+    NO_ACTIVE_DRAFT: "请先打开课程包草稿。",
+    INVALID_DRAFT_PATH: "请选择应用数据和当前 Workspace 之外的课程包源目录。",
+    DRAFT_DIRECTORY_NOT_EMPTY: "请选择空目录来创建课程包。",
+    DRAFT_WRITE_FAILED: "无法创建课程包文件。",
+    TRIAL_WORKSPACE_FAILED: "无法创建临时 Trial Workspace。",
     NO_ACTIVE_COURSE: "当前没有已打开的 Course 可供刷新。",
     STORAGE_READ_FAILED: "读取本地数据（{store}）失败，请检查目录权限后重试。",
     STORAGE_WRITE_FAILED: "保存本地数据（{store}）失败，请检查磁盘空间与写权限。",

@@ -18,7 +18,7 @@ pub use model::{
 };
 
 use self::metadata::WorkspaceMetadata;
-use self::paths::WorkspacePaths;
+pub(crate) use self::paths::WorkspacePaths;
 use self::watcher::WorkspaceWatcher;
 use crate::course::{CourseSource, LoadedCourse, Starter};
 use crate::{DomainError, ErrorCode};
@@ -94,6 +94,10 @@ impl Workspace {
             events_enabled,
             _watcher: watcher,
         })
+    }
+
+    pub fn completed_for(&self, course: &LoadedCourse) -> Result<u32, DomainError> {
+        metadata::completed_for(&self.files, course)
     }
 
     pub fn set_trusted(&self, trusted: bool) {

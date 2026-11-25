@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   courseSourceLocation,
   type Chapter,
@@ -48,6 +48,8 @@ export interface CourseWorkbenchProps {
   onReloadCourse: () => void;
   onDismissReload: () => void;
   onCopyCommand: (commandText: string) => void;
+  stage?: ReactNode;
+  onReturnToDraft?: () => void;
 }
 
 function getFileBasename(filePath: string): string {
@@ -75,6 +77,8 @@ export function CourseWorkbench({
   onReloadCourse,
   onDismissReload,
   onCopyCommand,
+  stage,
+  onReturnToDraft,
 }: CourseWorkbenchProps) {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
@@ -202,7 +206,9 @@ export function CourseWorkbench({
   const sourceBadge =
     course.source.kind === "builtin"
       ? t.builtinBadge
-      : course.source.kind === "localPack"
+      : course.source.kind === "gitPack"
+        ? messages.coursePack.gitBadge
+        : course.source.kind === "localPack"
         ? t.localPackBadge
         : t.localMarkdownBadge;
 
@@ -340,6 +346,16 @@ export function CourseWorkbench({
           onSelectChapter={onSelectChapter}
           onClose={() => setOutlineOpen(false)}
         />
+
+        {course.source.kind === "gitPack" && (
+          <div className="git-course-actions">
+            <button type="button" className="btn btn--secondary btn--xs"
+              disabled={reloading || switching} onClick={onReloadCourse}>
+              <RefreshIcon size={12} />
+              {reloading ? messages.coursePack.gitLoading : messages.coursePack.gitRefresh}
+            </button>
+          </div>
+        )}
 
         {pendingReload ? (
           <div
@@ -659,15 +675,17 @@ export function CourseWorkbench({
       />
 
       <section className="pane-center" aria-label={t.stageAriaLabel}>
-        {session && course.trusted ? (
+        {stage ?? (session && course.trusted ? (
           <WorkspaceEditor
             key={session.workspace.id}
             session={session}
             settings={settings}
             messages={messages}
             switching={switching}
-            onChangeWorkspace={onChooseWorkspace}
-            onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
+            onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
+            workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
+            workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
+            onRevokeTrust={course.isBuiltin || onReturnToDraft ? undefined : onRevokeTrust}
           />
         ) : (
           <>
@@ -697,7 +715,7 @@ export function CourseWorkbench({
               </div>
             </div>
           </>
-        )}
+        ))}
       </section>
     </section>
   );
