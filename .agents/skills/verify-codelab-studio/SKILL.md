@@ -14,8 +14,8 @@ Use an unlocked macOS graphical session with pnpm, Rust and the Tauri build prer
 Check the macOS console lock before starting a launch. If this prints the lock flag, record it and report the run as blocked until the console is unlocked.
 
 ```sh
-ioreg -n Root -d1 | rg -o '\{[^{}]*"kCGSSessionOnConsoleKey"=Yes[^{}]*\}' |
-  rg -o '"CGSSessionScreenIsLocked"=Yes'
+ioreg -n Root -d1 | grep -oE '\{[^{}]*"kCGSSessionOnConsoleKey"=Yes[^{}]*\}' |
+  grep -oF '"CGSSessionScreenIsLocked"=Yes'
 ```
 
 Before launching, check `lsof -nP -iTCP:1420 -sTCP:LISTEN`. Proceed when there is no listener. The configured dev URL is fixed at `http://localhost:1420/`, so use the port for one verification run at a time.
@@ -50,7 +50,7 @@ Run from a second shell if the window is missing or before driving either launch
 
 ```sh
 ps -p "$VERIFY_PID" -o pid=,ppid=,pgid=,command=
-ps eww -p "$VERIFY_PID" | rg -oF -- "CODELAB_DATA_DIR=$VERIFY_TMP/data"
+ps eww -p "$VERIFY_PID" | grep -oF -- "CODELAB_DATA_DIR=$VERIFY_TMP/data"
 lsof -nP -iTCP:1420 -sTCP:LISTEN
 curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:1420/
 ```
@@ -73,7 +73,7 @@ Keep the scratch directory across the two launches. After the last launch or a b
 case "${VERIFY_TMP:-}" in
   /tmp/codelab-studio-verify.??????)
     if [ -d "$VERIFY_TMP" ] && [ ! -L "$VERIFY_TMP" ] &&
-      rg -qxF -- "scratch=$VERIFY_TMP" "$VERIFY_EVIDENCE/run.txt"
+      grep -qxF -- "scratch=$VERIFY_TMP" "$VERIFY_EVIDENCE/run.txt"
     then
       if [ -d "$VERIFY_TMP/data/git-courses" ]; then
         find "$VERIFY_TMP/data/git-courses" -type d -exec chmod u+w {} +

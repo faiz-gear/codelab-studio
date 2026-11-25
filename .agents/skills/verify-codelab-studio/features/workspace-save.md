@@ -41,7 +41,7 @@ Open the [built-in course](builtin-course.md) from the welcome page, then choose
 
    ```sh
    verify_saved_file() {
-     if rg -nxF -- "$VERIFY_LINE" "$VERIFY_FILE"; then
+     if grep -nxF -- "$VERIFY_LINE" "$VERIFY_FILE"; then
        printf 'PASS %s %s\n' "$1" "$VERIFY_FILE"
      else
        printf 'FAIL %s expected line %s in %s\n' "$1" "$VERIFY_LINE" "$VERIFY_FILE"

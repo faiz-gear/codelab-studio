@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-GitHub issues in `faiz-gear/codelab-studio` (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
+GitHub issues in `faiz-gear/codelab-studio` via `gh` CLI. Read `docs/agents/issue-tracker.md` before querying blockers or sub-issues, reading/creating/closing issues, or triaging.
 
 ### Triage labels
 
