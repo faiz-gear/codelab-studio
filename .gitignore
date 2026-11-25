@@ -3,6 +3,11 @@
 
 # AI assistants and agent configurations
 .agents/
+!/.agents/
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/verify-codelab-studio/
 .claude/
 .codex/
 .cursor/
