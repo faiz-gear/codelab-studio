@@ -24,7 +24,7 @@ Open the [built-in course](builtin-course.md) from the welcome page, then choose
    printf 'folder=%s\nexpected=%s\n' "$VERIFY_WORKSPACE" "$VERIFY_LINE"
    ```
 
-2. Click **选择 Workspace** (**Choose Workspace**). In the native folder picker, navigate to the printed folder and select it. On macOS, press `⌘⇧G`, enter the absolute path, press Return to go there, then confirm the selection in the picker. Capture `03-picker.png` with the temporary folder selected before confirming. Check that the workbench displays the same Workspace path after binding.
+2. Click **选择 Workspace** (**Choose Workspace**). In the native folder picker, navigate to the printed folder and select it. On macOS, press `⌘⇧G`, paste the absolute path, wait for the matching folder suggestion, then press Return. Capture `03-picker.png` when the picker shows the temporary folder and click **Open** if the picker stays open. Check that the workbench displays the same Workspace path after binding.
 3. Click **文件** (**Files**), expand **task-api** and click **main.go**. Confirm the status path reads `task-api/main.go` and Monaco line 1 reads `package main`. Capture `04-starter.png`. Establish the disk baseline before typing.
 
    ```sh

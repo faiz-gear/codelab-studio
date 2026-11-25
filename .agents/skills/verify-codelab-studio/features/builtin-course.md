@@ -9,12 +9,13 @@ The welcome page opens the bundled Go / GoFrame manual in the workbench.
 
 ## How to get to it (user POV)
 
-On a fresh welcome page, use **开始内置 Go / GoFrame 实战** (**Start Built-in Go / GoFrame Lab**). The **Go 与 GoFrame 开发实践** (**Go & GoFrame Engineering Practice**) card in the course catalog opens the same manual.
+On a fresh welcome page, use **开始内置 Go / GoFrame 实战** (**Start Built-in Go / GoFrame Lab**). The **Go 与 GoFrame 开发实践** (**Go & GoFrame Engineering Practice**) card and the built-in Go entry in the top-bar Course menu open the same manual.
 
 ## Driving it with the desktop window
 
 - Start from an empty data directory and a ready CodeLab Studio window. Capture `01-welcome.png` with the primary button visible.
 - Click **开始内置 Go / GoFrame 实战**. Confirm the Go / GoFrame manual appears beside **选择 Workspace** (**Choose Workspace**). Capture `02-course.png`.
+- To check the catalog and menu, use the top-bar **CodeLab Studio** button to return home before opening each entry. Confirm Exercise 0 and **选择 Workspace** for both.
 
 ## Gotchas
 

@@ -9,7 +9,7 @@ The welcome page remembers the last bound Workspace across a full desktop app re
 
 ## How to get to it (user POV)
 
-Use the matching row under **最近的 Workspace** (**Recent Workspaces**). The primary **继续上次 Workspace** (**Resume Workspace**) button also opens the latest Workspace.
+Use the matching row under **最近的 Workspace** (**Recent Workspaces**). The primary **继续上次 Workspace：{课程标题}** (**Resume Workspace: {course title}**) button opens the latest Workspace.
 
 ## Driving it with the desktop window
 
@@ -20,4 +20,4 @@ Use the matching row under **最近的 Workspace** (**Recent Workspaces**). The 
 ## Gotchas
 
 - Match the full Workspace path in the row. Course titles can be shared by multiple Workspaces.
-- File tabs may start closed. Reopen the file from **Files** before checking the editor.
+- The reopened Workspace starts with no file tabs. Open the file from **Files** before checking the editor.
