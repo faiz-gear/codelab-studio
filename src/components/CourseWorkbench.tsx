@@ -109,7 +109,7 @@ export function CourseWorkbench({
 
   function renderCommand(command: CommandBlock) {
     return <CommandBlockCard key={command.id} command={command} messages={messages} onCopy={onCopyCommand}
-      override={execution.cwd[command.id]} disabled={execution.busy || switching || !!verification.progress?.runningChapterId}
+      override={execution.cwd[command.id]} disabled={execution.busy || verification.busy || switching || !!verification.progress?.runningChapterId}
       onRun={workbench ? () => void workbench.run({ commandId: command.id }).catch(onExecutionError) : undefined}
       onChangeCwd={workbench ? () => setCwdDialog({ workbench, command }) : undefined} />;
   }

@@ -562,6 +562,13 @@ impl App {
     fn run_command_block(&self, request: RunCommandBlock) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
         let workspace = state.workspace(request.workspace_id)?;
+        if state
+            .verification
+            .as_ref()
+            .is_some_and(|task| task.chapter_id.is_some())
+        {
+            return Err(DomainError::new(ErrorCode::VerificationBusy));
+        }
         let course = &state.course()?.course;
         let language = course.language;
         let (launch, dir) = if let Some(id) = request.restart_terminal_id {
