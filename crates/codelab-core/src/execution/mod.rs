@@ -1,3 +1,4 @@
+mod daemon;
 pub(crate) mod editors;
 pub(crate) mod model;
 mod output;
@@ -15,7 +16,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::runtime::{PreflightReport, RuntimeSource};
 use crate::{CommandBlock, CommandMode, CourseLanguage, DomainError, ErrorCode};
@@ -53,6 +54,7 @@ pub(crate) struct Directory {
 
 struct Terminal {
     summary: TerminalSummary,
+    started_at: DateTime<Utc>,
     capture: Arc<Mutex<Capture>>,
     process: Option<TerminalProcess>,
     launch: Option<CommandLaunch>,
@@ -192,6 +194,7 @@ impl Execution {
             output.port_conflict = false;
             output.observed_port = None;
         }
+        let started_at = Utc::now();
         let process = TerminalProcess::open(
             Spawn {
                 program,
@@ -209,7 +212,7 @@ impl Execution {
             label: block.and_then(|block| block.label.clone()),
             mode,
             cwd,
-            started_at: Utc::now().to_rfc3339(),
+            started_at: started_at.to_rfc3339(),
             port: block.and_then(|block| block.port),
             running: true,
             exit_code: None,
@@ -219,30 +222,13 @@ impl Execution {
             id,
             Terminal {
                 summary: summary.clone(),
+                started_at,
                 capture,
                 process: Some(process),
                 launch,
             },
         );
         Ok(summary)
-    }
-
-    pub fn daemon(&mut self, launch: &CommandLaunch, port: u16) -> Option<(TerminalSummary, bool)> {
-        self.reap();
-        self.terminals
-            .values()
-            .find(|terminal| {
-                terminal.summary.mode == Some(CommandMode::Daemon)
-                    && terminal.summary().port == Some(port)
-            })
-            .map(|terminal| {
-                let same_launch = terminal.launch.as_ref().is_some_and(|previous| {
-                    previous.cwd == launch.cwd
-                        && previous.script == launch.script
-                        && previous.block.shell == launch.block.shell
-                });
-                (terminal.summary(), same_launch)
-            })
     }
 
     pub fn restart_launch(

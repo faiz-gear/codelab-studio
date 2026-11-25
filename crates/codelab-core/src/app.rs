@@ -468,35 +468,26 @@ impl App {
             AppCommand::WriteWorkspaceFile(request)
             | AppCommand::ApplyWorkspaceComparison(request) => {
                 let state = self.lock_state();
-                let result = state.workspace(request.target.workspace_id)?.files.write(
+                let result = state.workspace(request.target.workspace_id)?.write_file(
                     &request.target.path,
                     &request.text,
                     request.expected_revision.as_deref(),
                     applying_comparison,
                 )?;
                 Ok(match result {
-                    Ok(file) => {
-                        *state
-                            .workspace(request.target.workspace_id)?
-                            .last_saved_at
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner()) = Utc::now();
-                        AppResponse::WorkspaceFile(file)
-                    }
+                    Ok(file) => AppResponse::WorkspaceFile(file),
                     Err(file) => AppResponse::WorkspaceFileConflict(file),
                 })
             }
             AppCommand::CreateWorkspaceFile(target) => self
                 .lock_state()
                 .workspace(target.workspace_id)?
-                .files
-                .create(&target.path)
+                .create_file(&target.path)
                 .map(AppResponse::WorkspaceFile),
             AppCommand::RenameWorkspaceFile(request) => self
                 .lock_state()
                 .workspace(request.target.workspace_id)?
-                .files
-                .rename(&request.target.path, &request.new_path)
+                .rename_file(&request.target.path, &request.new_path)
                 .map(AppResponse::WorkspaceFile),
             AppCommand::OpenWorkspaceIde(request) => {
                 self.lock_state()
@@ -595,12 +586,6 @@ impl App {
             let workspace = state.workspace(request.workspace_id)?;
             if let Some(file) = editors::save(workspace, request.drafts, &mut saved)? {
                 return Ok(Err(file));
-            }
-            if !saved.is_empty() {
-                *workspace
-                    .last_saved_at
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner()) = Utc::now();
             }
             state
                 .execution

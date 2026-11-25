@@ -159,12 +159,6 @@ impl App {
             }));
         }
         let workspace = state.active_workspace.as_mut().unwrap();
-        if !saved.is_empty() {
-            *workspace
-                .last_saved_at
-                .lock()
-                .unwrap_or_else(|p| p.into_inner()) = Utc::now();
-        }
         let mut next = workspace.progress.clone();
         let status = next.chapters.entry(chapter.chapter_id.clone()).or_default();
         status.last_check_results.clear();
@@ -191,34 +185,34 @@ impl App {
         let handle = thread::spawn(move || {
             let daemon_result = daemon
                 .map(|(requirement, launch, directory)| {
-                    let mut started = Ok(());
-                    if !with_state(&shared, &cancelled, |state| {
-                        started = start_daemon(
-                            state,
-                            launch,
-                            directory,
-                            &report,
-                            language,
-                            requirement.port,
-                        );
-                    }) {
-                        return Err(DomainError::new(ErrorCode::DaemonNotReady));
-                    }
-                    started?;
-                    let until = std::time::Instant::now() + Duration::from_secs(30);
-                    loop {
-                        if cancelled.load(Ordering::Acquire) {
-                            return Err(DomainError::new(ErrorCode::DaemonNotReady));
-                        }
-                        if port_open(requirement.port) {
-                            return Ok(());
-                        }
-                        if std::time::Instant::now() >= until {
-                            return Err(DomainError::new(ErrorCode::DaemonNotReady)
-                                .with_detail("port", requirement.port.to_string()));
-                        }
-                        thread::sleep(Duration::from_millis(25));
-                    }
+                    let port = requirement.port;
+                    let daemon = with_state(&shared, &cancelled, |state| {
+                        let latest = state.active_workspace.as_ref().unwrap().last_saved_at();
+                        state
+                            .execution
+                            .start_daemon(launch, directory, &report, language, port, latest)
+                    })
+                    .ok_or_else(|| {
+                        DomainError::new(ErrorCode::DaemonNotReady)
+                            .with_detail("port", port.to_string())
+                    })??;
+                    daemon.wait_until_ready(|daemon| {
+                        let running = with_state(&shared, &cancelled, |state| {
+                            state.execution.daemon_running(daemon)
+                        });
+                        Some(match running {
+                            None => Err(DomainError::new(ErrorCode::DaemonNotReady)
+                                .with_detail("port", daemon.port().to_string())),
+                            Some(Err(error)) => Err(error),
+                            Some(Ok(true)) => Ok(daemon.port_open()),
+                            Some(Ok(false)) if daemon.port_open() => {
+                                Err(DomainError::new(ErrorCode::DaemonPortConflict)
+                                    .with_detail("port", daemon.port().to_string()))
+                            }
+                            Some(Ok(false)) => Err(DomainError::new(ErrorCode::DaemonNotReady)
+                                .with_detail("port", daemon.port().to_string())),
+                        })
+                    })
                 })
                 .transpose();
             for (check_id, prepared) in plan {
@@ -235,7 +229,7 @@ impl App {
                         status: CheckStatus::Failed,
                         ..running_result(&check_id)
                     });
-                if !with_state(&shared, &cancelled, |state| {
+                if with_state(&shared, &cancelled, |state| {
                     let workspace = state.active_workspace.as_mut().unwrap();
                     let status = workspace
                         .progress
@@ -253,7 +247,9 @@ impl App {
                         &subscribers,
                         AppEvent::ProgressUpdated(progress_snapshot(state)),
                     );
-                }) {
+                })
+                .is_none()
+                {
                     return;
                 }
             }
@@ -424,68 +420,20 @@ fn running_result(id: &str) -> CheckResult {
         error: None,
     }
 }
-fn with_state(
+fn with_state<T>(
     state: &Mutex<AppState>,
     cancelled: &AtomicBool,
-    action: impl FnOnce(&mut AppState),
-) -> bool {
+    action: impl FnOnce(&mut AppState) -> T,
+) -> Option<T> {
     loop {
         if cancelled.load(Ordering::Acquire) {
-            return false;
+            return None;
         }
         if let Ok(mut state) = state.try_lock() {
-            action(&mut state);
-            return true;
+            return Some(action(&mut state));
         }
         thread::sleep(Duration::from_millis(5));
     }
-}
-
-fn port_open(port: u16) -> bool {
-    std::net::TcpStream::connect_timeout(
-        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-        Duration::from_millis(50),
-    )
-    .is_ok()
-}
-fn start_daemon(
-    state: &mut AppState,
-    mut launch: crate::execution::CommandLaunch,
-    directory: crate::execution::Directory,
-    report: &PreflightReport,
-    language: Option<crate::CourseLanguage>,
-    port: u16,
-) -> Result<(), DomainError> {
-    let previous = state.execution.daemon(&launch, port);
-    if let Some((previous, same_launch)) = &previous {
-        let latest = *state
-            .active_workspace
-            .as_ref()
-            .unwrap()
-            .last_saved_at
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        if *same_launch
-            && previous.running
-            && chrono::DateTime::parse_from_rfc3339(&previous.started_at)
-                .is_ok_and(|start| start >= latest)
-            && port_open(port)
-        {
-            return Ok(());
-        }
-        // Stop only a process owned by this Execution, never one discovered by port.
-        state.execution.stop(previous.id)?;
-        launch.restart_terminal_id = Some(previous.id);
-    }
-    if port_open(port) {
-        return Err(
-            DomainError::new(ErrorCode::DaemonPortConflict).with_detail("port", port.to_string())
-        );
-    }
-    state
-        .execution
-        .start(Some(launch), directory, report, language)?;
-    Ok(())
 }
 
 fn publish_progress_snapshot(

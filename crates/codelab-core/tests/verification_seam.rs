@@ -687,10 +687,10 @@ fn verification_service_fixture() {
     };
     let listener = TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap())).unwrap();
     let body = std::env::var("CODELAB_SEAM_BODY").unwrap();
-    let body = if body == "from_source" {
-        fs::read_to_string("server.py").unwrap()
-    } else {
-        body
+    let body = match body.as_str() {
+        "from_source" => fs::read_to_string("server.py").unwrap(),
+        "from_text_source" => fs::read_to_string("server.txt").unwrap(),
+        _ => body,
     };
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
@@ -701,6 +701,9 @@ fn verification_service_fixture() {
         if stream.read(&mut bytes).unwrap_or(0) == 0 {
             continue;
         }
+        if bytes.starts_with(b"GET /__stop-listener") {
+            break;
+        }
         let _ = write!(
             stream,
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -708,6 +711,8 @@ fn verification_service_fixture() {
             body
         );
     }
+    drop(listener);
+    std::thread::park();
 }
 #[test]
 fn different_managed_service_on_the_same_port_is_restarted_with_the_required_launch() {
@@ -1422,4 +1427,193 @@ fn go_suite_reassembles_benchmark_timing_split_across_output_events() {
     let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
     assert_eq!(result["status"], "passed", "{}", result["diffs"]);
     assert_eq!(progress["completedExercises"], 1);
+}
+
+#[test]
+fn verification_reuses_live_managed_daemon_after_an_older_terminal_stops() {
+    use std::net::TcpStream;
+
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let command = service_command(port, "fresh");
+    let checks = json!([{"chapterId":"ex-1","requiresDaemon":{"label":"API","port":port},"checks":[
+        {"id":"http","title":"Uses running Managed Daemon","type":"http_assert","request":{"url":format!("http://127.0.0.1:{port}/")},"expect":{"bodyEquals":"fresh"}}
+    ]}]);
+    let (_temp, app, id) = fixture(
+        checks,
+        &format!(
+            "# Course\n\n## Exercise 1\n\n{fence}sh mode=daemon label=API port={port}\n{command}\n{fence}\n",
+            fence = "\x60\x60\x60"
+        ),
+    );
+    let start = || {
+        let response = send(
+            &app,
+            "runCommandBlock",
+            json!({"workspaceId":id,"commandId":"ex-1:cmd-1"}),
+        );
+        assert_eq!(response["type"], "commandStarted", "{response}");
+        response["payload"]["terminal"].clone()
+    };
+    let wait_for_port = || {
+        let until = Instant::now() + Duration::from_secs(5);
+        while TcpStream::connect(("127.0.0.1", port)).is_err() {
+            assert!(Instant::now() < until, "daemon did not become ready");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let first = start();
+    wait_for_port();
+    send(
+        &app,
+        "stopTerminal",
+        json!({"workspaceId":id,"terminalId":first["id"]}),
+    );
+    drop(wait_port_released(port));
+    let second = start();
+    assert_ne!(first["id"], second["id"]);
+    wait_for_port();
+
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{result}");
+    let terminals = send(&app, "readTerminals", json!({"workspaceId":id}));
+    let running = terminals["payload"]["terminals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|terminal| terminal["running"] == true)
+        .unwrap();
+    assert_eq!(running["id"], second["id"]);
+    assert_eq!(running["startedAt"], second["startedAt"]);
+}
+
+#[test]
+fn verification_restarts_a_live_managed_daemon_when_its_port_is_closed() {
+    use std::io::Write;
+    use std::net::TcpStream;
+
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let command = service_command(port, "fresh");
+    let checks = json!([{"chapterId":"ex-1","requiresDaemon":{"label":"API","port":port},"checks":[
+        {"id":"http","title":"Restarts stopped listener","type":"http_assert","request":{"url":format!("http://127.0.0.1:{port}/")},"expect":{"bodyEquals":"fresh"}}
+    ]}]);
+    let (_temp, app, id) = fixture(
+        checks,
+        &format!(
+            "# Course\n\n## Exercise 1\n\n{fence}sh mode=daemon label=API port={port}\n{command}\n{fence}\n",
+            fence = "\x60\x60\x60"
+        ),
+    );
+    let first = send(
+        &app,
+        "runCommandBlock",
+        json!({"workspaceId":id,"commandId":"ex-1:cmd-1"}),
+    )["payload"]["terminal"]
+        .clone();
+    let ready_until = Instant::now() + Duration::from_secs(5);
+    while TcpStream::connect(("127.0.0.1", port)).is_err() {
+        assert!(Instant::now() < ready_until, "daemon did not become ready");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .write_all(b"GET /__stop-listener HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    drop(stream);
+    drop(wait_port_released(port));
+
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait(&app, id);
+    assert_eq!(
+        progress["chapters"]["ex-1"]["lastCheckResults"][0]["status"],
+        "passed"
+    );
+    let terminals = send(&app, "readTerminals", json!({"workspaceId":id}));
+    let running = terminals["payload"]["terminals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|terminal| terminal["running"] == true)
+        .unwrap();
+    assert_eq!(running["id"], first["id"]);
+    assert_ne!(running["startedAt"], first["startedAt"]);
+}
+
+#[test]
+fn partial_draft_writes_make_the_managed_daemon_stale() {
+    for entry in ["runCommandBlock", "runChecks"] {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let command = service_command(port, "from_text_source");
+        let checks = json!([{"chapterId":"ex-1","requiresDaemon":{"label":"API","port":port},"checks":[
+            {"id":"http","title":"Reads fresh source","type":"http_assert","request":{"url":format!("http://127.0.0.1:{port}/")},"expect":{"bodyEquals":"updated"}}
+        ]}]);
+        let (temp, app, id) = fixture(
+            checks,
+            &format!(
+                "# Course\n\n## Exercise 1\n\n{fence}sh mode=daemon label=API port={port}\n{command}\n{fence}\n",
+                fence = "\x60\x60\x60"
+            ),
+        );
+        let root = temp.path().join("work");
+        // The watcher does not use .txt changes for freshness, so this tests
+        // synchronous tracking by the Workspace write path.
+        fs::write(root.join("server.txt"), "original").unwrap();
+        fs::write(root.join("binary.txt"), [0, 255]).unwrap();
+        let target = json!({"workspaceId":id,"chapterId":"ex-1"});
+        send(&app, "runChecks", target.clone());
+        let initial = wait(&app, id);
+        let check = |progress: &Value| progress["chapters"]["ex-1"]["lastCheckResults"][0].clone();
+        assert_eq!(check(&initial)["diffs"][0]["actual"], "original");
+
+        let revision = |path| {
+            send(
+                &app,
+                "readWorkspaceFile",
+                json!({"workspaceId":id,"path":path}),
+            )["payload"]["revision"]
+                .clone()
+        };
+        let response = send(
+            &app,
+            entry,
+            json!({
+                "workspaceId":id,"chapterId":"ex-1","commandId":"ex-1:cmd-1","drafts":[
+                    {"path":"server.txt","text":"updated","expectedRevision":revision("server.txt")},
+                    {"path":"binary.txt","text":"cannot write","expectedRevision":revision("binary.txt")}
+                ]
+            }),
+        );
+        assert_eq!(response["type"], "commandFailed", "{entry} {response}");
+        assert_eq!(
+            response["payload"]["saved"][0]["revision"],
+            revision("server.txt")
+        );
+        assert_eq!(response["payload"]["saved"][0]["path"], "server.txt");
+        assert_eq!(fs::read(root.join("binary.txt")).unwrap(), [0, 255]);
+
+        send(&app, "runChecks", target);
+        let latest = check(&wait(&app, id));
+        assert_eq!(latest["status"], "passed", "{entry} {latest}");
+    }
 }

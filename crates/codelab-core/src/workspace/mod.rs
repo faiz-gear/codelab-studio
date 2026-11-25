@@ -11,8 +11,8 @@ mod watcher;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 pub use comparison::WorkspaceComparison;
 pub use model::{
@@ -20,6 +20,8 @@ pub use model::{
     WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite, WorkspaceFilesChanged,
     WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
 };
+
+use chrono::{DateTime, Utc};
 
 use self::metadata::WorkspaceMetadata;
 pub(crate) use self::paths::WorkspacePaths;
@@ -32,7 +34,7 @@ pub(crate) struct Workspace {
     pub completed_exercises: u32,
     pub progress: progress::Progress,
     pub progress_store: crate::storage::JsonStore<progress::Progress>,
-    pub last_saved_at: Arc<std::sync::Mutex<chrono::DateTime<chrono::Utc>>>,
+    last_saved_at: Arc<Mutex<DateTime<Utc>>>,
     pub files: WorkspacePaths,
     pub command_cwds: command_cwd::CommandCwds,
     pub git_starter_snapshot: Option<String>,
@@ -81,7 +83,7 @@ impl Workspace {
 
         let events_enabled = Arc::new(AtomicBool::new(true));
         let enabled = Arc::clone(&events_enabled);
-        let last_saved_at = Arc::new(std::sync::Mutex::new(chrono::Utc::now()));
+        let last_saved_at = Arc::new(Mutex::new(Utc::now()));
         let saved_at = Arc::clone(&last_saved_at);
         let watched_root = root.clone();
         let watcher = WorkspaceWatcher::start(root, move |paths| {
@@ -112,15 +114,12 @@ impl Workspace {
                 .map(|path| {
                     std::fs::metadata(watched_root.join(path))
                         .and_then(|metadata| metadata.modified())
-                        .map(chrono::DateTime::<chrono::Utc>::from)
-                        .unwrap_or_else(|_| chrono::Utc::now())
+                        .map(DateTime::<Utc>::from)
+                        .unwrap_or_else(|_| Utc::now())
                 })
                 .max();
             if let Some(latest) = latest {
-                let mut saved = saved_at.lock().unwrap_or_else(|p| p.into_inner());
-                if latest > *saved {
-                    *saved = latest;
-                }
+                record_change(&saved_at, latest);
             }
             if enabled.load(Ordering::Acquire) {
                 on_change(WorkspaceFilesChanged {
@@ -151,6 +150,38 @@ impl Workspace {
             events_enabled,
             _watcher: watcher,
         })
+    }
+
+    pub fn last_saved_at(&self) -> DateTime<Utc> {
+        *self.last_saved_at.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub fn write_file(
+        &self,
+        path: &str,
+        text: &str,
+        expected: Option<&str>,
+        comparison: bool,
+    ) -> Result<Result<WorkspaceFile, WorkspaceFile>, DomainError> {
+        let result = self.files.write(path, text, expected, comparison)?;
+        if result.is_ok() {
+            record_change(&self.last_saved_at, Utc::now());
+        }
+        Ok(result)
+    }
+
+    pub fn create_file(&self, path: &str) -> Result<WorkspaceFile, DomainError> {
+        let file = self.files.create(path)?;
+        record_change(&self.last_saved_at, Utc::now());
+        Ok(file)
+    }
+
+    pub fn rename_file(&self, path: &str, new_path: &str) -> Result<WorkspaceFile, DomainError> {
+        let file = self.files.rename(path, new_path)?;
+        if path != file.path {
+            record_change(&self.last_saved_at, Utc::now());
+        }
+        Ok(file)
     }
 
     pub fn completed_for(&self, course: &LoadedCourse) -> Result<u32, DomainError> {
@@ -196,6 +227,11 @@ impl Workspace {
         }
         Ok(())
     }
+}
+
+fn record_change(saved_at: &Mutex<DateTime<Utc>>, changed_at: DateTime<Utc>) {
+    let mut saved_at = saved_at.lock().unwrap_or_else(|p| p.into_inner());
+    *saved_at = (*saved_at).max(changed_at);
 }
 
 fn overlaps(first: &Path, second: &Path) -> bool {
