@@ -6,8 +6,9 @@ Apply every rule below when reviewing a diff for CodeLab Studio. `pnpm run check
 
 - **Single domain authority (`codelab-core`)**: Domain validation, path canonicalization, trust normalization, and state transitions belong exclusively in `crates/codelab-core`. Keep `src/` limited to rendering and transient UI state; avoid duplicating domain validation rules in TypeScript.
 - **Canonical root containment** covers every file read from a Course Pack or Workspace, including `codelab.json`, `.codelab-checks.json`, Markdown entries, Starter files, Reference Solution snapshots, and learner source files. Use a containment helper before opening each file. Verify that the resolved path stays within the canonical root, even when the input contains symlinks or `..` segments.
+- **Bound untrusted bytes before decoding**: Enforce size caps (`MAX_WORKSPACE_TEXT_BYTES`, `MAX_MARKDOWN_BYTES`) via metadata and bounded `.take()` reads before allocating buffers or running UTF-8/JSON parsers.
 - **Zero-logic Tauri shell (`src-tauri`)**: Forward IPC commands, event streams, native dialogs, and lifecycle hooks directly to `codelab_core::App` without wrapper middle-man structs or business branching.
-- **Test at the two primary seams**: Exercise `codelab-core` through its public `App` interface (`crates/codelab-core/tests/`) using real temp directories, loopback servers, and child processes; exercise React UI through the `CoreClient` interface (`src/__tests__/`) using `FakeCoreClient`.
+- **Test at the two primary seams**: Exercise `codelab-core` through its public `App` interface (`crates/codelab-core/tests/`) using real temp directories, loopback servers, and child processes; exercise React UI through the `CoreClient` interface (`src/__tests__/`) using `FakeCoreClient`. When two failure sources share an `ErrorCode` (for example, Course snapshot vs Workspace target validation), keep the non-tested side valid so each assertion isolates the path under test.
 
 ## Crash-Safe Persistence
 
