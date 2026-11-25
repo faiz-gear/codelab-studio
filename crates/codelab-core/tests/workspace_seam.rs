@@ -282,14 +282,40 @@ fn reports_non_text_and_conflicts_without_overwriting_new_disk_content() {
     let root = temp.path().join("work");
     fs::create_dir(&root).unwrap();
     fs::write(root.join("text.txt"), "original").unwrap();
+    fs::write(root.join("allowed-controls.txt"), "a\tb\r\nc\x0cd").unwrap();
+    fs::write(
+        root.join("exact-limit.txt"),
+        vec![b'x'; MAX_WORKSPACE_TEXT_BYTES],
+    )
+    .unwrap();
     fs::write(root.join("binary"), b"NUL\0data").unwrap();
+    fs::write(root.join("control"), b"bad\x01byte").unwrap();
+    fs::write(root.join("invalid-utf8"), [0xff, 0xfe]).unwrap();
     fs::write(root.join("large"), vec![b'a'; MAX_WORKSPACE_TEXT_BYTES + 1]).unwrap();
     let app = open_app(&temp.path().join("app-data"));
     open_course(&app, builtin());
     let id = workspace_id(&app, &root);
+    let allowed = read_file(&app, id, "allowed-controls.txt");
+    assert_eq!(
+        allowed.contents,
+        WorkspaceFileContents::Text {
+            text: "a\tb\r\nc\x0cd".into()
+        }
+    );
+    let exact = read_file(&app, id, "exact-limit.txt");
+    assert_eq!(exact.size_bytes, MAX_WORKSPACE_TEXT_BYTES as u64);
+    assert!(matches!(exact.contents, WorkspaceFileContents::Text { .. }));
     let binary = read_file(&app, id, "binary");
     assert_eq!(binary.contents, WorkspaceFileContents::Binary);
     assert_eq!(binary.size_bytes, 8);
+    assert_eq!(
+        read_file(&app, id, "control").contents,
+        WorkspaceFileContents::Binary
+    );
+    assert_eq!(
+        read_file(&app, id, "invalid-utf8").contents,
+        WorkspaceFileContents::Binary
+    );
     let large = read_file(&app, id, "large");
     assert_eq!(large.contents, WorkspaceFileContents::TooLarge);
     assert_eq!(large.size_bytes, MAX_WORKSPACE_TEXT_BYTES as u64 + 1);
@@ -299,8 +325,40 @@ fn reports_non_text_and_conflicts_without_overwriting_new_disk_content() {
             .code,
         ErrorCode::WorkspaceFileNotText
     );
+    assert_eq!(
+        app.execute(write_file(id, "large", "replace", large.revision))
+            .unwrap_err()
+            .code,
+        ErrorCode::WorkspaceFileNotText
+    );
 
     let baseline = read_file(&app, id, &path(&root.join("text.txt")));
+    assert_eq!(
+        app.execute(write_file(
+            id,
+            "text.txt",
+            "bad\x01draft",
+            baseline.revision.clone()
+        ))
+        .unwrap_err()
+        .code,
+        ErrorCode::WorkspaceFileNotText
+    );
+    assert_eq!(
+        app.execute(write_file(
+            id,
+            "text.txt",
+            &"z".repeat(MAX_WORKSPACE_TEXT_BYTES + 1),
+            baseline.revision.clone()
+        ))
+        .unwrap_err()
+        .code,
+        ErrorCode::WorkspaceFileNotText
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("text.txt")).unwrap(),
+        "original"
+    );
     fs::write(root.join("text.txt"), "external").unwrap();
     let AppResponse::WorkspaceFileConflict(disk) = app
         .execute(write_file(id, "text.txt", "my draft", baseline.revision))
@@ -533,6 +591,22 @@ fn symlinks_cannot_redirect_starter_metadata_or_file_operations_outside_the_root
         "private"
     );
     assert!(!outside.join("new.txt").exists());
+
+    let missing_outside = outside.join("never-created.txt");
+    symlink(&missing_outside, root.join("dangling.txt")).unwrap();
+    for command in [
+        AppCommand::ReadWorkspaceFile(file_target(id, "dangling.txt")),
+        write_file(id, "dangling.txt", "recreated", None),
+        AppCommand::ReadWorkspaceFile(file_target(id, "escape/missing.txt")),
+        write_file(id, "escape/missing.txt", "recreated", None),
+    ] {
+        assert_eq!(
+            app.execute(command).unwrap_err().code,
+            ErrorCode::WorkspacePathOutsideRoot
+        );
+    }
+    assert!(!missing_outside.exists());
+    assert!(!outside.join("missing.txt").exists());
 }
 
 #[test]

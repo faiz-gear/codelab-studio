@@ -5,6 +5,7 @@ mod metadata;
 mod model;
 mod paths;
 pub(crate) mod progress;
+mod reader;
 mod starter;
 mod watcher;
 
