@@ -17,6 +17,7 @@ pub enum ErrorCode {
     CourseMarkdownInvalid,
     CourseManifestInvalid,
     CourseChecksInvalid,
+    TestSuiteAdapterUnavailable,
     GitCourseFetchFailed,
     GitCourseCacheFailed,
     NoActiveGitCourse,

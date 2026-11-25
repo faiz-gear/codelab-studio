@@ -325,14 +325,7 @@ fn label(path: &Path) -> String {
 
 fn shell(launch: Option<&CommandLaunch>) -> Result<(PathBuf, Vec<OsString>), DomainError> {
     if let Some(launch) = launch {
-        let name = &launch.block.shell;
-        let program = shell_path(name).ok_or_else(|| {
-            DomainError::new(ErrorCode::CommandShellUnavailable).with_detail("shell", name)
-        })?;
-        return Ok((
-            program,
-            vec![OsString::from("-c"), OsString::from(&launch.script)],
-        ));
+        return shell_command(&launch.block.shell, &launch.script);
     }
 
     #[cfg(unix)]
@@ -352,6 +345,13 @@ fn shell(launch: Option<&CommandLaunch>) -> Result<(PathBuf, Vec<OsString>), Dom
         vec!["/D".into(), "/Q".into()],
     );
     Ok((program, args))
+}
+
+fn shell_command(name: &str, script: &str) -> Result<(PathBuf, Vec<OsString>), DomainError> {
+    let program = shell_path(name).ok_or_else(|| {
+        DomainError::new(ErrorCode::CommandShellUnavailable).with_detail("shell", name)
+    })?;
+    Ok((program, vec![OsString::from("-c"), OsString::from(script)]))
 }
 
 fn shell_path(name: &str) -> Option<PathBuf> {

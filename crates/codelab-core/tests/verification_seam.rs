@@ -20,11 +20,26 @@ fn send(app: &App, kind: &str, payload: Value) -> Value {
     .unwrap()
 }
 fn fixture(checks: Value, manual: &str) -> (TempDir, App, u64) {
+    fixture_with_language(checks, manual, None)
+}
+
+fn fixture_with_language(
+    checks: Value,
+    manual: &str,
+    language: Option<&str>,
+) -> (TempDir, App, u64) {
     let temp = TempDir::new().unwrap();
     let pack = temp.path().join("pack");
     fs::create_dir(&pack).unwrap();
     fs::write(pack.join("README.md"), manual).unwrap();
-    fs::write(pack.join("codelab.json"), r#"{"schemaVersion":"1.0","courseId":"verify","title":"Verification","entryFile":"README.md"}"#).unwrap();
+    let mut manifest = json!({
+        "schemaVersion": "1.0", "courseId": "verify", "title": "Verification",
+        "entryFile": "README.md"
+    });
+    if let Some(language) = language {
+        manifest["language"] = json!(language);
+    }
+    fs::write(pack.join("codelab.json"), manifest.to_string()).unwrap();
     fs::write(
         pack.join(".codelab-checks.json"),
         json!({"schemaVersion":"1.0","chapters":checks}).to_string(),
@@ -202,9 +217,10 @@ fn http_contract_checks_request_and_response_then_reports_expected_actual() {
 
 #[test]
 fn go_test_adapter_exposes_real_test_cases_and_failure_output() {
-    let (temp, app, id) = fixture(
-        json!([{"chapterId":"ex-1","checks":[{"id":"go","title":"Go tests","type":"test_suite","command":"go test -json -race ./..."}]}]),
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[{"id":"go","title":"Go tests","type":"test_suite"}]}]),
         "# Course\n\n## Exercise 1\n\n### Check\n",
+        Some("go"),
     );
     let root = temp.path().join("work");
     fs::write(root.join("go.mod"), "module seam.test/check\n\ngo 1.22\n").unwrap();
@@ -801,9 +817,10 @@ fn contradictory_duplicate_results_are_quarantined_on_reopen() {
 
 #[test]
 fn skipped_required_go_case_cannot_complete_an_exercise() {
-    let (temp, app, id) = fixture(
+    let (temp, app, id) = fixture_with_language(
         json!([{"chapterId":"ex-1","checks":[{"id":"go","title":"required","type":"test_suite","command":"go test -json -race ./...","requireTests":["TestRequired"]}]}]),
         "# Course\n\n## Exercise 1\n",
+        Some("go"),
     );
     fs::write(
         temp.path().join("work/go.mod"),
@@ -842,4 +859,567 @@ fn daemon_label_takes_precedence_over_an_earlier_block_with_the_same_port() {
         wait(&app, id)["chapters"]["ex-1"]["lastCheckResults"][0]["status"],
         "passed"
     );
+}
+
+#[test]
+fn custom_go_suite_uses_the_course_adapter_and_disambiguates_required_cases() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"ambiguous","title":"Short name","type":"test_suite","command":"sh -c 'sh verify.sh'","cwd":"root-suite","requireTests":["TestSave"]},
+            {"id":"qualified","title":"Full name","type":"test_suite","command":"sh verify-one.sh","cwd":"single-suite/a","requireTests":["seam.test/single/a/TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    for (dir, module) in [("root-suite", "suites"), ("single-suite", "single")] {
+        let suite = root.join(dir);
+        fs::create_dir_all(&suite).unwrap();
+        fs::write(
+            suite.join("go.mod"),
+            format!("module seam.test/{module}\n\ngo 1.22\n"),
+        )
+        .unwrap();
+        for package in ["a", "b"] {
+            fs::create_dir(suite.join(package)).unwrap();
+            fs::write(
+                suite.join(package).join("save_test.go"),
+                format!(
+                    "package {package}\nimport \"testing\"\nfunc TestSave(t *testing.T) {{}}\n"
+                ),
+            )
+            .unwrap();
+        }
+    }
+    fs::write(
+        root.join("root-suite/verify.sh"),
+        "printf 'both packages\\n'\ngo test -json ./...\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("single-suite/a/verify-one.sh"),
+        "printf 'one package\\n'\ngo test -json .\n",
+    )
+    .unwrap();
+    let confirmation = send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    assert_eq!(confirmation["type"], "commandConfirmationRequired");
+    assert_eq!(
+        confirmation["payload"]["command"],
+        "sh -c 'sh verify.sh'\nsh verify-one.sh"
+    );
+    let started = send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1","confirmation":confirmation["payload"]["token"]}),
+    );
+    assert_eq!(started["type"], "verificationStarted", "{started}");
+    let progress = wait_for_go_checks(&app, id);
+    let results = &progress["chapters"]["ex-1"]["lastCheckResults"];
+    assert_eq!(results[0]["status"], "failed", "{results}");
+    assert!(
+        results[0]["diffs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diff| diff["label"] == "TestSave" && diff["actual"] == "ambiguousTestName")
+    );
+    assert_eq!(results[1]["status"], "passed", "{results}");
+    assert!(
+        results[0]["rawOutput"]
+            .as_str()
+            .unwrap()
+            .starts_with("both packages\n")
+    );
+    assert!(
+        results[1]["rawOutput"]
+            .as_str()
+            .unwrap()
+            .starts_with("one package\n")
+    );
+    assert_eq!(results[1]["testCases"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        results[1]["testCases"][0]["name"],
+        "seam.test/single/a/TestSave"
+    );
+    assert_eq!(progress["completedExercises"], 0);
+}
+
+#[test]
+fn suite_report_requirements_do_not_apply_to_command_tests_and_timeout_is_preserved() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"plain","title":"Plain command","type":"command_test","command":"printf 'go test -json'"},
+            {"id":"missing","title":"Missing report","type":"test_suite","command":"printf 'no report'"},
+            {"id":"empty","title":"No tests passed","type":"test_suite","command":"cat skipped.jsonl"},
+            {"id":"partial","title":"Unfinished package","type":"test_suite","command":"cat partial.jsonl"},
+            {"id":"timeout","title":"Timed out","type":"test_suite","command":"sleep 10","timeoutSec":1,"requireTests":["TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    fs::write(
+        root.join("skipped.jsonl"),
+        concat!(
+            "{\"Action\":\"start\",\"Package\":\"seam.test/skip\"}\n",
+            "{\"Action\":\"run\",\"Package\":\"seam.test/skip\",\"Test\":\"TestSkipped\"}\n",
+            "{\"Action\":\"skip\",\"Package\":\"seam.test/skip\",\"Test\":\"TestSkipped\"}\n",
+            "{\"Action\":\"pass\",\"Package\":\"seam.test/skip\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        root.join("partial.jsonl"),
+        concat!(
+            "{\"Action\":\"start\",\"Package\":\"seam.test/a\"}\n",
+            "{\"Action\":\"start\",\"Package\":\"seam.test/b\"}\n",
+            "{\"Action\":\"run\",\"Package\":\"seam.test/a\",\"Test\":\"TestSave\"}\n",
+            "{\"Action\":\"pass\",\"Package\":\"seam.test/a\",\"Test\":\"TestSave\"}\n",
+            "{\"Action\":\"pass\",\"Package\":\"seam.test/a\"}\n",
+        ),
+    )
+    .unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait(&app, id);
+    let results = &progress["chapters"]["ex-1"]["lastCheckResults"];
+    assert_eq!(results[0]["status"], "passed", "{results}");
+    assert_eq!(results[0]["testCases"], json!([]));
+    for index in [1, 2, 3] {
+        assert_eq!(results[index]["status"], "failed", "{results}");
+        assert_eq!(results[index]["diffs"][0]["label"], "goTestReport");
+    }
+    assert_eq!(results[2]["testCases"][0]["status"], "skipped");
+    assert_eq!(results[4]["status"], "timedOut", "{results}");
+    assert_eq!(progress["completedExercises"], 0);
+}
+
+#[test]
+fn unsupported_suite_reports_a_check_error_without_requesting_consent_or_running_its_command() {
+    for language in [None, Some("python")] {
+        let (temp, app, id) = fixture_with_language(
+            json!([{"chapterId":"ex-1","checks":[
+                {"id":"suite","title":"Unsupported","type":"test_suite","command":"printf 'printf ran > unwanted.txt' | sh"},
+                {"id":"command","title":"Other Check","type":"command_test","command":"printf checked"}
+            ]}]),
+            "# Course\n\n## Exercise 1\n",
+            language,
+        );
+        let response = send(
+            &app,
+            "runChecks",
+            json!({"workspaceId":id,"chapterId":"ex-1"}),
+        );
+        assert_eq!(response["type"], "verificationStarted", "{response}");
+        let progress = wait(&app, id);
+        let results = &progress["chapters"]["ex-1"]["lastCheckResults"];
+        assert_eq!(results[0]["status"], "failed", "{results}");
+        assert_eq!(
+            results[0]["error"],
+            json!({"code":"TEST_SUITE_ADAPTER_UNAVAILABLE","details":{"checkId":"suite"}})
+        );
+        assert_eq!(results[1]["status"], "passed", "{results}");
+        assert!(!temp.path().join("work/unwanted.txt").exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn default_go_suite_uses_the_selected_managed_runtime() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"go","title":"Default Go Test Suite","type":"test_suite","requireTests":["TestManaged"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let catalog: Value =
+        serde_json::from_str(include_str!("../src/runtime/artifacts.json")).unwrap();
+    let version = catalog["goVersion"].as_str().unwrap();
+    let go_root = temp
+        .path()
+        .join(format!("data/runtimes/go-{version}/toolchain"));
+    let executable = go_root.join("bin/go");
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    fs::write(
+        &executable,
+        concat!(
+            "#!/bin/sh\n",
+            "case \"$*\" in\n",
+            "  'env GOPROXY') printf 'off\\n' ;;\n",
+            "  'test -json -race ./...')\n",
+            "    test \"$GOROOT\" = \"${0%/bin/go}\" || exit 3\n",
+            "    printf '%s\\n' ",
+            "'{\"Action\":\"start\",\"Package\":\"seam.test/managed\"}' ",
+            "'{\"Action\":\"run\",\"Package\":\"seam.test/managed\",\"Test\":\"TestManaged\"}' ",
+            "'{\"Action\":\"pass\",\"Package\":\"seam.test/managed\",\"Test\":\"TestManaged\"}' ",
+            "'{\"Action\":\"pass\",\"Package\":\"seam.test/managed\"}' ;;\n",
+            "  *) exit 2 ;;\n",
+            "esac\n",
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let events = app.subscribe();
+    send(
+        &app,
+        "setRuntimePreference",
+        json!({"language":"Go","preferManaged":true}),
+    );
+    send(&app, "refreshPreflight", Value::Null);
+    loop {
+        if let codelab_core::AppEvent::PreflightUpdated(report) =
+            events.recv_timeout(Duration::from_secs(10)).unwrap()
+            && report.checked
+            && !report.probing
+        {
+            let go = report
+                .languages
+                .iter()
+                .find(|row| row.language == codelab_core::CourseLanguage::Go)
+                .unwrap();
+            assert_eq!(go.selected, Some(codelab_core::RuntimeSource::Managed));
+            break;
+        }
+    }
+
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait_for_go_checks(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{result}");
+    assert_eq!(
+        result["testCases"][0]["name"],
+        "seam.test/managed/TestManaged"
+    );
+    assert_eq!(progress["completedExercises"], 1);
+}
+
+#[test]
+fn incomplete_go_reports_cannot_complete_exercises() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"terminals","title":"Only terminal events","type":"test_suite","command":"cat terminals.jsonl"},
+            {"id":"unstarted","title":"Test never started","type":"test_suite","command":"cat unstarted.jsonl"},
+            {"id":"truncated","title":"Truncated next event","type":"test_suite","command":"cat truncated.jsonl"},
+            {"id":"spanning","title":"Case spans package invocations","type":"test_suite","command":"cat spanning.jsonl"},
+            {"id":"reordered","title":"Truncated reordered event","type":"test_suite","command":"cat reordered.jsonl"},
+            {"id":"structuredLog","title":"Complete report with structured wrapper logging","type":"test_suite","command":"cat structured-log.jsonl"},
+            {"id":"complete","title":"Complete report with wrapper logging","type":"test_suite","command":"cat complete.jsonl"}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    let start = "{\"Action\":\"start\",\"Package\":\"seam.test/report\"}\n";
+    let run = "{\"Action\":\"run\",\"Package\":\"seam.test/report\",\"Test\":\"TestSave\"}\n";
+    let pass = concat!(
+        "{\"Action\":\"pass\",\"Package\":\"seam.test/report\",\"Test\":\"TestSave\"}\n",
+        "{\"Action\":\"pass\",\"Package\":\"seam.test/report\"}\n",
+    );
+    fs::write(root.join("terminals.jsonl"), pass).unwrap();
+    fs::write(root.join("unstarted.jsonl"), format!("{start}{pass}")).unwrap();
+    fs::write(
+        root.join("truncated.jsonl"),
+        format!("{start}{run}{pass}{{\"Action\":\"start\",\"Package\":\"seam.test/next"),
+    )
+    .unwrap();
+    let package_pass = "{\"Action\":\"pass\",\"Package\":\"seam.test/report\"}\n";
+    fs::write(
+        root.join("spanning.jsonl"),
+        format!("{start}{run}{package_pass}{start}{pass}"),
+    )
+    .unwrap();
+    fs::write(
+        root.join("reordered.jsonl"),
+        format!("{start}{run}{pass}{{\"Test\":\"TestOther\",\"Action\":\"run\",\"Package\":"),
+    )
+    .unwrap();
+    fs::write(
+        root.join("structured-log.jsonl"),
+        format!(
+            "{start}{run}{pass}{{\"Time\":\"wrapper\",\"Action\":\"cleanup\",\"status\":\"ok\"}}\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        root.join("complete.jsonl"),
+        format!(
+            "wrapper log\n{{\"status\":\"starting tests\"}}\n{start}{run}{}{}{}",
+            "{\"Action\":\"attr\",\"Package\":\"seam.test/report\",\"Test\":\"TestSave\",\"Key\":\"kind\",\"Value\":\"example\"}\n",
+            "{\"Action\":\"artifacts\",\"Package\":\"seam.test/report\",\"Test\":\"TestSave\",\"Path\":\"test-artifacts\"}\n",
+            pass,
+        ),
+    )
+    .unwrap();
+
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait(&app, id);
+    let results = progress["chapters"]["ex-1"]["lastCheckResults"]
+        .as_array()
+        .unwrap();
+    let statuses: Vec<_> = results
+        .iter()
+        .map(|result| result["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            "failed", "failed", "failed", "failed", "failed", "passed", "passed"
+        ]
+    );
+    assert_eq!(progress["completedExercises"], 0);
+}
+
+#[test]
+fn go_suite_keeps_package_and_subtest_identities_distinct() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"absent","title":"Missing qualified case","type":"test_suite","command":"cat names.jsonl","requireTests":["seam.test/app/TestSave"]},
+            {"id":"joined","title":"Ambiguous joined name","type":"test_suite","command":"cat names.jsonl","requireTests":["outer.test/root/seam.test/app/TestSuite/TestSave"]},
+            {"id":"native","title":"Native subtest name","type":"test_suite","command":"cat names.jsonl","requireTests":["TestSuite/TestSave"]},
+            {"id":"explicit","title":"Explicit package and test","type":"test_suite","command":"cat names.jsonl","requireTests":["outer.test/root/seam.test/app/TestSuite::TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let report = [
+        json!({"Action":"start","Package":"outer.test/root/seam.test/app"}),
+        json!({"Action":"start","Package":"outer.test/root/seam.test/app/TestSuite"}),
+        json!({"Action":"run","Package":"outer.test/root/seam.test/app","Test":"TestSave"}),
+        json!({"Action":"run","Package":"outer.test/root/seam.test/app","Test":"TestSuite"}),
+        json!({"Action":"run","Package":"outer.test/root/seam.test/app","Test":"TestSuite/TestSave"}),
+        json!({"Action":"run","Package":"outer.test/root/seam.test/app","Test":"TestSuite::TestSave"}),
+        json!({"Action":"run","Package":"outer.test/root/seam.test/app/TestSuite","Test":"TestSave"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app","Test":"TestSave"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app","Test":"TestSuite/TestSave"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app","Test":"TestSuite::TestSave"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app","Test":"TestSuite"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app/TestSuite","Test":"TestSave"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app"}),
+        json!({"Action":"pass","Package":"outer.test/root/seam.test/app/TestSuite"}),
+    ].map(|event| event.to_string()).join("\n");
+    fs::write(temp.path().join("work/names.jsonl"), report).unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let result = wait(&app, id);
+    let results = &result["chapters"]["ex-1"]["lastCheckResults"];
+    assert_eq!(
+        results[0]["diffs"][0]["actual"], "missingOrFailed",
+        "{results}"
+    );
+    assert_eq!(
+        results[1]["diffs"][0]["actual"], "ambiguousTestName",
+        "{results}"
+    );
+    assert_eq!(results[2]["status"], "passed", "{results}");
+    assert_eq!(results[3]["status"], "passed", "{results}");
+    let names: Vec<_> = results[3]["testCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|test| test["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names.len(), 5, "{names:?}");
+    assert!(names.contains(&"outer.test/root/seam.test/app::TestSuite/TestSave"));
+    assert!(names.contains(&"outer.test/root/seam.test/app/TestSuite::TestSave"));
+}
+
+#[test]
+fn repeated_go_case_keeps_a_pass_when_a_later_run_skips() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"repeat","title":"Repeated test","type":"test_suite","command":"go test -json -count=2 ./...","requireTests":["TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    fs::write(root.join("go.mod"), "module seam.test/repeat\n\ngo 1.22\n").unwrap();
+    fs::write(
+        root.join("save_test.go"),
+        "package repeat\nimport \"testing\"\nvar calls int\nfunc TestSave(t *testing.T) {\n calls++\n if calls > 1 { t.Skip(\"second run\") }\n}\n",
+    )
+    .unwrap();
+
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait_for_go_checks(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{result}");
+    assert_eq!(result["testCases"][0]["status"], "passed");
+    assert_eq!(progress["completedExercises"], 1);
+}
+
+#[test]
+fn required_go_subtest_names_can_contain_double_colons() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"named","title":"Native and qualified names","type":"test_suite","command":"go test -json ./...","requireTests":[
+                "TestSave/key::value", "seam.test/literal/TestSave/key::value", "seam.test/literal::TestSave/key::value"
+            ]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    fs::write(root.join("go.mod"), "module seam.test/literal\n\ngo 1.22\n").unwrap();
+    fs::write(
+        root.join("save_test.go"),
+        "package literal\nimport \"testing\"\nfunc TestSave(t *testing.T) { t.Run(\"key::value\", func(t *testing.T) {}) }\n",
+    )
+    .unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait_for_go_checks(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{}", result["diffs"]);
+}
+
+#[test]
+fn passing_go_tests_can_share_a_report_with_benchmarks() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"benchmarks","title":"Tests and benchmarks","type":"test_suite","command":"go test -json -bench=. -benchtime=1x ./...","requireTests":["TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    fs::write(
+        root.join("go.mod"),
+        "module seam.test/benchmark\n\ngo 1.22\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("save_test.go"),
+        "package benchmark\nimport \"testing\"\nfunc TestSave(t *testing.T) {}\nfunc BenchmarkSave(b *testing.B) { b.Run(\"child\", func(b *testing.B) {}) }\nfunc BenchmarkLogged(b *testing.B) { b.Log(\"one run\") }\n",
+    )
+    .unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait_for_go_checks(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{}", result["diffs"]);
+    assert_eq!(progress["completedExercises"], 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn go_suite_requires_new_confirmation_when_resolved_working_directory_changes() {
+    use std::os::unix::fs::symlink;
+
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"go","title":"Check a selected directory","type":"test_suite","cwd":"selected","command":"sh -c 'cat report.jsonl'"}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    let root = temp.path().join("work");
+    for (directory, test) in [("first", "TestFirst"), ("second", "TestSecond")] {
+        let package = format!("seam.test/{directory}");
+        let report = [
+            json!({"Action":"start","Package":package}),
+            json!({"Action":"run","Package":package,"Test":test}),
+            json!({"Action":"pass","Package":package,"Test":test}),
+            json!({"Action":"pass","Package":package}),
+        ]
+        .map(|event| event.to_string())
+        .join("\n");
+        fs::create_dir(root.join(directory)).unwrap();
+        fs::write(root.join(directory).join("report.jsonl"), report).unwrap();
+    }
+    let selected = root.join("selected");
+    symlink("first", &selected).unwrap();
+
+    let mut request = json!({"workspaceId":id,"chapterId":"ex-1"});
+    let first = send(&app, "runChecks", request.clone());
+    assert_eq!(first["type"], "commandConfirmationRequired");
+
+    fs::remove_file(&selected).unwrap();
+    symlink("second", &selected).unwrap();
+    request["confirmation"] = first["payload"]["token"].clone();
+    let second = send(&app, "runChecks", request.clone());
+    assert_eq!(second["type"], "commandConfirmationRequired");
+    assert_ne!(first["payload"]["token"], second["payload"]["token"]);
+
+    request["confirmation"] = second["payload"]["token"].clone();
+    assert_eq!(
+        send(&app, "runChecks", request)["type"],
+        "verificationStarted"
+    );
+    let progress = wait(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{result}");
+    assert_eq!(
+        result["testCases"][0]["name"],
+        "seam.test/second/TestSecond"
+    );
+}
+
+#[test]
+fn go_suite_reassembles_benchmark_timing_split_across_output_events() {
+    let (temp, app, id) = fixture_with_language(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"benchmarks","title":"Split benchmark timing","type":"test_suite","command":"cat benchmark.jsonl","requireTests":["TestSave"]}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+        Some("go"),
+    );
+    // This stream includes the timing line split by the Ubuntu Go runner.
+    let report = r#"
+{"Action":"start","Package":"seam.test/benchmark"}
+{"Action":"run","Package":"seam.test/benchmark","Test":"TestSave"}
+{"Action":"pass","Package":"seam.test/benchmark","Test":"TestSave","Elapsed":0}
+{"Action":"run","Package":"seam.test/benchmark","Test":"BenchmarkSave"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkSave","Output":"BenchmarkSave\n"}
+{"Action":"run","Package":"seam.test/benchmark","Test":"BenchmarkSave/child"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkSave/child","Output":"BenchmarkSave/child\n"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkSave/child","Output":"BenchmarkSave/child-2         \t       1\t       500.0 ns/op\n"}
+{"Action":"run","Package":"seam.test/benchmark","Test":"BenchmarkLogged"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkLogged","Output":"BenchmarkLogged\n"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkLogged","Output":"BenchmarkLogged-2             \t"}
+{"Action":"output","Package":"seam.test/benchmark","Test":"BenchmarkLogged","Output":"       1\t     90023 ns/op\n"}
+{"Action":"pass","Package":"seam.test/benchmark","Elapsed":0.023}
+"#;
+    fs::write(temp.path().join("work/benchmark.jsonl"), report).unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let progress = wait(&app, id);
+    let result = &progress["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(result["status"], "passed", "{}", result["diffs"]);
+    assert_eq!(progress["completedExercises"], 1);
 }

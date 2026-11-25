@@ -1,9 +1,14 @@
 mod go;
 mod http;
 pub(crate) mod model;
-use super::{CommandLaunch, Directory, Process, Spawn, environment, execution_error, shell};
+mod suite;
+
+use super::{Directory, Process, Spawn, environment, execution_error, shell_command};
 use crate::runtime::PreflightReport;
-use crate::{CheckDiff, CheckResult, CheckStatus, CourseCheckSpec, CourseLanguage, DomainError};
+use crate::{
+    CheckDiff, CheckKind, CheckResult, CheckStatus, CourseCheckSpec, CourseLanguage, DomainError,
+    ErrorCode,
+};
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{
     Arc,
@@ -11,6 +16,9 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use suite::TestSuiteAdapter;
+
+const OUTPUT_LIMIT: u64 = 2 * 1024 * 1024;
 
 pub(crate) struct VerificationTask {
     pub chapter_id: Option<String>,
@@ -25,49 +33,124 @@ impl Drop for VerificationTask {
         }
     }
 }
-pub(crate) fn command_block(
-    check: &CourseCheckSpec,
+
+pub(crate) struct PreparedCheck {
+    spec: CourseCheckSpec,
     language: Option<CourseLanguage>,
-) -> crate::CommandBlock {
-    crate::CommandBlock {
-        id: check.id.clone(),
-        shell: "sh".into(),
-        command: check.command.clone().unwrap_or_else(|| match language {
-            Some(CourseLanguage::Go) => "go test -json -race ./...".into(),
-            _ => String::new(),
-        }),
-        cwd: check.cwd.clone(),
-        cwd_origin: crate::ValueOrigin::Explicit,
-        mode: crate::CommandMode::Oneshot,
-        mode_origin: crate::ValueOrigin::Explicit,
-        label: Some(check.title.clone()),
-        port: None,
-        is_secondary: false,
+    execution: CheckExecution,
+}
+
+enum CheckExecution {
+    Http,
+    Command {
+        script: String,
+        timeout: Duration,
+        suite: Option<TestSuiteAdapter>,
+    },
+}
+
+impl PreparedCheck {
+    pub fn prepare(
+        check: &CourseCheckSpec,
+        language: Option<CourseLanguage>,
+    ) -> Result<Self, DomainError> {
+        let execution = match check.kind {
+            CheckKind::HttpAssert => CheckExecution::Http,
+            CheckKind::CommandTest | CheckKind::TestSuite => {
+                let suite = if check.kind == CheckKind::TestSuite {
+                    Some(TestSuiteAdapter::for_course(language).ok_or_else(|| {
+                        DomainError::new(ErrorCode::TestSuiteAdapterUnavailable)
+                            .with_detail("checkId", &check.id)
+                    })?)
+                } else {
+                    None
+                };
+                let script = check
+                    .command
+                    .as_deref()
+                    .or_else(|| suite.as_ref().map(|suite| suite.default_command))
+                    .filter(|script| !script.trim().is_empty())
+                    .ok_or_else(|| {
+                        DomainError::new(ErrorCode::CourseChecksInvalid)
+                            .with_detail("checkId", &check.id)
+                    })?;
+                let timeout = check.timeout_sec.unwrap_or_else(|| match &suite {
+                    Some(suite) => suite.default_timeout_sec,
+                    None => default_timeout_sec(language, script),
+                });
+                CheckExecution::Command {
+                    script: script.to_owned(),
+                    timeout: Duration::from_secs(timeout),
+                    suite,
+                }
+            }
+            CheckKind::SelfCheck => {
+                return Err(DomainError::new(ErrorCode::CourseChecksInvalid)
+                    .with_detail("checkId", &check.id));
+            }
+        };
+        Ok(Self {
+            spec: check.clone(),
+            language,
+            execution,
+        })
+    }
+
+    pub fn command(&self) -> Option<&str> {
+        match &self.execution {
+            CheckExecution::Http => None,
+            CheckExecution::Command { script, .. } => Some(script),
+        }
+    }
+
+    pub fn run(
+        self,
+        directory: Directory,
+        report: &PreflightReport,
+        cancelled: &AtomicBool,
+    ) -> Result<CheckResult, DomainError> {
+        match self.execution {
+            CheckExecution::Http => http::run(&self.spec, cancelled),
+            CheckExecution::Command {
+                script,
+                timeout,
+                suite,
+            } => {
+                let output = run_headless(
+                    &script,
+                    directory,
+                    report,
+                    self.language,
+                    timeout,
+                    cancelled,
+                )?;
+                let mut result = command_result(&self.spec, output);
+                if let Some(suite) = suite {
+                    suite.apply_report(&mut result, &self.spec.require_tests);
+                }
+                Ok(result)
+            }
+        }
     }
 }
-pub(crate) fn run_command(
-    check: &CourseCheckSpec,
+
+struct CommandOutput {
+    exit: u32,
+    timed_out: bool,
+    too_large: bool,
+    duration_ms: u64,
+    raw_output: String,
+}
+
+fn run_headless(
+    script: &str,
     directory: Directory,
     report: &PreflightReport,
     language: Option<CourseLanguage>,
+    timeout: Duration,
     cancelled: &AtomicBool,
-) -> Result<CheckResult, DomainError> {
-    if check.kind == crate::CheckKind::HttpAssert {
-        return http::run(check, cancelled);
-    }
-    let block = command_block(check, language);
-    if block.command.trim().is_empty() {
-        return Err(DomainError::new(crate::ErrorCode::CourseChecksInvalid)
-            .with_detail("checkId", &check.id));
-    }
-    let launch = CommandLaunch {
-        script: block.command.clone(),
-        cwd: directory.path.clone(),
-        block,
-        restart_terminal_id: None,
-        cwd_key: String::new(),
-    };
-    let (program, args) = shell(Some(&launch))?;
+) -> Result<CommandOutput, DomainError> {
+    let (program, args) = shell_command("sh", script)?;
     let mut output = tempfile::tempfile().map_err(execution_error)?;
     let mut process = Process::spawn_headless(
         Spawn {
@@ -80,38 +163,45 @@ pub(crate) fn run_command(
     )
     .map_err(execution_error)?;
     let start = Instant::now();
-    let timeout = check
-        .timeout_sec
-        .unwrap_or_else(|| default_timeout_sec(language, &launch.script));
     let (exit, timed_out, too_large) = loop {
         if let Some(exit) = process.reap_if_exited() {
             break (exit, false, false);
         }
-        let timed_out = start.elapsed() >= Duration::from_secs(timeout);
-        let too_large = output.metadata().map_err(execution_error)?.len() > 2 * 1024 * 1024;
+        let timed_out = start.elapsed() >= timeout;
+        let too_large = output.metadata().map_err(execution_error)?.len() > OUTPUT_LIMIT;
         if timed_out || too_large || cancelled.load(Ordering::Acquire) {
             break (process.interrupt(), timed_out, too_large);
         }
         thread::sleep(Duration::from_millis(10));
     };
+    let too_large = too_large || output.metadata().map_err(execution_error)?.len() > OUTPUT_LIMIT;
     output.seek(SeekFrom::Start(0)).map_err(execution_error)?;
     let mut bytes = Vec::new();
     output
-        .take(2 * 1024 * 1024)
+        .take(OUTPUT_LIMIT)
         .read_to_end(&mut bytes)
         .map_err(execution_error)?;
-    let raw_output = String::from_utf8_lossy(&bytes).into_owned();
+    Ok(CommandOutput {
+        exit,
+        timed_out,
+        too_large,
+        duration_ms: start.elapsed().as_millis() as u64,
+        raw_output: String::from_utf8_lossy(&bytes).into_owned(),
+    })
+}
+
+fn command_result(check: &CourseCheckSpec, output: CommandOutput) -> CheckResult {
     let mut diffs = Vec::new();
     let expected = check.expect_exit_code.unwrap_or(0);
-    if exit != expected {
+    if output.exit != expected {
         diffs.push(CheckDiff {
             label: "exitCode".into(),
             expected: expected.to_string(),
-            actual: exit.to_string(),
+            actual: output.exit.to_string(),
         });
     }
     for text in &check.forbid_output {
-        if raw_output.contains(text) {
+        if output.raw_output.contains(text) {
             diffs.push(CheckDiff {
                 label: "forbidOutput".into(),
                 expected: String::new(),
@@ -119,32 +209,28 @@ pub(crate) fn run_command(
             });
         }
     }
-    if too_large {
+    if output.too_large {
         diffs.push(CheckDiff {
             label: "outputLimit".into(),
-            expected: "2097152".into(),
-            actual: ">2097152".into(),
+            expected: OUTPUT_LIMIT.to_string(),
+            actual: format!(">{OUTPUT_LIMIT}"),
         });
     }
-    let mut result = CheckResult {
+    CheckResult {
         check_id: check.id.clone(),
-        status: if timed_out {
+        status: if output.timed_out {
             CheckStatus::TimedOut
         } else if diffs.is_empty() {
             CheckStatus::Passed
         } else {
             CheckStatus::Failed
         },
-        duration_ms: start.elapsed().as_millis() as u64,
+        duration_ms: output.duration_ms,
         diffs,
-        raw_output,
+        raw_output: output.raw_output,
         test_cases: Vec::new(),
         error: None,
-    };
-    if launch.script.contains("go test") && launch.script.contains("-json") {
-        go::adapt(&mut result, &check.require_tests);
     }
-    Ok(result)
 }
 
 fn default_timeout_sec(language: Option<CourseLanguage>, script: &str) -> u64 {
