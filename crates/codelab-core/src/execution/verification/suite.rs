@@ -10,16 +10,10 @@ use std::collections::BTreeMap;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-#[derive(Clone, Copy)]
-pub(super) enum TestSuiteKind {
-    Go,
-    JsTs,
-    Python,
-    Java,
-}
+type SuiteRunner = fn(SuiteRunContext<'_>) -> Result<CheckResult, DomainError>;
 
 pub(super) struct TestSuiteAdapter {
-    kind: TestSuiteKind,
+    runner: SuiteRunner,
     pub default_command: &'static str,
     pub default_timeout_sec: u64,
 }
@@ -38,22 +32,22 @@ impl TestSuiteAdapter {
     pub fn for_course(language: Option<CourseLanguage>) -> Option<Self> {
         match language {
             Some(CourseLanguage::Go) => Some(Self {
-                kind: TestSuiteKind::Go,
+                runner: run_go,
                 default_command: "go test -json -race ./...",
                 default_timeout_sec: 120,
             }),
             Some(CourseLanguage::JsTs) => Some(Self {
-                kind: TestSuiteKind::JsTs,
+                runner: js_ts::run,
                 default_command: js_ts::DEFAULT_COMMAND,
                 default_timeout_sec: js_ts::DEFAULT_TIMEOUT_SEC,
             }),
             Some(CourseLanguage::Python) => Some(Self {
-                kind: TestSuiteKind::Python,
+                runner: python::run,
                 default_command: python::DEFAULT_COMMAND,
                 default_timeout_sec: python::DEFAULT_TIMEOUT_SEC,
             }),
             Some(CourseLanguage::Java) => Some(Self {
-                kind: TestSuiteKind::Java,
+                runner: java::run,
                 default_command: java::DEFAULT_COMMAND,
                 default_timeout_sec: java::DEFAULT_TIMEOUT_SEC,
             }),
@@ -62,34 +56,31 @@ impl TestSuiteAdapter {
     }
 
     pub fn run(&self, ctx: SuiteRunContext<'_>) -> Result<CheckResult, DomainError> {
-        match self.kind {
-            TestSuiteKind::Go => {
-                let output = super::run_headless(
-                    ctx.script,
-                    ctx.directory,
-                    ctx.report,
-                    Some(CourseLanguage::Go),
-                    ctx.timeout,
-                    ctx.cancelled,
-                )?;
-                let mut result = super::command_result(ctx.check, output);
-                if result.status == CheckStatus::TimedOut {
-                    return Ok(result);
-                }
-                let suite_report = go::parse_report(&result.raw_output);
-                apply_suite_report(
-                    &mut result,
-                    suite_report,
-                    "goTestReport",
-                    &ctx.check.require_tests,
-                );
-                Ok(result)
-            }
-            TestSuiteKind::JsTs => js_ts::run(ctx),
-            TestSuiteKind::Python => python::run(ctx),
-            TestSuiteKind::Java => java::run(ctx),
-        }
+        (self.runner)(ctx)
     }
+}
+
+fn run_go(ctx: SuiteRunContext<'_>) -> Result<CheckResult, DomainError> {
+    let output = super::run_headless(
+        ctx.script,
+        ctx.directory,
+        ctx.report,
+        Some(CourseLanguage::Go),
+        ctx.timeout,
+        ctx.cancelled,
+    )?;
+    let mut result = super::command_result(ctx.check, output);
+    if result.status == CheckStatus::TimedOut {
+        return Ok(result);
+    }
+    let suite_report = go::parse_report(&result.raw_output);
+    apply_suite_report(
+        &mut result,
+        suite_report,
+        "goTestReport",
+        &ctx.check.require_tests,
+    );
+    Ok(result)
 }
 
 pub(super) fn apply_suite_report(

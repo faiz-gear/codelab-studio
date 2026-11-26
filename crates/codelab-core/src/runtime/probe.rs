@@ -215,6 +215,17 @@ pub(crate) fn executable_name(name: &str) -> String {
     format!("{name}{}", env::consts::EXE_SUFFIX)
 }
 
+pub(crate) fn probe_executable_output(
+    executable: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<String> {
+    match run_probe(executable, args, Instant::now() + timeout) {
+        HostProbeResult::Found { output, .. } => Some(output),
+        _ => None,
+    }
+}
+
 fn is_executable(path: &Path) -> bool {
     let Ok(metadata) = fs::metadata(path) else {
         return false;

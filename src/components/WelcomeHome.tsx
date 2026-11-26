@@ -42,11 +42,6 @@ export function WelcomeHome({
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
   const latestRecent = recents[0] ?? null;
 
-  const builtinById = new Map<string, CourseSummary>();
-  for (const course of builtinCourses) {
-    builtinById.set(course.courseId, course);
-  }
-
   const progressByCourse = new Map<string, RecentWorkspace>();
   for (const recent of recents) {
     if (!progressByCourse.has(recent.courseId)) {
@@ -74,7 +69,7 @@ export function WelcomeHome({
           title: messages.welcome.courseTexts[course.id]?.title ?? course.id,
           description:
             messages.welcome.courseTexts[course.id]?.description ?? "",
-          builtin: builtinById.get(course.id),
+          builtin: undefined,
         }));
 
   const visibleCourses = catalogCourses.filter(
@@ -184,7 +179,7 @@ export function WelcomeHome({
 
           <div className="course-grid" data-testid="course-grid">
             {visibleCourses.map((course) => {
-              const builtin = course.builtin ?? builtinById.get(course.id);
+              const builtin = course.builtin;
               const matchedRecent = progressByCourse.get(course.id);
               const completed = matchedRecent?.completedExercises ?? 0;
               const total =

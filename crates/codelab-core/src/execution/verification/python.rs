@@ -1,7 +1,7 @@
 use super::suite::{SuiteCaseId, SuiteReport, SuiteRunContext, apply_suite_report};
 use super::{
-    OUTPUT_LIMIT, command_result, parse_simple_command, read_bounded_file, run_headless,
-    run_headless_spawn,
+    OUTPUT_LIMIT, command_result, normalize_executable_name, parse_simple_command,
+    read_bounded_file, run_headless, run_headless_spawn,
 };
 use crate::execution::environment;
 use crate::runtime::{PreflightReport, RuntimeSource, find_host_executable};
@@ -54,15 +54,21 @@ struct PytestCrash {
     message: Option<String>,
 }
 
+enum DirectPytestInvocation {
+    Pytest(Vec<String>),
+    UvRunPytest(Vec<String>),
+}
+
 pub(super) fn run(ctx: SuiteRunContext<'_>) -> Result<CheckResult, DomainError> {
-    let direct_args = if !ctx.explicit_command {
-        Some(Vec::new())
+    let direct = if !ctx.explicit_command {
+        Some(DirectPytestInvocation::Pytest(Vec::new()))
     } else {
         classify_direct_pytest_args(ctx.script)
     };
 
-    if let Some(extra_args) = direct_args
-        && let Some((program, mut base_args)) = resolve_pytest_runner(ctx.report)
+    if let Some(invocation) = direct
+        && let Some((program, mut base_args, extra_args)) =
+            resolve_pytest_runner(ctx.report, invocation)
     {
         let temp = tempfile::tempdir().map_err(super::execution_error)?;
         let report_path = temp.path().join("report.json");
@@ -164,7 +170,8 @@ pub(super) fn parse_report(input: &str) -> SuiteReport {
                 .as_ref()
                 .and_then(format_longrepr)
                 .or_else(|| collector.nodeid.clone())
-                .unwrap_or_else(|| "collection failed".into());
+                .or_else(|| collector.outcome.clone())
+                .unwrap_or_else(|| "error".into());
             collector_errors.push(strip_ansi_escapes::strip_str(detail));
         }
     }
@@ -305,25 +312,21 @@ fn format_longrepr(value: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn classify_direct_pytest_args(script: &str) -> Option<Vec<String>> {
+fn classify_direct_pytest_args(script: &str) -> Option<DirectPytestInvocation> {
     let words = parse_simple_command(script)?;
-    let first = words.first()?.as_str();
-    let bin = first
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(first)
-        .to_ascii_lowercase();
-    let bin = bin.strip_suffix(".exe").unwrap_or(&bin);
-    let rest = if bin == "pytest" {
-        &words[1..]
-    } else if (matches!(bin, "python" | "python3")
+    let bin = normalize_executable_name(words.first()?);
+    let (is_uv_run, rest) = if bin == "pytest" {
+        (false, &words[1..])
+    } else if matches!(bin.as_str(), "python" | "python3")
         && words.get(1).map(String::as_str) == Some("-m")
-        && words.get(2).map(String::as_str) == Some("pytest"))
-        || (bin == "uv"
-            && words.get(1).map(String::as_str) == Some("run")
-            && words.get(2).map(String::as_str) == Some("pytest"))
+        && words.get(2).map(String::as_str) == Some("pytest")
     {
-        &words[3..]
+        (false, &words[3..])
+    } else if bin == "uv"
+        && words.get(1).map(String::as_str) == Some("run")
+        && words.get(2).map(String::as_str) == Some("pytest")
+    {
+        (true, &words[3..])
     } else {
         return None;
     };
@@ -333,48 +336,83 @@ fn classify_direct_pytest_args(script: &str) -> Option<Vec<String>> {
     {
         return None;
     }
-    Some(rest.to_vec())
+    if is_uv_run {
+        Some(DirectPytestInvocation::UvRunPytest(rest.to_vec()))
+    } else {
+        Some(DirectPytestInvocation::Pytest(rest.to_vec()))
+    }
 }
 
-fn resolve_pytest_runner(report: &PreflightReport) -> Option<(PathBuf, Vec<OsString>)> {
+fn resolve_pytest_runner(
+    report: &PreflightReport,
+    invocation: DirectPytestInvocation,
+) -> Option<(PathBuf, Vec<OsString>, Vec<String>)> {
     let row = report
         .languages
         .iter()
         .find(|row| row.language == CourseLanguage::Python);
-    if let Some(row) = row {
-        match row.selected {
-            Some(RuntimeSource::Managed) => {
-                if let Some(managed) = &row.managed
-                    && managed.executable.is_file()
-                {
-                    return Some((
-                        managed.executable.clone(),
-                        vec![OsString::from("-m"), OsString::from("pytest")],
-                    ));
+
+    match invocation {
+        DirectPytestInvocation::UvRunPytest(extra) => {
+            let uv = row
+                .and_then(|row| row.managed.as_ref())
+                .and_then(|managed| managed.uv.as_ref())
+                .filter(|path| path.is_file())
+                .cloned()
+                .or_else(|| find_host_executable("uv"))?;
+            Some((
+                uv,
+                vec![OsString::from("run"), OsString::from("pytest")],
+                extra,
+            ))
+        }
+        DirectPytestInvocation::Pytest(extra) => {
+            if let Some(row) = row {
+                match row.selected {
+                    Some(RuntimeSource::Managed) => {
+                        if let Some(managed) = &row.managed
+                            && managed.executable.is_file()
+                        {
+                            return Some((
+                                managed.executable.clone(),
+                                vec![OsString::from("-m"), OsString::from("pytest")],
+                                extra,
+                            ));
+                        }
+                    }
+                    Some(RuntimeSource::System { tool }) => {
+                        if let Some(exe) = row
+                            .system
+                            .iter()
+                            .find(|check| check.tool == tool)
+                            .and_then(|check| check.executable.clone())
+                            .filter(|path| path.is_file())
+                        {
+                            return Some((
+                                exe,
+                                vec![OsString::from("-m"), OsString::from("pytest")],
+                                extra,
+                            ));
+                        }
+                    }
+                    None => {}
                 }
             }
-            Some(RuntimeSource::System { tool }) => {
-                if let Some(exe) = row
-                    .system
-                    .iter()
-                    .find(|check| check.tool == tool)
-                    .and_then(|check| check.executable.clone())
-                    .filter(|path| path.is_file())
-                {
-                    return Some((exe, vec![OsString::from("-m"), OsString::from("pytest")]));
-                }
+            if let Some(pytest) = find_host_executable("pytest") {
+                return Some((pytest, Vec::new(), extra));
             }
-            None => {}
+            if let Some(python) =
+                find_host_executable("python3").or_else(|| find_host_executable("python"))
+            {
+                return Some((
+                    python,
+                    vec![OsString::from("-m"), OsString::from("pytest")],
+                    extra,
+                ));
+            }
+            None
         }
     }
-    if let Some(pytest) = find_host_executable("pytest") {
-        return Some((pytest, Vec::new()));
-    }
-    if let Some(python) = find_host_executable("python3").or_else(|| find_host_executable("python"))
-    {
-        return Some((python, vec![OsString::from("-m"), OsString::from("pytest")]));
-    }
-    None
 }
 
 fn extract_python_error(raw_output: &str) -> Option<String> {

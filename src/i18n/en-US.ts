@@ -478,6 +478,12 @@ export const enUS: Messages = {
       "Checks specification (.codelab-checks.json) is invalid. Check schemaVersion and check types.",
     TEST_SUITE_ADAPTER_UNAVAILABLE:
       "Test Suite {checkId} needs a supported Course language (Go, JS/TS, Python, or Java).",
+    JAVA_TOOLCHAIN_UNAVAILABLE:
+      "JDK 21 javac/java executables were not found. Install a local JDK 21 or install the Managed Java runtime in Preflight.",
+    JAVA_JUNIT_LAUNCHER_UNAVAILABLE:
+      "JUnit 5 Console Launcher jar was not found. Install the Managed Java runtime in Preflight or set CODELAB_JUNIT_JAR.",
+    JAVA_SOURCES_NOT_FOUND:
+      "No .java source files were found in the active Workspace directory.",
     GIT_COURSE_FETCH_FAILED: "Unable to fetch “{url}”. Check that Git is installed and the repository is reachable.",
     GIT_COURSE_CACHE_FAILED: "Unable to read or write the Git Course cache.",
     NO_ACTIVE_GIT_COURSE: "Open a Git Course Pack to pull upstream updates.",

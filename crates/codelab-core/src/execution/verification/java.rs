@@ -8,7 +8,7 @@ use crate::execution::environment;
 use crate::runtime::{
     HostTool, PreflightReport, RuntimeSource, executable_name, find_host_executable,
 };
-use crate::{CheckDiff, CheckResult, CheckStatus, CourseLanguage, DomainError};
+use crate::{CheckDiff, CheckResult, CheckStatus, CourseLanguage, DomainError, ErrorCode};
 use cap_fs_ext::DirExt;
 use cap_std::fs::Dir;
 use std::ffi::OsString;
@@ -70,44 +70,17 @@ fn run_direct(
     selector_args: Vec<String>,
 ) -> Result<CheckResult, DomainError> {
     let start = Instant::now();
-    let toolchain = match resolve_java_toolchain(ctx.report, &ctx.directory.path) {
-        Ok(toolchain) => toolchain,
-        Err(diagnostic) => {
-            return Ok(CheckResult {
-                check_id: ctx.check.id.clone(),
-                status: CheckStatus::Failed,
-                duration_ms: start.elapsed().as_millis() as u64,
-                diffs: vec![CheckDiff {
-                    label: REPORT_LABEL.into(),
-                    expected: "pass".into(),
-                    actual: diagnostic.clone(),
-                }],
-                raw_output: diagnostic,
-                test_cases: Vec::new(),
-                error: None,
-            });
-        }
-    };
+    let toolchain = resolve_java_toolchain(ctx.report, &ctx.directory.handle, &ctx.directory.path)
+        .map_err(|code| DomainError::new(code).with_detail("checkId", &ctx.check.id))?;
 
     let mut sources = Vec::new();
     collect_java_sources(&ctx.directory.handle, Path::new(""), &mut sources)
         .map_err(super::execution_error)?;
     sources.sort();
     if sources.is_empty() {
-        let message = "no .java source files found in workspace directory".to_owned();
-        return Ok(CheckResult {
-            check_id: ctx.check.id.clone(),
-            status: CheckStatus::Failed,
-            duration_ms: start.elapsed().as_millis() as u64,
-            diffs: vec![CheckDiff {
-                label: REPORT_LABEL.into(),
-                expected: "pass".into(),
-                actual: message.clone(),
-            }],
-            raw_output: message,
-            test_cases: Vec::new(),
-            error: None,
-        });
+        return Err(
+            DomainError::new(ErrorCode::JavaSourcesNotFound).with_detail("checkId", &ctx.check.id)
+        );
     }
 
     let temp = tempfile::tempdir().map_err(super::execution_error)?;
@@ -157,16 +130,13 @@ fn run_direct(
         let compile_text = strip_ansi_escapes::strip_str(&compile_output.raw_output);
         let mut result = command_result(ctx.check, compile_output);
         let detail = compile_text.trim();
-        let message = if detail.is_empty() {
-            "javac compilation failed".to_owned()
-        } else {
-            detail.to_owned()
-        };
-        result.diffs.push(CheckDiff {
-            label: REPORT_LABEL.into(),
-            expected: "pass".into(),
-            actual: message,
-        });
+        if !detail.is_empty() {
+            result.diffs.push(CheckDiff {
+                label: REPORT_LABEL.into(),
+                expected: "pass".into(),
+                actual: detail.to_owned(),
+            });
+        }
         result.status = CheckStatus::Failed;
         return Ok(result);
     }
@@ -280,8 +250,9 @@ fn classify_direct_junit_args(script: &str) -> Option<Vec<String>> {
 
 fn resolve_java_toolchain(
     report: &PreflightReport,
+    workspace_handle: &Dir,
     workspace_dir: &Path,
-) -> Result<JavaToolchain, String> {
+) -> Result<JavaToolchain, ErrorCode> {
     let row = report
         .languages
         .iter()
@@ -293,7 +264,7 @@ fn resolve_java_toolchain(
                 let managed = row
                     .managed
                     .as_ref()
-                    .ok_or_else(|| "managed Java runtime is not installed".to_owned())?;
+                    .ok_or(ErrorCode::JavaToolchainUnavailable)?;
                 let java = managed.executable.clone();
                 let javac = java.with_file_name(executable_name("javac"));
                 (javac, java)
@@ -307,35 +278,28 @@ fn resolve_java_toolchain(
                     .find(|check| check.tool == HostTool::Javac)
                     .and_then(|check| check.executable.clone())
                     .or_else(find_host_javac)
-                    .ok_or_else(|| "javac executable not found".to_owned())?;
+                    .ok_or(ErrorCode::JavaToolchainUnavailable)?;
                 let java = javac.with_file_name(executable_name("java"));
                 (javac, java)
             }
             _ => {
-                let javac = find_host_javac()
-                    .ok_or_else(|| "JDK 21 javac executable not found".to_owned())?;
+                let javac = find_host_javac().ok_or(ErrorCode::JavaToolchainUnavailable)?;
                 let java = javac.with_file_name(executable_name("java"));
                 (javac, java)
             }
         }
     } else {
-        let javac =
-            find_host_javac().ok_or_else(|| "JDK 21 javac executable not found".to_owned())?;
+        let javac = find_host_javac().ok_or(ErrorCode::JavaToolchainUnavailable)?;
         let java = javac.with_file_name(executable_name("java"));
         (javac, java)
     };
 
     if !javac.is_file() || !java.is_file() {
-        return Err(format!(
-            "Java compiler/runtime unavailable: javac={} java={}",
-            javac.display(),
-            java.display()
-        ));
+        return Err(ErrorCode::JavaToolchainUnavailable);
     }
 
-    let junit_jar = find_junit_jar(row, report, workspace_dir).ok_or_else(|| {
-        "JUnit 5 Console Launcher jar not found (install Managed Java runtime or set CODELAB_JUNIT_JAR)".to_owned()
-    })?;
+    let junit_jar = find_junit_jar(row, report, workspace_handle, workspace_dir)
+        .ok_or(ErrorCode::JavaJunitLauncherUnavailable)?;
 
     Ok(JavaToolchain {
         javac,
@@ -356,9 +320,14 @@ fn find_host_javac() -> Option<PathBuf> {
     find_host_executable("javac")
 }
 
+fn is_junit_standalone_jar(name: &str) -> bool {
+    name.starts_with("junit-platform-console-standalone") && name.ends_with(".jar")
+}
+
 fn find_junit_jar(
     row: Option<&crate::runtime::LanguagePreflight>,
     report: &PreflightReport,
+    workspace_handle: &Dir,
     workspace_dir: &Path,
 ) -> Option<PathBuf> {
     if let Some(managed) = row.and_then(|row| row.managed.as_ref())
@@ -382,27 +351,25 @@ fn find_junit_jar(
             {
                 for item in sub.flatten() {
                     let fname = item.file_name();
-                    let fname = fname.to_string_lossy();
-                    if fname.starts_with("junit-platform-console-standalone")
-                        && fname.ends_with(".jar")
-                        && item.path().is_file()
-                    {
+                    if is_junit_standalone_jar(&fname.to_string_lossy()) && item.path().is_file() {
                         return Some(item.path());
                     }
                 }
             }
         }
     }
-    let lib_dir = workspace_dir.join("lib");
-    if let Ok(entries) = fs::read_dir(lib_dir) {
+    if let Ok(lib_dir) = workspace_handle.open_dir_nofollow("lib")
+        && let Ok(entries) = lib_dir.entries()
+    {
         for entry in entries.flatten() {
             let fname = entry.file_name();
-            let fname = fname.to_string_lossy();
-            if fname.starts_with("junit-platform-console-standalone")
-                && fname.ends_with(".jar")
-                && entry.path().is_file()
+            let Some(name_str) = fname.to_str() else {
+                continue;
+            };
+            if is_junit_standalone_jar(name_str)
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
             {
-                return Some(entry.path());
+                return Some(workspace_dir.join("lib").join(name_str));
             }
         }
     }

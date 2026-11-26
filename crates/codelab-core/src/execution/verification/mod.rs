@@ -337,6 +337,15 @@ fn default_timeout_sec(language: Option<CourseLanguage>, script: &str) -> u64 {
     }
 }
 
+fn normalize_executable_name(raw: &str) -> String {
+    let base = raw
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(raw)
+        .to_ascii_lowercase();
+    base.strip_suffix(".exe").unwrap_or(&base).to_owned()
+}
+
 fn runs_compiled_toolchain_command(script: &str) -> bool {
     let mut parser = tree_sitter::Parser::new();
     if parser
@@ -365,14 +374,9 @@ fn runs_compiled_toolchain_command(script: &str) -> bool {
                 .peekable();
             while let Some(raw) = words.next() {
                 let word = raw.trim_matches(|ch| ch == '\'' || ch == '"');
-                let executable = word
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or(word)
-                    .to_ascii_lowercase();
-                let executable = executable.strip_suffix(".exe").unwrap_or(&executable);
+                let executable = normalize_executable_name(word);
                 if matches!(
-                    executable,
+                    executable.as_str(),
                     "command" | "exec" | "env" | "nohup" | "builtin" | "time"
                 ) {
                     while words
@@ -384,7 +388,7 @@ fn runs_compiled_toolchain_command(script: &str) -> bool {
                     continue;
                 }
                 if matches!(
-                    executable,
+                    executable.as_str(),
                     "go" | "java" | "javac" | "mvn" | "mvnw" | "gradle" | "gradlew"
                 ) {
                     return true;

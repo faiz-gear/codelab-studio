@@ -1990,6 +1990,16 @@ fn python_adapter_parses_passes_assertion_diffs_collector_syntax_errors_and_8s_t
                         "outcome": "failed",
                         "longrepr": "E         Full diff:\nE           [\nE         -   'books',\nE         +   'draft',\nE           ]"
                     }
+                },
+                {
+                    "nodeid": "tests/test_clean.py::test_source_context_not_misread",
+                    "outcome": "failed",
+                    "call": {
+                        "duration": 0.002,
+                        "outcome": "failed",
+                        "crash": {"message": "AssertionError: assert [] == ['ord-1']"},
+                        "longrepr": "    def test_source_context_not_misread():\n        assert invalid == []\n>       assert valid == ['ord-1']\nE       AssertionError: assert [] == ['ord-1']"
+                    }
                 }
             ]
         })
@@ -2047,6 +2057,12 @@ fn python_adapter_parses_passes_assertion_diffs_collector_syntax_errors_and_8s_t
         .unwrap();
     assert!(full["expected"].as_str().unwrap().contains("'books'"));
     assert!(full["actual"].as_str().unwrap().contains("'draft'"));
+    let ctx_diff = diffs
+        .iter()
+        .find(|d| d["label"] == "tests/test_clean.py::test_source_context_not_misread")
+        .unwrap();
+    assert_eq!(ctx_diff["expected"], "['ord-1']");
+    assert_eq!(ctx_diff["actual"], "[]");
 
     assert_eq!(results[1]["status"], "failed", "{}", results[1]);
     assert_eq!(results[1]["diffs"][0]["label"], "pytestReport");
@@ -2185,6 +2201,21 @@ fn java_adapter_parses_passes_junit5_diffs_invalid_xml_and_enforces_12s_timeout(
 }
 
 #[cfg(unix)]
+fn refresh_preflight_blocking(app: &App) {
+    let events = app.subscribe();
+    send(app, "refreshPreflight", Value::Null);
+    loop {
+        if let codelab_core::AppEvent::PreflightUpdated(report) =
+            events.recv_timeout(Duration::from_secs(10)).unwrap()
+            && report.checked
+            && !report.probing
+        {
+            break;
+        }
+    }
+}
+
+#[cfg(unix)]
 #[test]
 fn managed_runtimes_drive_bun_pytest_and_two_phase_javac_junit_including_compile_errors() {
     use std::os::unix::fs::PermissionsExt;
@@ -2266,22 +2297,12 @@ fn managed_runtimes_drive_bun_pytest_and_two_phase_javac_junit_including_compile
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/Demo.java"), "class Demo { BROKEN_SYNTAX }\n").unwrap();
 
-    let events = app.subscribe();
     send(
         &app,
         "setRuntimePreference",
         json!({"language":"Java","preferManaged":true}),
     );
-    send(&app, "refreshPreflight", Value::Null);
-    loop {
-        if let codelab_core::AppEvent::PreflightUpdated(report) =
-            events.recv_timeout(Duration::from_secs(10)).unwrap()
-            && report.checked
-            && !report.probing
-        {
-            break;
-        }
-    }
+    refresh_preflight_blocking(&app);
 
     // Compile error fails Phase 1 and must NOT invoke Phase 2 java
     send(
@@ -2315,6 +2336,48 @@ fn managed_runtimes_drive_bun_pytest_and_two_phase_javac_junit_including_compile
     assert_eq!(r_ok["status"], "passed", "{r_ok}");
     assert_eq!(r_ok["testCases"][0]["name"], "com.example.DemoTest#works");
     assert_eq!(passed["completedExercises"], 1);
+
+    // Removing all .java sources reports code-only DomainError JAVA_SOURCES_NOT_FOUND.
+    fs::remove_file(root.join("src/Demo.java")).unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let no_src = wait(&app, id);
+    let r_no_src = &no_src["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(r_no_src["status"], "failed", "{r_no_src}");
+    assert_eq!(
+        r_no_src["error"]["code"], "JAVA_SOURCES_NOT_FOUND",
+        "{r_no_src}"
+    );
+
+    // Symlinked workspace/lib/junit*.jar must be rejected (canonical root containment).
+    let outside = TempDir::new().unwrap();
+    let outside_jar = outside
+        .path()
+        .join("junit-platform-console-standalone-1.13.4.jar");
+    fs::write(&outside_jar, "outside jar").unwrap();
+    fs::create_dir_all(root.join("lib")).unwrap();
+    std::os::unix::fs::symlink(
+        &outside_jar,
+        root.join("lib/junit-platform-console-standalone-1.13.4.jar"),
+    )
+    .unwrap();
+    fs::remove_file(&junit_jar).unwrap();
+    fs::write(root.join("src/Demo.java"), "class Demo {}\n").unwrap();
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-1"}),
+    );
+    let sym_err = wait(&app, id);
+    let r_sym = &sym_err["chapters"]["ex-1"]["lastCheckResults"][0];
+    assert_eq!(r_sym["status"], "failed", "{r_sym}");
+    assert_eq!(
+        r_sym["error"]["code"], "JAVA_JUNIT_LAUNCHER_UNAVAILABLE",
+        "{r_sym}"
+    );
 
     // 2. Managed Bun & Managed Python invoke selected managed binaries with temp report files
     let (temp_py, app_py, id_py) = fixture_with_language(
@@ -2365,22 +2428,12 @@ fn managed_runtimes_drive_bun_pytest_and_two_phase_javac_junit_including_compile
     fs::set_permissions(&py_exe, fs::Permissions::from_mode(0o755)).unwrap();
     fs::set_permissions(&uv_exe, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let events_py = app_py.subscribe();
     send(
         &app_py,
         "setRuntimePreference",
         json!({"language":"Python","preferManaged":true}),
     );
-    send(&app_py, "refreshPreflight", Value::Null);
-    loop {
-        if let codelab_core::AppEvent::PreflightUpdated(report) =
-            events_py.recv_timeout(Duration::from_secs(10)).unwrap()
-            && report.checked
-            && !report.probing
-        {
-            break;
-        }
-    }
+    refresh_preflight_blocking(&app_py);
     send(
         &app_py,
         "runChecks",
@@ -2422,22 +2475,12 @@ fn managed_runtimes_drive_bun_pytest_and_two_phase_javac_junit_including_compile
     .unwrap();
     fs::set_permissions(&bun_exe, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let events_js = app_js.subscribe();
     send(
         &app_js,
         "setRuntimePreference",
         json!({"language":"JS/TS","preferManaged":true}),
     );
-    send(&app_js, "refreshPreflight", Value::Null);
-    loop {
-        if let codelab_core::AppEvent::PreflightUpdated(report) =
-            events_js.recv_timeout(Duration::from_secs(10)).unwrap()
-            && report.checked
-            && !report.probing
-        {
-            break;
-        }
-    }
+    refresh_preflight_blocking(&app_js);
     send(
         &app_js,
         "runChecks",
@@ -2701,22 +2744,12 @@ sys.exit(1 if failed else 0)
         data_dir: temp.path().join("data"),
     })
     .unwrap();
-    let events = app.subscribe();
     send(
         &app,
         "setRuntimePreference",
         json!({"language":"Python","preferManaged":true}),
     );
-    send(&app, "refreshPreflight", Value::Null);
-    loop {
-        if let codelab_core::AppEvent::PreflightUpdated(report) =
-            events.recv_timeout(Duration::from_secs(10)).unwrap()
-            && report.checked
-            && !report.probing
-        {
-            break;
-        }
-    }
+    refresh_preflight_blocking(&app);
 
     send(
         &app,
@@ -2877,22 +2910,12 @@ fi
         data_dir: temp.path().join("data"),
     })
     .unwrap();
-    let events = app.subscribe();
     send(
         &app,
         "setRuntimePreference",
         json!({"language":"Java","preferManaged":true}),
     );
-    send(&app, "refreshPreflight", Value::Null);
-    loop {
-        if let codelab_core::AppEvent::PreflightUpdated(report) =
-            events.recv_timeout(Duration::from_secs(10)).unwrap()
-            && report.checked
-            && !report.probing
-        {
-            break;
-        }
-    }
+    refresh_preflight_blocking(&app);
 
     send(
         &app,

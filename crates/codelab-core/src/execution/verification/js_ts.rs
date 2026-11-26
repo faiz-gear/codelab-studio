@@ -1,14 +1,17 @@
 use super::suite::{SuiteReport, SuiteRunContext, apply_suite_report};
 use super::xml::{JunitXmlOptions, parse_junit_xml};
 use super::{
-    CommandOutput, OUTPUT_LIMIT, command_result, parse_simple_command, read_bounded_file,
-    run_headless, run_headless_spawn,
+    CommandOutput, OUTPUT_LIMIT, command_result, normalize_executable_name, parse_simple_command,
+    read_bounded_file, run_headless, run_headless_spawn,
 };
 use crate::execution::environment;
-use crate::runtime::{HostTool, PreflightReport, RuntimeSource, find_host_executable};
+use crate::runtime::{
+    HostTool, PreflightReport, RuntimeSource, find_host_executable, probe_executable_output,
+};
 use crate::{CheckResult, CheckStatus, CourseLanguage, DomainError};
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const XML_OPTIONS: JunitXmlOptions = JunitXmlOptions {
     strip_empty_parens: false,
@@ -77,7 +80,10 @@ fn run_direct(
     let env = environment(ctx.report, Some(CourseLanguage::JsTs))?;
 
     let (program, args) = match (runner, invocation) {
-        (JsTsRunner::Bun(exe), DirectInvocation::BunTest(extra)) => {
+        (
+            JsTsRunner::Bun(exe),
+            DirectInvocation::BunTest(extra) | DirectInvocation::NodeTest(extra),
+        ) => {
             let mut args = vec![OsString::from("test")];
             args.extend(extra.into_iter().map(OsString::from));
             args.push(OsString::from("--reporter=junit"));
@@ -108,16 +114,6 @@ fn run_direct(
             args.push(OsString::from("--test-reporter-destination=stdout"));
             args.extend(extra.into_iter().map(OsString::from));
             (executable, args)
-        }
-        (JsTsRunner::Bun(exe), DirectInvocation::NodeTest(extra)) => {
-            let mut args = vec![OsString::from("test")];
-            args.extend(extra.into_iter().map(OsString::from));
-            args.push(OsString::from("--reporter=junit"));
-            args.push(OsString::from(format!(
-                "--reporter-outfile={}",
-                report_path.display()
-            )));
-            (exe, args)
         }
     };
 
@@ -166,13 +162,7 @@ fn parse_output_report(raw_output: &str) -> SuiteReport {
 
 fn classify_direct_command(script: &str) -> Option<DirectInvocation> {
     let words = parse_simple_command(script)?;
-    let first = words.first()?.as_str();
-    let bin = first
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(first)
-        .to_ascii_lowercase();
-    let bin = bin.strip_suffix(".exe").unwrap_or(&bin);
+    let bin = normalize_executable_name(words.first()?);
     if bin == "bun" && words.get(1).map(String::as_str) == Some("test") {
         let rest = &words[2..];
         if rest
@@ -208,17 +198,21 @@ fn resolve_runner(report: &PreflightReport, invocation: &DirectInvocation) -> Op
         .iter()
         .find(|row| row.language == CourseLanguage::JsTs);
 
-    let find_node = || {
+    let find_node = |require_typescript: bool| {
         let node_check =
             row.and_then(|row| row.system.iter().find(|check| check.tool == HostTool::Node));
         let exe = node_check
             .and_then(|check| check.executable.clone())
             .filter(|path| path.is_file())
             .or_else(|| find_host_executable("node"))?;
-        let needs_strip_types = node_check
+        let version = node_check
             .and_then(|check| check.value.as_deref())
-            .map(node_needs_strip_types_flag)
-            .unwrap_or_else(|| probe_node_needs_strip_types(&exe));
+            .and_then(parse_node_major_minor)
+            .or_else(|| probe_node_major_minor(&exe));
+        if require_typescript && !version.is_some_and(node_supports_typescript) {
+            return None;
+        }
+        let needs_strip_types = version.is_some_and(node_needs_strip_types_flag);
         Some(JsTsRunner::Node {
             executable: exe,
             needs_strip_types,
@@ -244,9 +238,14 @@ fn resolve_runner(report: &PreflightReport, invocation: &DirectInvocation) -> Op
     };
 
     match invocation {
-        DirectInvocation::NodeTest(_) => find_node(),
+        DirectInvocation::NodeTest(_) => find_node(false),
         DirectInvocation::BunTest(args) => {
             let has_bun_flags = args.iter().any(|arg| arg.starts_with('-'));
+            let targets_ts = args.is_empty()
+                || args.iter().any(|arg| {
+                    let lower = arg.to_ascii_lowercase();
+                    lower.ends_with(".ts") || lower.ends_with(".mts") || lower.ends_with(".cts")
+                });
             if let Some(row) = row {
                 match row.selected {
                     Some(RuntimeSource::Managed) => {
@@ -266,8 +265,8 @@ fn resolve_runner(report: &PreflightReport, invocation: &DirectInvocation) -> Op
                     Some(RuntimeSource::System {
                         tool: HostTool::Node,
                     }) => {
-                        if !has_bun_flags {
-                            return find_node();
+                        if !has_bun_flags && let Some(node) = find_node(targets_ts) {
+                            return Some(node);
                         }
                         return find_bun();
                     }
@@ -278,33 +277,32 @@ fn resolve_runner(report: &PreflightReport, invocation: &DirectInvocation) -> Op
                 return Some(bun);
             }
             if !has_bun_flags {
-                return find_node();
+                return find_node(targets_ts);
             }
             None
         }
     }
 }
 
-fn probe_node_needs_strip_types(executable: &std::path::Path) -> bool {
-    let Ok(output) = std::process::Command::new(executable)
-        .arg("--version")
-        .output()
-    else {
-        return false;
-    };
-    if !output.status.success() {
-        return false;
-    }
-    let version = String::from_utf8_lossy(&output.stdout);
-    node_needs_strip_types_flag(&version)
+fn probe_node_major_minor(executable: &Path) -> Option<(u32, u32)> {
+    let output = probe_executable_output(executable, &["--version"], Duration::from_secs(3))?;
+    parse_node_major_minor(&output)
 }
 
-fn node_needs_strip_types_flag(version: &str) -> bool {
+fn parse_node_major_minor(version: &str) -> Option<(u32, u32)> {
     let trimmed = version.trim().trim_start_matches('v');
     let mut parts = trimmed.split('.');
-    let major: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-    let minor: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-    major == 22 && (6..18).contains(&minor)
+    let major: u32 = parts.next()?.parse().ok()?;
+    let minor: u32 = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+fn node_supports_typescript((major, minor): (u32, u32)) -> bool {
+    (major == 22 && minor >= 6) || major >= 23
+}
+
+fn node_needs_strip_types_flag((major, minor): (u32, u32)) -> bool {
+    (major == 22 && (6..18).contains(&minor)) || (major == 23 && minor < 6)
 }
 
 fn extract_syntax_error(raw_output: &str, no_tests_recorded: bool) -> Option<String> {

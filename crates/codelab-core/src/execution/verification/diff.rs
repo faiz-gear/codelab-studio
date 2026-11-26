@@ -223,19 +223,24 @@ fn extract_node_object_properties(text: &str) -> Option<ExtractedDiff> {
 }
 
 fn extract_pytest_assert_eq(text: &str) -> Option<ExtractedDiff> {
-    // Pytest:
-    // `AssertionError: assert <actual> == <expected>`
-    // or `E       assert <actual> == <expected>`
+    // Pytest failure lines ONLY (skip source context lines before `E   ...` so earlier
+    // passing `assert ... == ...` statements in the same test body are never mistaken
+    // for the failing assertion):
+    //   `E       AssertionError: assert <actual> == <expected>`
+    //   `E       assert <actual> == <expected>`
+    //   `AssertionError: assert <actual> == <expected>`
     for line in text.lines() {
-        let candidate = line.trim();
-        let candidate = candidate
+        let trimmed = line.trim();
+        let expr = if let Some(rest) = trimmed
             .strip_prefix("E ")
-            .or_else(|| candidate.strip_prefix("E\t"))
-            .unwrap_or(candidate)
-            .trim();
-        let expr = candidate
-            .strip_prefix("AssertionError: assert ")
-            .or_else(|| candidate.strip_prefix("assert "));
+            .or_else(|| trimmed.strip_prefix("E\t"))
+        {
+            let rest = rest.trim();
+            rest.strip_prefix("AssertionError: assert ")
+                .or_else(|| rest.strip_prefix("assert "))
+        } else {
+            trimmed.strip_prefix("AssertionError: assert ")
+        };
         let Some(expr) = expr else {
             continue;
         };
