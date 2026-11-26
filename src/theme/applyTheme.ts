@@ -45,7 +45,13 @@ export function readCachedSettings(): GlobalSettings {
         ? parsed.locale
         : DEFAULT_SETTINGS.locale;
 
-    return { theme, accent, codeFontSize, locale };
+    return {
+      theme,
+      accent,
+      codeFontSize,
+      locale,
+      tutor: { ...DEFAULT_SETTINGS.tutor },
+    };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

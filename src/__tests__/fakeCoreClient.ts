@@ -1,7 +1,9 @@
 import type { CoreClient, CoreEventListener, Unsubscribe } from "../core/client";
 import {
+  ACP_AGENT_PRESETS,
   CoreCommandError,
   DEFAULT_SETTINGS,
+  DEFAULT_TUTOR_SETTINGS,
   type AppCommand,
   type AppEvent,
   type AppResponse,
@@ -15,6 +17,11 @@ import {
   type RecentWorkspace,
   type StorageRecoveryNotice,
   type TrustEntry,
+  type TutorFileChange,
+  type TutorHandshakeResult,
+  type TutorMessage,
+  type TutorPermissionRequest,
+  type TutorSessionSnapshot,
   type WorkspaceEntry,
   type WorkspaceFile,
   type WorkspaceSummary,
@@ -233,7 +240,14 @@ export class FakeCoreClient implements CoreClient {
   readonly commandLog: AppCommand[] = [];
 
   constructor(private options: FakeCoreClientOptions = {}) {
-    this.settings = { ...DEFAULT_SETTINGS, ...options.settings };
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...options.settings,
+      tutor: {
+        ...DEFAULT_TUTOR_SETTINGS,
+        ...(options.settings?.tutor ?? {}),
+      },
+    };
     this.preflight = options.preflight ?? {
       revision: 0,
       checked: true,
@@ -444,6 +458,143 @@ export class FakeCoreClient implements CoreClient {
   }
 
   progress: import("../core/contracts").LearningProgress | null = null;
+  private tutorSeq = 1;
+  private tutorSessions = new Map<number, TutorSessionSnapshot>();
+  private tutorHandshakeOverride: TutorHandshakeResult | null = null;
+
+  setTutorHandshakeResult(result: TutorHandshakeResult | null) {
+    this.tutorHandshakeOverride = result;
+  }
+
+  private ensureTutorSession(workspaceId: number): TutorSessionSnapshot {
+    this.workspaceRoot(workspaceId);
+    const existing = this.tutorSessions.get(workspaceId);
+    if (existing) return existing;
+    const initial: TutorSessionSnapshot = {
+      workspaceId,
+      status: "idle",
+      processRunning: false,
+      sessionReused: false,
+      preset: this.settings.tutor.preset,
+      command: this.settings.tutor.command,
+      agentName: null,
+      permissionPolicy: this.settings.tutor.permissionPolicy,
+      teachingStyle: this.settings.tutor.teachingStyle,
+      activeTurnId: null,
+      lastError: null,
+      canRetry: false,
+      messages: [],
+    };
+    this.tutorSessions.set(workspaceId, initial);
+    return initial;
+  }
+
+  private updateTutorSession(
+    workspaceId: number,
+    updater: (session: TutorSessionSnapshot) => TutorSessionSnapshot
+  ): TutorSessionSnapshot {
+    const next = updater(this.ensureTutorSession(workspaceId));
+    this.tutorSessions.set(workspaceId, next);
+    this.emitEvent({ type: "tutorSessionUpdated", payload: next });
+    return next;
+  }
+
+  emitTutorChunk(workspaceId: number, delta: string) {
+    return this.updateTutorSession(workspaceId, (session) => {
+      const messages = session.messages.map((msg, idx) =>
+        idx === session.messages.length - 1 && msg.role === "assistant"
+          ? { ...msg, content: msg.content + delta }
+          : msg
+      );
+      return { ...session, status: "streaming", messages };
+    });
+  }
+
+  emitTutorPermission(
+    workspaceId: number,
+    permission: Omit<TutorPermissionRequest, "turnId" | "createdAt" | "resolvedAt">
+  ) {
+    return this.updateTutorSession(workspaceId, (session) => {
+      const turnId = session.activeTurnId ?? "turn-1";
+      const record: TutorPermissionRequest = {
+        ...permission,
+        turnId,
+        createdAt: new Date().toISOString(),
+        resolvedAt: permission.status === "pending" ? null : new Date().toISOString(),
+      };
+      const messages = session.messages.map((msg, idx) =>
+        idx === session.messages.length - 1 && msg.role === "assistant"
+          ? { ...msg, permissions: [...msg.permissions, record] }
+          : msg
+      );
+      return {
+        ...session,
+        status: permission.status === "pending" ? "awaitingPermission" : session.status,
+        messages,
+      };
+    });
+  }
+
+  emitTutorFileChange(
+    workspaceId: number,
+    path: string,
+    afterText: string
+  ): TutorSessionSnapshot {
+    const root = this.workspaceRoot(workspaceId);
+    const existing = this.files(root).get(path);
+    const beforeText = existing?.kind === "text" ? existing.text : null;
+    this.writeDiskFile(root, path, afterText);
+    const change: TutorFileChange = {
+      path,
+      beforeText,
+      afterText,
+      createdAt: new Date().toISOString(),
+    };
+    return this.updateTutorSession(workspaceId, (session) => {
+      const messages = session.messages.map((msg, idx) =>
+        idx === session.messages.length - 1 && msg.role === "assistant"
+          ? { ...msg, fileChanges: [...msg.fileChanges, change] }
+          : msg
+      );
+      return { ...session, messages };
+    });
+  }
+
+  emitTutorTurnCompleted(workspaceId: number) {
+    return this.updateTutorSession(workspaceId, (session) => {
+      const messages = session.messages.map((msg, idx) =>
+        idx === session.messages.length - 1 && msg.role === "assistant"
+          ? { ...msg, status: "completed" as const }
+          : msg
+      );
+      return {
+        ...session,
+        status: "ready",
+        activeTurnId: null,
+        messages,
+      };
+    });
+  }
+
+  emitTutorCrash(workspaceId: number) {
+    const error: DomainError = { code: "ACP_PROCESS_EXITED" };
+    return this.updateTutorSession(workspaceId, (session) => {
+      const messages = session.messages.map((msg, idx) =>
+        idx === session.messages.length - 1 && msg.role === "assistant"
+          ? { ...msg, status: "failed" as const, error }
+          : msg
+      );
+      return {
+        ...session,
+        status: "error",
+        processRunning: false,
+        activeTurnId: null,
+        lastError: error,
+        canRetry: true,
+        messages,
+      };
+    });
+  }
 
   private fileSnapshot(root: string, path: string): WorkspaceFile {
     return this.files(root).get(path) ?? { kind: "missing", path, revision: null, sizeBytes: 0 };
@@ -487,6 +638,35 @@ export class FakeCoreClient implements CoreClient {
             details: { min: "11", max: "20" },
           });
         }
+        const nextTutor = patch.tutor
+          ? {
+              ...this.settings.tutor,
+              ...(patch.tutor.preset !== undefined
+                ? {
+                    preset: patch.tutor.preset,
+                    ...(patch.tutor.command === undefined && patch.tutor.preset !== "custom"
+                      ? {
+                          command:
+                            ACP_AGENT_PRESETS.find((p) => p.id === patch.tutor?.preset)
+                              ?.defaultCommand ?? this.settings.tutor.command,
+                        }
+                      : {}),
+                  }
+                : {}),
+              ...(patch.tutor.command !== undefined
+                ? { command: patch.tutor.command.trim() }
+                : {}),
+              ...(patch.tutor.permissionPolicy !== undefined
+                ? { permissionPolicy: patch.tutor.permissionPolicy }
+                : {}),
+              ...(patch.tutor.teachingStyle !== undefined
+                ? { teachingStyle: patch.tutor.teachingStyle }
+                : {}),
+            }
+          : this.settings.tutor;
+        const agentChanged =
+          nextTutor.preset !== this.settings.tutor.preset ||
+          nextTutor.command !== this.settings.tutor.command;
         this.settings = {
           ...this.settings,
           ...(patch.theme !== undefined ? { theme: patch.theme } : {}),
@@ -495,12 +675,28 @@ export class FakeCoreClient implements CoreClient {
             ? { codeFontSize: patch.codeFontSize }
             : {}),
           ...(patch.locale !== undefined ? { locale: patch.locale } : {}),
+          tutor: nextTutor,
         };
+        if (this.workspace && this.tutorSessions.has(this.workspace.id)) {
+          this.updateTutorSession(this.workspace.id, (session) => ({
+            ...session,
+            preset: nextTutor.preset,
+            command: nextTutor.command,
+            permissionPolicy: nextTutor.permissionPolicy,
+            teachingStyle: nextTutor.teachingStyle,
+            ...(agentChanged
+              ? { processRunning: false, sessionReused: false, status: "idle", activeTurnId: null }
+              : {}),
+          }));
+        }
         this.emitEvent({
           type: "settingsUpdated",
-          payload: { ...this.settings },
+          payload: { ...this.settings, tutor: { ...this.settings.tutor } },
         });
-        return { type: "settings", payload: { ...this.settings } };
+        return {
+          type: "settings",
+          payload: { ...this.settings, tutor: { ...this.settings.tutor } },
+        };
       }
       case "listRecents":
         return { type: "recents", payload: [...this.recents] };
@@ -801,6 +997,166 @@ export class FakeCoreClient implements CoreClient {
           },
         });
         return { type: "preflight", payload: this.preflight };
+      }
+      case "testTutorHandshake": {
+        const active = this.activeCourse();
+        if (active && !this.withTrust(active).trusted) {
+          throw new CoreCommandError({ code: "COURSE_UNTRUSTED" });
+        }
+        if (!command.payload.command.trim()) {
+          throw new CoreCommandError({ code: "ACP_COMMAND_INVALID" });
+        }
+        const presetLabel =
+          ACP_AGENT_PRESETS.find((p) => p.id === command.payload.preset)?.label ??
+          "Custom ACP Agent";
+        return {
+          type: "tutorHandshake",
+          payload: this.tutorHandshakeOverride ?? {
+            preset: command.payload.preset,
+            command: command.payload.command.trim(),
+            protocolVersion: "1",
+            agentName: presetLabel,
+            agentVersion: "1.0.0",
+          },
+        };
+      }
+      case "getTutorSession": {
+        return {
+          type: "tutorSession",
+          payload: this.ensureTutorSession(command.payload.workspaceId),
+        };
+      }
+      case "sendTutorPrompt": {
+        const prompt = command.payload.prompt.trim();
+        if (!prompt) throw new CoreCommandError({ code: "TUTOR_PROMPT_EMPTY" });
+        const session = this.ensureTutorSession(command.payload.workspaceId);
+        if (session.activeTurnId) throw new CoreCommandError({ code: "TUTOR_BUSY" });
+        const turnId = `turn-${this.tutorSeq++}`;
+        const style = command.payload.teachingStyle ?? this.settings.tutor.teachingStyle;
+        const now = new Date().toISOString();
+        const userMsg: TutorMessage = {
+          id: `msg-${this.tutorSeq++}`,
+          turnId,
+          role: "user",
+          content: prompt,
+          teachingStyle: style,
+          status: "completed",
+          error: null,
+          permissions: [],
+          fileChanges: [],
+          createdAt: now,
+        };
+        const assistantMsg: TutorMessage = {
+          id: `msg-${this.tutorSeq++}`,
+          turnId,
+          role: "assistant",
+          content: "",
+          teachingStyle: style,
+          status: "streaming",
+          error: null,
+          permissions: [],
+          fileChanges: [],
+          createdAt: now,
+        };
+        const presetLabel =
+          ACP_AGENT_PRESETS.find((p) => p.id === this.settings.tutor.preset)?.label ??
+          "Custom ACP Agent";
+        const next = this.updateTutorSession(command.payload.workspaceId, (current) => ({
+          ...current,
+          status: "streaming",
+          processRunning: true,
+          sessionReused: current.processRunning,
+          agentName: current.agentName ?? presetLabel,
+          teachingStyle: style,
+          activeTurnId: turnId,
+          lastError: null,
+          canRetry: false,
+          messages: [...current.messages, userMsg, assistantMsg],
+        }));
+        return { type: "tutorSession", payload: next };
+      }
+      case "stopTutorTurn": {
+        const next = this.updateTutorSession(command.payload.workspaceId, (current) => {
+          const turnId = current.activeTurnId;
+          const now = new Date().toISOString();
+          const messages = current.messages.map((msg) =>
+            msg.turnId === turnId && msg.role === "assistant"
+              ? {
+                  ...msg,
+                  status: "cancelled" as const,
+                  permissions: msg.permissions.map((p) =>
+                    p.status === "pending"
+                      ? { ...p, status: "cancelled" as const, resolvedAt: now }
+                      : p
+                  ),
+                }
+              : msg
+          );
+          return {
+            ...current,
+            status: current.processRunning ? "ready" : "idle",
+            activeTurnId: null,
+            messages,
+          };
+        });
+        return { type: "tutorSession", payload: next };
+      }
+      case "retryTutorTurn": {
+        const current = this.ensureTutorSession(command.payload.workspaceId);
+        const lastUser = [...current.messages].reverse().find((m) => m.role === "user");
+        if (!lastUser) throw new CoreCommandError({ code: "TUTOR_PROMPT_EMPTY" });
+        return this.dispatch({
+          type: "sendTutorPrompt",
+          payload: {
+            workspaceId: command.payload.workspaceId,
+            prompt: lastUser.content,
+            teachingStyle: this.settings.tutor.teachingStyle,
+          },
+        });
+      }
+      case "respondTutorPermission": {
+        const { workspaceId, requestId, allow } = command.payload;
+        const now = new Date().toISOString();
+        const next = this.updateTutorSession(workspaceId, (current) => {
+          let found = false;
+          const messages = current.messages.map((msg) => ({
+            ...msg,
+            permissions: msg.permissions.map((perm) => {
+              if (perm.id !== requestId || perm.status !== "pending") return perm;
+              found = true;
+              return {
+                ...perm,
+                status: allow ? ("approved" as const) : ("denied" as const),
+                resolvedAt: now,
+              };
+            }),
+          }));
+          if (!found) {
+            throw new CoreCommandError({ code: "TUTOR_PERMISSION_NOT_FOUND" });
+          }
+          const hasPending = messages.some((m) =>
+            m.permissions.some((p) => p.status === "pending")
+          );
+          return {
+            ...current,
+            status: hasPending ? "awaitingPermission" : "streaming",
+            messages,
+          };
+        });
+        return { type: "tutorSession", payload: next };
+      }
+      case "clearTutorSession": {
+        const next = this.updateTutorSession(command.payload.workspaceId, (current) => ({
+          ...current,
+          status: "idle",
+          processRunning: false,
+          sessionReused: false,
+          activeTurnId: null,
+          lastError: null,
+          canRetry: false,
+          messages: [],
+        }));
+        return { type: "tutorSession", payload: next };
       }
       case "createCourseDraft":
       case "openCourseDraft":

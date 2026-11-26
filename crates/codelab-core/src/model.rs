@@ -70,6 +70,8 @@ pub struct GlobalSettings {
     pub accent: AccentPreset,
     pub code_font_size: f32,
     pub locale: Locale,
+    #[serde(default)]
+    pub tutor: crate::tutor::TutorSettings,
 }
 
 impl Default for GlobalSettings {
@@ -79,6 +81,7 @@ impl Default for GlobalSettings {
             accent: AccentPreset::Neutral,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             locale: Locale::ZhCn,
+            tutor: crate::tutor::TutorSettings::default(),
         }
     }
 }
@@ -90,6 +93,8 @@ pub struct UpdateSettingsPatch {
     pub accent: Option<AccentPreset>,
     pub code_font_size: Option<f32>,
     pub locale: Option<Locale>,
+    #[serde(default)]
+    pub tutor: Option<crate::tutor::TutorSettingsPatch>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,6 +163,7 @@ pub enum StoreKind {
     Workspace,
     Progress,
     Metrics,
+    TutorHistory,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

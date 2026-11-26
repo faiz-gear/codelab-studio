@@ -6,6 +6,7 @@ mod filesystem;
 mod model;
 mod runtime;
 mod storage;
+mod tutor;
 mod workspace;
 
 pub use app::{
@@ -35,6 +36,14 @@ pub use runtime::{
     HostProbeResult, HostTool, HostToolchainProbe, HttpRuntimeDownloader, InstallProgress,
     LanguagePreflight, ManagedRuntime, PreflightReport, ProbeProblem, ProbeStatus, RuntimeAdapters,
     RuntimeArtifact, RuntimeDownloadAdapter, RuntimePreference, RuntimeSource, ToolCheck,
+};
+pub use tutor::{
+    AcpAgentPreset, AcpStdioBackend, BackendEvent, BackendEventSink, BackendPermissionPrompt,
+    PermissionPolicy, RespondTutorPermission, SendTutorPrompt, TeachingStyle, TutorBackend,
+    TutorBackendSession, TutorFileChange, TutorHandshakeRequest, TutorHandshakeResult,
+    TutorHistory, TutorLaunchSpec, TutorMessage, TutorMessageStatus, TutorPermissionKind,
+    TutorPermissionRequest, TutorPermissionStatus, TutorRole, TutorSessionSnapshot,
+    TutorSessionStatus, TutorSettings, TutorSettingsPatch, TutorTurnInput, WorkspaceTutorRequest,
 };
 pub use workspace::{
     ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceComparison, WorkspaceEntry, WorkspaceEntryKind,

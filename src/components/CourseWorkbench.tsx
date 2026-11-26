@@ -9,8 +9,11 @@ import {
   type CommandBlock,
   type CourseSourceChangedEvent,
   type LoadedCourse,
+  type TutorSessionSnapshot,
+  type UpdateSettingsPatch,
 } from "../core/contracts";
 import { interpolate, type Messages } from "../i18n";
+import { TutorDrawer } from "../tutor/TutorDrawer";
 import { ChapterOutlineDrawer } from "./ChapterOutlineDrawer";
 import type { CoreClient } from "../core/client";
 import { CommandWorkbench, emptyWorkbench } from "../execution/CommandWorkbench";
@@ -37,6 +40,8 @@ const ignoreExecutionError = () => {};
 const staticSnapshot = () => emptyWorkbench;
 const staticSubscribe = () => () => {};
 const MIN_MANUAL_WIDTH_PX = 320;
+const DOCKED_TUTOR_MIN_MANUAL_PX = 300;
+const DOCKED_TUTOR_WIDTH_PX = 360;
 const MAX_MANUAL_WIDTH_PCT = 54;
 
 export interface CourseWorkbenchProps {
@@ -63,6 +68,12 @@ export interface CourseWorkbenchProps {
   onCopyCommand: (commandText: string) => void;
   stage?: ReactNode;
   onReturnToDraft?: () => void;
+  tutorOpen?: boolean;
+  tutorSnapshot?: TutorSessionSnapshot | null;
+  onTutorSnapshotChange?: (snapshot: TutorSessionSnapshot | null) => void;
+  onUpdateSettings?: (patch: UpdateSettingsPatch) => void;
+  onOpenTutorSettings?: (trigger: HTMLElement) => void;
+  onCloseTutor?: () => void;
 }
 
 function getFileBasename(filePath: string): string {
@@ -92,6 +103,12 @@ export function CourseWorkbench({
   onCopyCommand,
   stage,
   onReturnToDraft,
+  tutorOpen = false,
+  tutorSnapshot = null,
+  onTutorSnapshotChange,
+  onUpdateSettings,
+  onOpenTutorSettings,
+  onCloseTutor,
 }: CourseWorkbenchProps) {
   const verification = useVerification(course.trusted ? client : undefined, session, onExecutionError);
   const [resultsOpen, setResultsOpen] = useState(false);
@@ -99,6 +116,16 @@ export function CourseWorkbench({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isTutorOverlay, setIsTutorOverlay] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 1280
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncLayout = () => setIsTutorOverlay(window.innerWidth < 1280);
+    syncLayout();
+    window.addEventListener("resize", syncLayout);
+    return () => window.removeEventListener("resize", syncLayout);
+  }, []);
   const [cwdDialog, setCwdDialog] = useState<{ workbench: CommandWorkbench; command: CommandBlock } | null>(null);
   const workbench = useMemo(() => client && session && course.trusted ? new CommandWorkbench(client, session) : null,
     [client, course.trusted, session]);
@@ -142,18 +169,39 @@ export function CourseWorkbench({
 
   const isOutlineVisible = outlineOpen && !focusMode;
 
+  const isTutorDocked = tutorOpen && !isTutorOverlay;
+
+  const manualWidthBounds = useCallback(
+    (containerWidth: number) => {
+      if (isTutorDocked) {
+        const editorFloor = containerWidth >= 1440 ? 560 : 520;
+        const maxPx = Math.max(
+          DOCKED_TUTOR_MIN_MANUAL_PX,
+          Math.min(
+            Math.round((containerWidth * MAX_MANUAL_WIDTH_PCT) / 100),
+            containerWidth - editorFloor - DOCKED_TUTOR_WIDTH_PX
+          )
+        );
+        return { minPx: DOCKED_TUTOR_MIN_MANUAL_PX, maxPx };
+      }
+      const maxPx = Math.max(
+        MIN_MANUAL_WIDTH_PX,
+        Math.round((containerWidth * MAX_MANUAL_WIDTH_PCT) / 100)
+      );
+      return { minPx: MIN_MANUAL_WIDTH_PX, maxPx };
+    },
+    [isTutorDocked]
+  );
+
   const clampManualWidth = useCallback((clientX: number): number | null => {
     const container = wbRef.current;
     if (!container) return null;
     const rect = container.getBoundingClientRect();
     const containerWidth = rect.width || window.innerWidth || 1280;
-    const maxPx = Math.max(
-      MIN_MANUAL_WIDTH_PX,
-      Math.round((containerWidth * MAX_MANUAL_WIDTH_PCT) / 100)
-    );
+    const { minPx, maxPx } = manualWidthBounds(containerWidth);
     const rawPx = Math.round(clientX - rect.left);
-    return Math.min(maxPx, Math.max(MIN_MANUAL_WIDTH_PX, rawPx));
-  }, []);
+    return Math.min(maxPx, Math.max(minPx, rawPx));
+  }, [manualWidthBounds]);
 
   const handleSplitterMouseDown = (
     event: React.MouseEvent<HTMLDivElement>
@@ -188,13 +236,10 @@ export function CourseWorkbench({
     const containerWidth = wbRef.current?.getBoundingClientRect().width || 1280;
     const currentPx =
       manualWidthPx ?? Math.round((containerWidth * DEFAULT_MANUAL_WIDTH_PCT) / 100);
-    const maxPx = Math.max(
-      MIN_MANUAL_WIDTH_PX,
-      Math.round((containerWidth * MAX_MANUAL_WIDTH_PCT) / 100)
-    );
+    const { minPx, maxPx } = manualWidthBounds(containerWidth);
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      setManualWidthPx(Math.max(MIN_MANUAL_WIDTH_PX, currentPx - 24));
+      setManualWidthPx(Math.max(minPx, currentPx - 24));
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
       setManualWidthPx(Math.min(maxPx, currentPx + 24));
@@ -230,9 +275,14 @@ export function CourseWorkbench({
     return map;
   }, [activeChapter]);
 
+  const effectiveManualWidthPx =
+    manualWidthPx !== null && isTutorDocked && typeof window !== "undefined"
+      ? Math.min(manualWidthPx, manualWidthBounds(window.innerWidth || 1280).maxPx)
+      : manualWidthPx;
+
   const paneLeftStyle =
-    !focusMode && manualWidthPx !== null
-      ? { width: `${manualWidthPx}px` }
+    !focusMode && effectiveManualWidthPx !== null
+      ? { width: `${effectiveManualWidthPx}px` }
       : undefined;
 
   const sourceBadge =
@@ -293,7 +343,7 @@ export function CourseWorkbench({
   return (
     <section
       ref={wbRef}
-      className={`wb${focusMode ? " is-focus" : ""}${isDragging ? " is-resizing" : ""}`}
+      className={`wb${focusMode ? " is-focus" : ""}${isDragging ? " is-resizing" : ""}${tutorOpen && !isTutorOverlay ? " has-tutor-docked" : ""}`}
       aria-label={t.ariaLabel}
       data-testid="course-workbench"
     >
@@ -726,6 +776,7 @@ export function CourseWorkbench({
               settings={settings}
               messages={messages}
               switching={switching}
+              tutorOpen={tutorOpen && !isTutorOverlay}
               onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
               workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
@@ -783,6 +834,25 @@ export function CourseWorkbench({
           </>
         ))}
       </section>
+      {tutorOpen && onCloseTutor && onTutorSnapshotChange && onUpdateSettings && onOpenTutorSettings && (
+        <TutorDrawer
+          open={tutorOpen}
+          overlay={isTutorOverlay}
+          client={client}
+          course={course}
+          session={session}
+          settings={settings}
+          messages={messages}
+          snapshot={tutorSnapshot}
+          onSnapshotChange={onTutorSnapshotChange}
+          onUpdateSettings={onUpdateSettings}
+          onOpenTutorSettings={onOpenTutorSettings}
+          onRequestTrust={onRequestTrust}
+          onChooseWorkspace={onChooseWorkspace}
+          onClose={onCloseTutor}
+          onError={onExecutionError}
+        />
+      )}
       {verification.confirmation && <CommandConfirmationDialog detail={verification.confirmation.detail} messages={messages}
         onCancel={verification.dismiss} onConfirm={()=>{ const pending=verification.confirmation!; void verification.run(pending.chapterId,pending.detail.token); }} />}
       {resetOpen && session && <WorkspaceDialog title={messages.verification.resetTitle} detail={messages.verification.resetDetail}

@@ -1,13 +1,18 @@
 import type {
   AccentPreset,
+  AcpAgentPreset,
   CheckKind,
   CourseLanguage,
   ErrorCode,
+  PermissionPolicy,
   StoreKind,
   HostTool,
   OptionalLsp,
   ProbeProblem,
   ProbeStatus,
+  TeachingStyle,
+  TutorPermissionKind,
+  TutorPermissionStatus,
 } from "../core/contracts";
 
 export interface CoursePlaceholderMeta {
@@ -51,6 +56,8 @@ export interface Messages {
     envStatusTooltip: string;
     appearance: string;
     appearanceTooltip: string;
+    tutorLabel: string;
+    tutorTooltip: string;
     settingsLabel: string;
     settingsTooltip: string;
   };
@@ -310,6 +317,63 @@ export interface Messages {
     localeGroupLabel: string;
     accents: Record<AccentPreset, string>;
   };
+  tutor: {
+    settingsTab: string;
+    protocolBadge: string;
+    settingsIntro: string;
+    presetLabel: string;
+    presets: Record<AcpAgentPreset, string>;
+    commandLabel: string;
+    commandPlaceholder: string;
+    commandHint: string;
+    policyLabel: string;
+    policyGroupLabel: string;
+    policies: Record<PermissionPolicy, { title: string; description: string }>;
+    styleLabel: string;
+    styleGroupLabel: string;
+    styles: Record<TeachingStyle, string>;
+    testHandshake: string;
+    testingHandshake: string;
+    handshakeOk: string;
+    saveConfig: string;
+    savedConfigToast: string;
+    drawerTitle: string;
+    drawerAriaLabel: string;
+    closeDrawer: string;
+    configureAgent: string;
+    clearSession: string;
+    emptyTitle: string;
+    emptyHint: string;
+    untrustedTitle: string;
+    untrustedHint: string;
+    noWorkspaceTitle: string;
+    noWorkspaceHint: string;
+    composerLabel: string;
+    composerPlaceholder: string;
+    send: string;
+    stop: string;
+    retry: string;
+    streaming: string;
+    starting: string;
+    cancelled: string;
+    reusedBadge: string;
+    lazyIdleBadge: string;
+    permissionTitle: string;
+    permissionKinds: Record<TutorPermissionKind, string>;
+    permissionStatuses: Record<TutorPermissionStatus, string>;
+    outsideWorkspaceWarning: string;
+    highRiskWarning: string;
+    sensitiveBlockedDetail: string;
+    allow: string;
+    deny: string;
+    fileChangedLabel: string;
+    viewDiff: string;
+    diffDialogTitle: string;
+    diffBefore: string;
+    diffAfter: string;
+    openInEditor: string;
+    newFileBefore: string;
+  };
   stores: Record<StoreKind, string>;
   errors: Record<ErrorCode, string>;
   relativeTime: {
@@ -343,8 +407,10 @@ export const zhCN: Messages = {
     envStatusTooltip: "本机环境与四语言 Managed Runtime 状态",
     appearance: "外观",
     appearanceTooltip: "外观定制：双主题、8 组强调色、代码字号与界面语言",
+    tutorLabel: "AI 助教",
+    tutorTooltip: "展开 / 收起本机 ACP 助教抽屉",
     settingsLabel: "设置",
-    settingsTooltip: "运行时设置",
+    settingsTooltip: "设置（ACP 助教与四语言运行时）",
   },
   welcome: {
     ariaLabel: "课程主页",
@@ -660,10 +726,101 @@ export const zhCN: Messages = {
       rose: "玫红 Rose",
     },
   },
+  tutor: {
+    settingsTab: "ACP 助教",
+    protocolBadge: "ACP · JSON-RPC 2.0 / stdio",
+    settingsIntro:
+      "直接复用你本机已认证的 ACP 编码 Agent，仅在首次提问或握手测试时按需启动进程。",
+    presetLabel: "本机 ACP Agent 预设",
+    presets: {
+      claudeCode: "Claude Code（claude --acp）",
+      geminiCli: "Gemini CLI（gemini --acp）",
+      codexCli: "Codex CLI（codex --acp）",
+      openCode: "OpenCode（opencode acp）",
+      custom: "自定义 --acp 启动命令",
+    },
+    commandLabel: "启动命令",
+    commandPlaceholder: "例如：my-agent --acp",
+    commandHint: "切换 Agent 或启动命令后，将在下次发问时自动重建当前 Workspace 的 ACP 会话。",
+    policyLabel: "Permission Policy 权限策略",
+    policyGroupLabel: "选择 ACP 权限审批策略",
+    policies: {
+      guided_readonly: {
+        title: "引导只读（推荐默认）",
+        description:
+          "自动放行当前 Workspace 内非敏感文件的只读请求；自动屏蔽 .env / *secret* / *key*；越界读取、所有文件写入与命令执行强制弹出审批卡。",
+      },
+      strict_ask_all: {
+        title: "严格全审批",
+        description:
+          "除自动屏蔽敏感文件外，包括 Workspace 内文件读取在内的全部工具调用均须经对话流审批卡确认。",
+      },
+    },
+    styleLabel: "教学风格",
+    styleGroupLabel: "切换助教教学风格",
+    styles: {
+      socratic: "引导思考（苏格拉底）",
+      direct: "直接解答",
+    },
+    testHandshake: "测试 ACP 握手",
+    testingHandshake: "正在握手测试…",
+    handshakeOk: "ACP 握手成功 · {agent}",
+    saveConfig: "保存配置",
+    savedConfigToast: "已保存 ACP 助教配置",
+    drawerTitle: "AI 助教",
+    drawerAriaLabel: "本机 ACP 助教抽屉",
+    closeDrawer: "关闭 AI 助教抽屉",
+    configureAgent: "配置 ACP 助教",
+    clearSession: "清空对话",
+    emptyTitle: "本机 ACP 助教已就绪",
+    emptyHint:
+      "采用严格懒启动：仅在你首次发问时拉起本机 ACP Agent，并在当前 Workspace 内复用同一会话。",
+    untrustedTitle: "未信任 Course 已禁止启动 ACP 助教",
+    untrustedHint: "请先在工作台授信当前 Course，再使用本机 ACP 编码 Agent。",
+    noWorkspaceTitle: "请先绑定本地 Workspace",
+    noWorkspaceHint: "选择一个本地 Workspace 目录后即可开启上下文感知 ACP 助教会话。",
+    composerLabel: "向本机 ACP 助教提问",
+    composerPlaceholder: "输入你的问题，Enter 发送，Shift+Enter 换行…",
+    send: "发送",
+    stop: "停止生成",
+    retry: "重试",
+    streaming: "正在生成回复…",
+    starting: "正在启动本机 ACP Agent…",
+    cancelled: "已停止生成",
+    reusedBadge: "复用会话",
+    lazyIdleBadge: "按需懒启动",
+    permissionTitle: "ACP 权限审批",
+    permissionKinds: {
+      read: "读取文件",
+      write: "写入文件",
+      execute: "执行命令",
+    },
+    permissionStatuses: {
+      pending: "等待审批",
+      autoAllowed: "已自动放行（工作区只读）",
+      approved: "已允许",
+      denied: "已拒绝",
+      blockedSensitive: "已自动屏蔽敏感文件",
+      cancelled: "已取消",
+    },
+    outsideWorkspaceWarning: "越界访问：目标位于当前 Workspace 之外",
+    highRiskWarning: "高危命令警告：可能对本机造成破坏性更改，请谨慎确认",
+    sensitiveBlockedDetail: "命中敏感文件保护规则（.env / *secret* / *key*），已自动拦截。",
+    allow: "允许本次",
+    deny: "拒绝",
+    fileChangedLabel: "ACP 已修改工作区文件",
+    viewDiff: "查看修改 Diff",
+    diffDialogTitle: "ACP 修改差异对照",
+    diffBefore: "修改前",
+    diffAfter: "修改后",
+    openInEditor: "在编辑器中打开",
+    newFileBefore: "（新文件）",
+  },
   stores: {
     workspace: "Workspace 绑定",
     progress: "Workspace 进度",
     metrics: "Workspace 指标",
+    tutorHistory: "助教对话历史",
     runtimePreferences: "运行时偏好",
     settings: "全局偏好（settings）",
     recents: "最近 Workspace（recents）",
@@ -724,6 +881,14 @@ export const zhCN: Messages = {
     COMMAND_CWD_INVALID: "工作目录「{path}」必须存在于当前 Workspace 内。",
     COMMAND_SHELL_UNAVAILABLE: "找不到 {shell}。在 Windows 上，Git for Windows 提供 bash 和 sh。",
     TERMINAL_NOT_FOUND: "该终端已不可用。",
+    ACP_COMMAND_INVALID: "ACP 启动命令为空或引号格式无效，请检查设置。",
+    ACP_AGENT_START_FAILED: "无法启动本机 ACP Agent 进程，请确认 CLI 已安装且命令可执行。",
+    ACP_HANDSHAKE_FAILED: "ACP 握手超时或失败，请确认该命令支持 JSON-RPC 2.0 ACP 协议。",
+    ACP_PROTOCOL_ERROR: "ACP 协议通信出错，请重试或重新配置 Agent。",
+    ACP_PROCESS_EXITED: "ACP Agent 进程已意外退出，可点击重试重新连接。",
+    TUTOR_PROMPT_EMPTY: "请输入要提问的内容。",
+    TUTOR_BUSY: "助教正在生成回复，请等待完成或先停止当前生成。",
+    TUTOR_PERMISSION_NOT_FOUND: "该权限审批请求已失效或已处理。",
     SHUTDOWN_FAILED: "退出回收部分后台资源时发生异常：{failures}",
     IPC_UNAVAILABLE: "桌面运行时连接不可用，请在 CodeLab Studio 桌面应用中打开。",
     UNEXPECTED_ERROR: "操作未能完成，请重试。",

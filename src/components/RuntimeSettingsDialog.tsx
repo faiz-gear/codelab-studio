@@ -1,13 +1,34 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import type { CoreClient } from "../core/client";
+import type { GlobalSettings, UpdateSettingsPatch } from "../core/contracts";
+import { TutorSettingsPanel } from "../tutor/TutorSettingsPanel";
 import { CloseIcon } from "./Icons";
 import { RuntimePanel, type RuntimePanelProps } from "./RuntimePanel";
 
+export type SettingsTab = "runtime" | "tutor";
+
+export interface RuntimeSettingsDialogProps extends RuntimePanelProps {
+  client: CoreClient;
+  settings: GlobalSettings;
+  initialTab?: SettingsTab;
+  onUpdateSettings: (patch: UpdateSettingsPatch) => Promise<void> | void;
+  onSavedTutorConfig?: () => void;
+  onClose: () => void;
+}
+
 export function RuntimeSettingsDialog({
+  client,
+  settings,
+  initialTab = "runtime",
+  onUpdateSettings,
+  onSavedTutorConfig,
   onClose,
   ...panel
-}: RuntimePanelProps & { onClose: () => void }) {
+}: RuntimeSettingsDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const tab = useRef<HTMLButtonElement>(null);
+  const runtimeTabRef = useRef<HTMLButtonElement>(null);
+  const tutorTabRef = useRef<HTMLButtonElement>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const id = useId();
   const { messages } = panel;
 
@@ -15,9 +36,24 @@ export function RuntimeSettingsDialog({
     const element = dialog.current;
     if (!element) return;
     element.showModal();
-    tab.current?.focus();
+    (initialTab === "tutor" ? tutorTabRef.current : runtimeTabRef.current)?.focus();
     return () => element.close();
-  }, []);
+  }, [initialTab]);
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next: SettingsTab =
+      event.key === "Home"
+        ? "runtime"
+        : event.key === "End"
+          ? "tutor"
+          : activeTab === "runtime"
+            ? "tutor"
+            : "runtime";
+    setActiveTab(next);
+    (next === "tutor" ? tutorTabRef.current : runtimeTabRef.current)?.focus();
+  };
 
   return (
     <dialog
@@ -48,26 +84,60 @@ export function RuntimeSettingsDialog({
         className="runtime-settings-tabs"
         role="tablist"
         aria-label={messages.topbar.settingsLabel}
+        onKeyDown={handleTabKeyDown}
       >
         <button
-          ref={tab}
-          id={`${id}-tab`}
+          ref={runtimeTabRef}
+          id={`${id}-tab-runtime`}
           type="button"
           className="btn btn--secondary btn--sm"
           role="tab"
-          aria-selected="true"
-          aria-controls={`${id}-panel`}
+          aria-selected={activeTab === "runtime"}
+          tabIndex={activeTab === "runtime" ? 0 : -1}
+          aria-controls={`${id}-panel-runtime`}
+          onClick={() => setActiveTab("runtime")}
         >
           {messages.runtime.settingsTab}
+        </button>
+        <button
+          ref={tutorTabRef}
+          id={`${id}-tab-tutor`}
+          type="button"
+          className="btn btn--secondary btn--sm"
+          role="tab"
+          aria-selected={activeTab === "tutor"}
+          tabIndex={activeTab === "tutor" ? 0 : -1}
+          aria-controls={`${id}-panel-tutor`}
+          onClick={() => setActiveTab("tutor")}
+        >
+          {messages.tutor.settingsTab}
         </button>
       </div>
       <div
         className="modal-body"
-        id={`${id}-panel`}
+        id={`${id}-panel-runtime`}
         role="tabpanel"
-        aria-labelledby={`${id}-tab`}
+        aria-labelledby={`${id}-tab-runtime`}
+        hidden={activeTab !== "runtime"}
       >
-        <RuntimePanel {...panel} expanded />
+        {activeTab === "runtime" && <RuntimePanel {...panel} expanded />}
+      </div>
+      <div
+        className="modal-body"
+        id={`${id}-panel-tutor`}
+        role="tabpanel"
+        aria-labelledby={`${id}-tab-tutor`}
+        hidden={activeTab !== "tutor"}
+      >
+        {activeTab === "tutor" && (
+          <TutorSettingsPanel
+            client={client}
+            settings={settings}
+            messages={messages}
+            onUpdateSettings={onUpdateSettings}
+            onSavedToast={onSavedTutorConfig}
+          />
+        )}
       </div>
     </dialog>
   );

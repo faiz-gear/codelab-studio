@@ -9,6 +9,7 @@ use super::paths::{METADATA_DIR, WorkspacePaths};
 use super::progress::{Progress, ProgressCourse};
 use crate::course::{CourseSource, LoadedCourse, Starter, git_pack};
 use crate::storage::JsonStore;
+use crate::tutor::TutorHistory;
 use crate::{DomainError, ErrorCode, StorageRecoveryNotice, StoreKind};
 
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +33,8 @@ pub(super) struct WorkspaceMetadata {
     pub progress: Progress,
     pub progress_course: ProgressCourse,
     pub progress_store: JsonStore<Progress>,
+    pub tutor_history: TutorHistory,
+    pub tutor_history_store: JsonStore<TutorHistory>,
     pub command_cwds: CommandCwds,
     pub git_starter_snapshot: Option<String>,
 }
@@ -72,6 +75,9 @@ impl WorkspaceMetadata {
             .scoped(Arc::clone(&dir));
         let metrics_store =
             JsonStore::new(&location, "metrics.json", StoreKind::Metrics).scoped(Arc::clone(&dir));
+        let tutor_history_store =
+            JsonStore::new(&location, "tutor-history.json", StoreKind::TutorHistory)
+                .scoped(Arc::clone(&dir));
 
         let command_cwd_store =
             JsonStore::new(&location, "command-cwds.json", StoreKind::Workspace)
@@ -112,6 +118,11 @@ impl WorkspaceMetadata {
         }
         let command_cwds = command_cwd_store.load_or_recover(valid_cwds)?;
         let mut metrics = metrics_store.load_or_recover(|_: &Metrics| true)?;
+        let mut tutor_history =
+            tutor_history_store.load_or_recover(|history: &TutorHistory| history.is_valid())?;
+        if tutor_history.value.recover_interrupted() {
+            tutor_history_store.save_atomic(&tutor_history.value)?;
+        }
 
         if let Some(starter) = starter.filter(|_| is_empty) {
             super::starter::instantiate(starter, &paths.dir, &dir).map_err(|err| {
@@ -138,6 +149,7 @@ impl WorkspaceMetadata {
                 progress.recovery,
                 metrics.recovery,
                 command_cwds.recovery,
+                tutor_history.recovery,
             ]
             .into_iter()
             .flatten()
@@ -146,6 +158,8 @@ impl WorkspaceMetadata {
             progress: progress.value,
             progress_course,
             progress_store,
+            tutor_history: tutor_history.value,
+            tutor_history_store,
             git_starter_snapshot: bound.git_starter_snapshot,
             command_cwds: CommandCwds {
                 store: command_cwd_store,

@@ -57,6 +57,14 @@ pub enum ErrorCode {
     CommandCwdInvalid,
     CommandShellUnavailable,
     TerminalNotFound,
+    AcpCommandInvalid,
+    AcpAgentStartFailed,
+    AcpHandshakeFailed,
+    AcpProtocolError,
+    AcpProcessExited,
+    TutorPromptEmpty,
+    TutorBusy,
+    TutorPermissionNotFound,
     ShutdownFailed,
 }
 

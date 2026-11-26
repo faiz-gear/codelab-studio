@@ -86,6 +86,14 @@ export const ERROR_CODES = [
   "COMMAND_CWD_INVALID",
   "COMMAND_SHELL_UNAVAILABLE",
   "TERMINAL_NOT_FOUND",
+  "ACP_COMMAND_INVALID",
+  "ACP_AGENT_START_FAILED",
+  "ACP_HANDSHAKE_FAILED",
+  "ACP_PROTOCOL_ERROR",
+  "ACP_PROCESS_EXITED",
+  "TUTOR_PROMPT_EMPTY",
+  "TUTOR_BUSY",
+  "TUTOR_PERMISSION_NOT_FOUND",
   "SHUTDOWN_FAILED",
   "IPC_UNAVAILABLE",
   "UNEXPECTED_ERROR",
@@ -100,11 +108,55 @@ export interface DomainError {
   details?: Record<string, string>;
 }
 
+export type AcpAgentPreset =
+  | "claudeCode"
+  | "geminiCli"
+  | "codexCli"
+  | "openCode"
+  | "custom";
+
+export const ACP_AGENT_PRESETS: readonly {
+  id: AcpAgentPreset;
+  label: string;
+  defaultCommand: string;
+}[] = [
+  { id: "claudeCode", label: "Claude Code", defaultCommand: "claude --acp" },
+  { id: "geminiCli", label: "Gemini CLI", defaultCommand: "gemini --acp" },
+  { id: "codexCli", label: "Codex CLI", defaultCommand: "codex --acp" },
+  { id: "openCode", label: "OpenCode", defaultCommand: "opencode acp" },
+  { id: "custom", label: "Custom", defaultCommand: "" },
+] as const;
+
+export type PermissionPolicy = "guided_readonly" | "strict_ask_all";
+export type TeachingStyle = "socratic" | "direct";
+
+export interface TutorSettings {
+  preset: AcpAgentPreset;
+  command: string;
+  permissionPolicy: PermissionPolicy;
+  teachingStyle: TeachingStyle;
+}
+
+export const DEFAULT_TUTOR_SETTINGS: TutorSettings = {
+  preset: "claudeCode",
+  command: "claude --acp",
+  permissionPolicy: "guided_readonly",
+  teachingStyle: "socratic",
+};
+
+export interface TutorSettingsPatch {
+  preset?: AcpAgentPreset;
+  command?: string;
+  permissionPolicy?: PermissionPolicy;
+  teachingStyle?: TeachingStyle;
+}
+
 export interface GlobalSettings {
   theme: ThemeMode;
   accent: AccentPreset;
   codeFontSize: number;
   locale: Locale;
+  tutor: TutorSettings;
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -112,6 +164,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   accent: "neutral",
   codeFontSize: 13.5,
   locale: "zh-CN",
+  tutor: DEFAULT_TUTOR_SETTINGS,
 };
 
 export interface UpdateSettingsPatch {
@@ -119,6 +172,7 @@ export interface UpdateSettingsPatch {
   accent?: AccentPreset;
   codeFontSize?: number;
   locale?: Locale;
+  tutor?: TutorSettingsPatch;
 }
 
 export interface RecentWorkspace {
@@ -217,7 +271,15 @@ export interface PreflightReport {
   installDir: string;
 }
 
-export type StoreKind = "settings" | "runtimePreferences" | "recents" | "trust" | "workspace" | "progress" | "metrics";
+export type StoreKind =
+  | "settings"
+  | "runtimePreferences"
+  | "recents"
+  | "trust"
+  | "workspace"
+  | "progress"
+  | "metrics"
+  | "tutorHistory";
 
 export interface StorageRecoveryNotice {
   store: StoreKind;
@@ -525,6 +587,106 @@ export interface LearningProgress {
   runningChapterId: string | null; chapters: Record<string, ChapterProgress>;
 }
 
+export type TutorRole = "user" | "assistant";
+export type TutorMessageStatus = "streaming" | "completed" | "cancelled" | "failed";
+export type TutorPermissionKind = "read" | "write" | "execute";
+export type TutorPermissionStatus =
+  | "pending"
+  | "autoAllowed"
+  | "approved"
+  | "denied"
+  | "blockedSensitive"
+  | "cancelled";
+
+export interface TutorPermissionRequest {
+  id: string;
+  turnId: string;
+  kind: TutorPermissionKind;
+  title: string;
+  targetPath: string | null;
+  command: string | null;
+  outsideWorkspace: boolean;
+  sensitive: boolean;
+  highRisk: boolean;
+  status: TutorPermissionStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface TutorFileChange {
+  path: string;
+  beforeText: string | null;
+  afterText: string;
+  createdAt: string;
+}
+
+export interface TutorMessage {
+  id: string;
+  turnId: string;
+  role: TutorRole;
+  content: string;
+  teachingStyle: TeachingStyle;
+  status: TutorMessageStatus;
+  error: DomainError | null;
+  permissions: TutorPermissionRequest[];
+  fileChanges: TutorFileChange[];
+  createdAt: string;
+}
+
+export type TutorSessionStatus =
+  | "idle"
+  | "starting"
+  | "ready"
+  | "streaming"
+  | "awaitingPermission"
+  | "error";
+
+export interface TutorSessionSnapshot {
+  workspaceId: number;
+  status: TutorSessionStatus;
+  processRunning: boolean;
+  sessionReused: boolean;
+  preset: AcpAgentPreset;
+  command: string;
+  agentName: string | null;
+  permissionPolicy: PermissionPolicy;
+  teachingStyle: TeachingStyle;
+  activeTurnId: string | null;
+  lastError: DomainError | null;
+  canRetry: boolean;
+  messages: TutorMessage[];
+}
+
+export interface TutorHandshakeRequest {
+  preset: AcpAgentPreset;
+  command: string;
+}
+
+export interface TutorHandshakeResult {
+  preset: AcpAgentPreset;
+  command: string;
+  protocolVersion: string | null;
+  agentName: string | null;
+  agentVersion: string | null;
+}
+
+export interface SendTutorPrompt {
+  workspaceId: number;
+  prompt: string;
+  teachingStyle?: TeachingStyle;
+  contextPreamble?: string;
+}
+
+export interface RespondTutorPermission {
+  workspaceId: number;
+  requestId: string;
+  allow: boolean;
+}
+
+export interface WorkspaceTutorRequest {
+  workspaceId: number;
+}
+
 export type AppCommand =
   | { type: "bootstrap" }
   | { type: "getSettings" }
@@ -578,6 +740,13 @@ export type AppCommand =
   | { type: "refreshPreflight" }
   | { type: "setRuntimePreference"; payload: RuntimePreference }
   | { type: "installManagedRuntime"; payload: { language: CourseLanguage } }
+  | { type: "testTutorHandshake"; payload: TutorHandshakeRequest }
+  | { type: "getTutorSession"; payload: WorkspaceTutorRequest }
+  | { type: "sendTutorPrompt"; payload: SendTutorPrompt }
+  | { type: "stopTutorTurn"; payload: WorkspaceTutorRequest }
+  | { type: "retryTutorTurn"; payload: WorkspaceTutorRequest }
+  | { type: "respondTutorPermission"; payload: RespondTutorPermission }
+  | { type: "clearTutorSession"; payload: WorkspaceTutorRequest }
   | { type: "shutdown" };
 
 export type PreflightCommand = Extract<
@@ -618,6 +787,8 @@ export type AppResponse =
   | { type: "progress"; payload: LearningProgress }
   | { type: "learningRecord"; payload: Record<string, unknown> }
   | { type: "preflight"; payload: PreflightReport }
+  | { type: "tutorHandshake"; payload: TutorHandshakeResult }
+  | { type: "tutorSession"; payload: TutorSessionSnapshot }
   | { type: "shutdown"; payload: ShutdownReport };
 
 export type AppEvent =
@@ -630,6 +801,7 @@ export type AppEvent =
   | { type: "courseTrustChanged"; payload: { source: CourseSource; trusted: boolean } }
   | { type: "workspaceFilesChanged"; payload: WorkspaceFilesChanged }
   | { type: "preflightUpdated"; payload: PreflightReport }
+  | { type: "tutorSessionUpdated"; payload: TutorSessionSnapshot }
   | { type: "shutdownCompleted"; payload: ShutdownReport };
 
 export type LocalPathPickKind = "markdownFile" | "coursePackDir" | "workspaceDir";

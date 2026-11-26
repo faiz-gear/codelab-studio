@@ -26,6 +26,7 @@ import {
   type PreflightCommand,
   type PreflightReport,
   type RecentWorkspace,
+  type TutorSessionSnapshot,
   type UpdateSettingsPatch,
   type WorkspaceSummary,
 } from "./core/contracts";
@@ -33,7 +34,7 @@ import { DraftWorkbench, type DraftNavigation } from "./authoring/DraftWorkbench
 import { AppearanceDrawer } from "./components/AppearanceDrawer";
 import { CourseWorkbench } from "./components/CourseWorkbench";
 import { ImportCourseModal, type DraftOpenCommand, type ImportMode } from "./components/ImportCourseModal";
-import { RuntimeSettingsDialog } from "./components/RuntimeSettingsDialog";
+import { RuntimeSettingsDialog, type SettingsTab } from "./components/RuntimeSettingsDialog";
 import {
   ToastStack,
   type ToastMessage,
@@ -94,6 +95,9 @@ export function App({ client }: AppProps) {
 
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>("runtime");
+  const [tutorOpen, setTutorOpen] = useState(false);
+  const [tutorSnapshot, setTutorSnapshot] = useState<TutorSessionSnapshot | null>(null);
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [preflightError, setPreflightError] = useState<DomainError | null>(null);
   const [importMode, setImportMode] = useState<ImportMode | null>(null);
@@ -106,6 +110,7 @@ export function App({ client }: AppProps) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const appearanceTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const tutorTriggerRef = useRef<HTMLButtonElement | null>(null);
   const runtimeSettingsTrigger = useRef<HTMLElement | null>(null);
   const nextToastId = useRef(1);
   const localeRef = useRef(settings.locale);
@@ -134,6 +139,8 @@ export function App({ client }: AppProps) {
     if (!isSameCourse) {
       workspaceRef.current = null;
       setWorkspace(null);
+      setTutorSnapshot(null);
+      setTutorOpen(false);
       setResumePath(null);
     }
     activeCourseRef.current = loaded;
@@ -195,6 +202,10 @@ export function App({ client }: AppProps) {
             const editor = workspaceRef.current;
             if (editor?.workspace.id === event.payload.workspaceId) {
               void editor.refresh(event.payload.paths);
+            }
+          } else if (event.type === "tutorSessionUpdated") {
+            if (workspaceRef.current?.workspace.id === event.payload.workspaceId) {
+              setTutorSnapshot(event.payload);
             }
           } else if (event.type === "courseTrustChanged") {
             const course = activeCourseRef.current;
@@ -275,8 +286,9 @@ export function App({ client }: AppProps) {
     onCommand: (command: PreflightCommand) => void runPreflight(command),
   };
 
-  function openRuntimeSettings(trigger: HTMLElement) {
+  function openSettingsDialog(trigger: HTMLElement, tab: SettingsTab = "runtime") {
     runtimeSettingsTrigger.current = trigger;
+    setSettingsInitialTab(tab);
     setRuntimeSettingsOpen(true);
   }
 
@@ -284,6 +296,13 @@ export function App({ client }: AppProps) {
     setRuntimeSettingsOpen(false);
     queueMicrotask(() => runtimeSettingsTrigger.current?.focus());
   }
+
+  const handleCloseTutor = useCallback(() => {
+    setTutorOpen(false);
+    queueMicrotask(() => {
+      tutorTriggerRef.current?.focus();
+    });
+  }, []);
 
   const handleCloseAppearance = useCallback(() => {
     setAppearanceOpen(false);
@@ -339,6 +358,7 @@ export function App({ client }: AppProps) {
     const editor = bound ? new WorkspaceEditorSession(client, bound) : null;
     workspaceRef.current = editor;
     setWorkspace(editor);
+    setTutorSnapshot(null);
     for (const notice of bound?.recoveryNotices ?? []) {
       pushToast(formatDomainError({ code: notice.errorCode, details: { store: notice.store } }, settings.locale), "warn");
     }
@@ -435,6 +455,8 @@ export function App({ client }: AppProps) {
       setActiveChapterId("");
       setPendingReload(null);
       setFocusMode(false);
+      setTutorOpen(false);
+      setTutorSnapshot(null);
     });
   }
 
@@ -570,16 +592,19 @@ export function App({ client }: AppProps) {
         activeCourse={authoring ? draft.preview.course : activeCourse}
         completedExercises={workspace ? recents.find((item) => item.workspacePath === workspace.workspace.root)?.completedExercises : undefined}
         focusMode={focusMode}
+        tutorOpen={tutorOpen}
+        tutorTriggerRef={tutorTriggerRef}
         appearanceOpen={appearanceOpen}
         appearanceTriggerRef={appearanceTriggerRef}
         onGoHome={handleGoHome}
         onSelectCourse={handleSelectCourseSummary}
         onOpenImportModal={() => showImport("localMarkdown")}
         onToggleFocusMode={() => setFocusMode((prev) => !prev)}
+        onToggleTutor={!authoring ? () => setTutorOpen((prev) => !prev) : undefined}
         onOpenAppearance={() => setAppearanceOpen(true)}
         runtimePanel={runtimePanel}
         runtimeSettingsOpen={runtimeSettingsOpen}
-        onOpenRuntimeSettings={openRuntimeSettings}
+        onOpenRuntimeSettings={(trigger) => openSettingsDialog(trigger, "runtime")}
       />
 
       <main className="view-host" id="mainView">
@@ -614,6 +639,12 @@ export function App({ client }: AppProps) {
             onReloadCourse={() => void handleReloadCourse()}
             onDismissReload={() => setPendingReload(null)}
             onCopyCommand={(text) => void handleCopyCommand(text)}
+            tutorOpen={tutorOpen}
+            tutorSnapshot={tutorSnapshot}
+            onTutorSnapshotChange={setTutorSnapshot}
+            onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
+            onOpenTutorSettings={(trigger) => openSettingsDialog(trigger, "tutor")}
+            onCloseTutor={handleCloseTutor}
           />
         ) : (
           <WelcomeHome
@@ -683,7 +714,15 @@ export function App({ client }: AppProps) {
       />
 
       {runtimeSettingsOpen && (
-        <RuntimeSettingsDialog {...runtimePanel} onClose={closeRuntimeSettings} />
+        <RuntimeSettingsDialog
+          {...runtimePanel}
+          client={client}
+          settings={settings}
+          initialTab={settingsInitialTab}
+          onUpdateSettings={handleUpdateSettings}
+          onSavedTutorConfig={() => pushToast(messages.tutor.savedConfigToast, "ok")}
+          onClose={closeRuntimeSettings}
+        />
       )}
 
       <ToastStack toasts={toasts} />
