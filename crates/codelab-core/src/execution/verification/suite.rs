@@ -1,70 +1,165 @@
-use super::go;
-use crate::{CheckDiff, CheckResult, CheckStatus, CourseLanguage, TestCaseResult};
+use super::diff::extract_expected_actual;
+use super::{go, java, js_ts, python};
+use crate::execution::Directory;
+use crate::runtime::PreflightReport;
+use crate::{
+    CheckDiff, CheckResult, CheckStatus, CourseCheckSpec, CourseLanguage, DomainError,
+    TestCaseResult,
+};
 use std::collections::BTreeMap;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
+
+#[derive(Clone, Copy)]
+pub(super) enum TestSuiteKind {
+    Go,
+    JsTs,
+    Python,
+    Java,
+}
 
 pub(super) struct TestSuiteAdapter {
+    kind: TestSuiteKind,
     pub default_command: &'static str,
     pub default_timeout_sec: u64,
-    report_label: &'static str,
-    parse_report: fn(&str) -> SuiteReport,
+}
+
+pub(super) struct SuiteRunContext<'a> {
+    pub check: &'a CourseCheckSpec,
+    pub script: &'a str,
+    pub explicit_command: bool,
+    pub directory: Directory,
+    pub report: &'a PreflightReport,
+    pub timeout: Duration,
+    pub cancelled: &'a AtomicBool,
 }
 
 impl TestSuiteAdapter {
     pub fn for_course(language: Option<CourseLanguage>) -> Option<Self> {
         match language {
             Some(CourseLanguage::Go) => Some(Self {
+                kind: TestSuiteKind::Go,
                 default_command: "go test -json -race ./...",
                 default_timeout_sec: 120,
-                report_label: "goTestReport",
-                parse_report: go::parse_report,
             }),
-            _ => None,
+            Some(CourseLanguage::JsTs) => Some(Self {
+                kind: TestSuiteKind::JsTs,
+                default_command: js_ts::DEFAULT_COMMAND,
+                default_timeout_sec: js_ts::DEFAULT_TIMEOUT_SEC,
+            }),
+            Some(CourseLanguage::Python) => Some(Self {
+                kind: TestSuiteKind::Python,
+                default_command: python::DEFAULT_COMMAND,
+                default_timeout_sec: python::DEFAULT_TIMEOUT_SEC,
+            }),
+            Some(CourseLanguage::Java) => Some(Self {
+                kind: TestSuiteKind::Java,
+                default_command: java::DEFAULT_COMMAND,
+                default_timeout_sec: java::DEFAULT_TIMEOUT_SEC,
+            }),
+            None => None,
         }
     }
 
-    pub fn apply_report(&self, result: &mut CheckResult, required: &[String]) {
-        let report = (self.parse_report)(&result.raw_output);
-        if !report.passed() {
+    pub fn run(&self, ctx: SuiteRunContext<'_>) -> Result<CheckResult, DomainError> {
+        match self.kind {
+            TestSuiteKind::Go => {
+                let output = super::run_headless(
+                    ctx.script,
+                    ctx.directory,
+                    ctx.report,
+                    Some(CourseLanguage::Go),
+                    ctx.timeout,
+                    ctx.cancelled,
+                )?;
+                let mut result = super::command_result(ctx.check, output);
+                if result.status == CheckStatus::TimedOut {
+                    return Ok(result);
+                }
+                let suite_report = go::parse_report(&result.raw_output);
+                apply_suite_report(
+                    &mut result,
+                    suite_report,
+                    "goTestReport",
+                    &ctx.check.require_tests,
+                );
+                Ok(result)
+            }
+            TestSuiteKind::JsTs => js_ts::run(ctx),
+            TestSuiteKind::Python => python::run(ctx),
+            TestSuiteKind::Java => java::run(ctx),
+        }
+    }
+}
+
+pub(super) fn apply_suite_report(
+    result: &mut CheckResult,
+    report: SuiteReport,
+    report_label: &str,
+    required: &[String],
+) {
+    let has_failed_case = report.has_failed_case();
+    if !report.passed() && (!report.completed_successfully || !has_failed_case) {
+        let actual = report
+            .compile_error
+            .clone()
+            .unwrap_or_else(|| result.raw_output.clone());
+        result.diffs.push(CheckDiff {
+            label: report_label.into(),
+            expected: "pass".into(),
+            actual,
+        });
+    }
+    for name in required {
+        if let Some(actual) = report.required_case_problem(name) {
             result.diffs.push(CheckDiff {
-                label: self.report_label.into(),
+                label: name.clone(),
                 expected: "pass".into(),
-                actual: result.raw_output.clone(),
+                actual: actual.into(),
             });
         }
-        for name in required {
-            if let Some(actual) = report.required_case_problem(name) {
-                result.diffs.push(CheckDiff {
-                    label: name.clone(),
-                    expected: "pass".into(),
-                    actual: actual.into(),
-                });
-            }
-        }
-        result.test_cases = report.into_test_cases();
-        for test in result
-            .test_cases
-            .iter()
-            .filter(|test| test.status == CheckStatus::Failed)
-        {
+    }
+    result.test_cases = report.into_test_cases();
+    for test in result
+        .test_cases
+        .iter()
+        .filter(|test| test.status == CheckStatus::Failed)
+    {
+        if let Some(extracted) = extract_expected_actual(&test.output) {
+            result.diffs.push(CheckDiff {
+                label: test.name.clone(),
+                expected: extracted.expected,
+                actual: extracted.actual,
+            });
+        } else {
             result.diffs.push(CheckDiff {
                 label: test.name.clone(),
                 expected: "pass".into(),
                 actual: test.output.clone(),
             });
         }
-        if result.status == CheckStatus::Passed && !result.diffs.is_empty() {
-            result.status = CheckStatus::Failed;
-        }
+    }
+    if result.status == CheckStatus::Passed && !result.diffs.is_empty() {
+        result.status = CheckStatus::Failed;
     }
 }
 
 pub(super) struct SuiteReport {
     pub completed_successfully: bool,
     pub tests: BTreeMap<SuiteCaseId, TestCaseResult>,
+    pub compile_error: Option<String>,
 }
 
 impl SuiteReport {
-    fn passed(&self) -> bool {
+    pub fn incomplete() -> Self {
+        Self {
+            completed_successfully: false,
+            tests: BTreeMap::new(),
+            compile_error: None,
+        }
+    }
+
+    pub fn passed(&self) -> bool {
         self.completed_successfully
             && self
                 .tests
@@ -74,6 +169,12 @@ impl SuiteReport {
                 .tests
                 .values()
                 .any(|test| test.status == CheckStatus::Passed)
+    }
+
+    pub fn has_failed_case(&self) -> bool {
+        self.tests
+            .values()
+            .any(|test| test.status == CheckStatus::Failed)
     }
 
     fn required_case_problem(&self, name: &str) -> Option<&'static str> {
@@ -129,10 +230,23 @@ impl SuiteCaseId {
     }
 
     fn matches(&self, selector: &str) -> bool {
+        let normalized = selector.strip_suffix("()").unwrap_or(selector);
         self.test == selector
-            || selector
-                .strip_prefix(&self.package)
-                .and_then(|rest| rest.strip_prefix('/'))
-                == Some(self.test.as_str())
+            || self.test == normalized
+            || self.matches_qualified(selector, '/')
+            || self.matches_qualified(normalized, '#')
+            || self.matches_qualified(selector, '>')
+    }
+
+    fn matches_qualified(&self, selector: &str, separator: char) -> bool {
+        let Some(rest) = selector.strip_prefix(&self.package) else {
+            return false;
+        };
+        let rest = if separator == '>' {
+            rest.strip_prefix(" > ")
+        } else {
+            rest.strip_prefix(separator)
+        };
+        rest == Some(self.test.as_str())
     }
 }

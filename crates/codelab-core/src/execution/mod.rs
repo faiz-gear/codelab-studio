@@ -392,6 +392,15 @@ fn environment(
             dirs.push(uv_bin.to_owned());
         }
         let managed = row.selected == Some(RuntimeSource::Managed);
+        if row.language == CourseLanguage::Java
+            && let Some(runtime) = &row.managed
+            && runtime.test_executor.is_file()
+        {
+            env.insert(
+                "CODELAB_JUNIT_JAR".into(),
+                runtime.test_executor.as_os_str().to_owned(),
+            );
+        }
         if let Some(home) = bin.parent() {
             let variable = match row.language {
                 CourseLanguage::Java => Some("JAVA_HOME"),
@@ -402,6 +411,9 @@ fn environment(
                 env.insert(variable.into(), home.as_os_str().to_owned());
             }
         }
+    }
+    if language == Some(CourseLanguage::Python) {
+        env.insert("PYTHONUTF8".into(), "1".into());
     }
     if !dirs.is_empty() {
         dirs.extend(std::env::split_paths(

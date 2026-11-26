@@ -1,7 +1,12 @@
+mod diff;
 mod go;
 mod http;
+mod java;
+mod js_ts;
 pub(crate) mod model;
+mod python;
 mod suite;
+mod xml;
 
 use super::preparation::CommandInvocation;
 use super::{Directory, Process, Spawn, environment, execution_error, shell_command};
@@ -10,7 +15,11 @@ use crate::{
     CheckDiff, CheckKind, CheckResult, CheckStatus, CourseCheckSpec, CourseLanguage, DomainError,
     ErrorCode,
 };
+use std::collections::BTreeMap;
+use std::ffi::OsString;
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -46,6 +55,7 @@ enum CheckExecution {
     Http,
     Command {
         script: String,
+        explicit_command: bool,
         timeout: Duration,
         suite: Option<TestSuiteAdapter>,
     },
@@ -67,9 +77,11 @@ impl PreparedCheck {
                 } else {
                     None
                 };
-                let script = check
+                let explicit = check
                     .command
                     .as_deref()
+                    .filter(|script| !script.trim().is_empty());
+                let script = explicit
                     .or_else(|| suite.as_ref().map(|suite| suite.default_command))
                     .filter(|script| !script.trim().is_empty())
                     .ok_or_else(|| {
@@ -82,6 +94,7 @@ impl PreparedCheck {
                 });
                 CheckExecution::Command {
                     script: script.to_owned(),
+                    explicit_command: explicit.is_some(),
                     timeout: Duration::from_secs(timeout),
                     suite,
                 }
@@ -117,22 +130,31 @@ impl PreparedCheck {
             CheckExecution::Http => http::run(&self.spec, cancelled),
             CheckExecution::Command {
                 script,
+                explicit_command,
                 timeout,
                 suite,
             } => {
-                let output = run_headless(
-                    &script,
-                    directory,
-                    report,
-                    self.language,
-                    timeout,
-                    cancelled,
-                )?;
-                let mut result = command_result(&self.spec, output);
                 if let Some(suite) = suite {
-                    suite.apply_report(&mut result, &self.spec.require_tests);
+                    suite.run(suite::SuiteRunContext {
+                        check: &self.spec,
+                        script: &script,
+                        explicit_command,
+                        directory,
+                        report,
+                        timeout,
+                        cancelled,
+                    })
+                } else {
+                    let output = run_headless(
+                        &script,
+                        directory,
+                        report,
+                        self.language,
+                        timeout,
+                        cancelled,
+                    )?;
+                    Ok(command_result(&self.spec, output))
                 }
-                Ok(result)
             }
         }
     }
@@ -155,13 +177,25 @@ fn run_headless(
     cancelled: &AtomicBool,
 ) -> Result<CommandOutput, DomainError> {
     let (program, args) = shell_command(CHECK_SHELL, script)?;
+    let env = environment(report, language)?;
+    run_headless_spawn(program, args, directory, env, timeout, cancelled)
+}
+
+fn run_headless_spawn(
+    program: PathBuf,
+    args: Vec<OsString>,
+    directory: Directory,
+    env: BTreeMap<OsString, OsString>,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+) -> Result<CommandOutput, DomainError> {
     let mut output = tempfile::tempfile().map_err(execution_error)?;
     let mut process = Process::spawn_headless(
         Spawn {
             program,
             args,
             directory,
-            env: environment(report, language)?,
+            env,
         },
         output.try_clone().map_err(execution_error)?,
     )
@@ -192,6 +226,62 @@ fn run_headless(
         duration_ms: start.elapsed().as_millis() as u64,
         raw_output: String::from_utf8_lossy(&bytes).into_owned(),
     })
+}
+
+fn read_bounded_file(path: &Path, limit: u64) -> std::io::Result<String> {
+    let file = File::open(path)?;
+    let mut bytes = Vec::new();
+    file.take(limit).read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn parse_simple_command(script: &str) -> Option<Vec<String>> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_bash::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(script, None)?;
+    let root = tree.root_node();
+    if root.has_error() {
+        return None;
+    }
+    let mut cursor = root.walk();
+    let mut commands = root
+        .named_children(&mut cursor)
+        .filter(|node| node.kind() != "comment");
+    let node = commands.next()?;
+    if commands.next().is_some() || node.kind() != "command" {
+        return None;
+    }
+    let name = node.child_by_field_name("name")?;
+    let mut words = Vec::new();
+    let mut child_cursor = node.walk();
+    for child in node.named_children(&mut child_cursor) {
+        let raw = &script[child.byte_range()];
+        if child.id() == name.id() {
+            if raw.contains(['$', '`', '*', '?', '[', '~', '"', '\'', '\\']) {
+                return None;
+            }
+            words.push(raw.to_owned());
+            continue;
+        }
+        if child.kind() != "word" && child.kind() != "raw_string" && child.kind() != "string" {
+            return None;
+        }
+        if child.kind() == "string" && (raw.contains('$') || raw.contains('`')) {
+            return None;
+        }
+        if child.kind() == "word" && raw.contains(['$', '`', '*', '?', '[', '~']) {
+            return None;
+        }
+        let unquoted = match child.kind() {
+            "raw_string" => raw.strip_prefix('\'')?.strip_suffix('\'')?.to_owned(),
+            "string" => raw.strip_prefix('"')?.strip_suffix('"')?.to_owned(),
+            _ => raw.to_owned(),
+        };
+        words.push(unquoted);
+    }
+    (!words.is_empty()).then_some(words)
 }
 
 fn command_result(check: &CourseCheckSpec, output: CommandOutput) -> CheckResult {

@@ -257,4 +257,43 @@ describe("CodeLab Studio frontend seam (CoreClient)", () => {
       "Start today's local practice."
     );
   });
+
+  it("lights up all 4 language builtin Course Packs in Welcome Home 2x2 grid, language filter, and TopBar dropdown", async () => {
+    const client = new FakeCoreClient();
+    const user = userEvent.setup();
+    render(<App client={client} />);
+
+    await screen.findByRole("heading", { level: 1 });
+
+    for (const [lang, expectedTitle, courseId] of [
+      ["JS/TS", "TypeScript 数据流水线实战", "ts-data-pipeline"],
+      ["Python", "Python 数据清洗与订单统计", "python-data-clean"],
+      ["Java", "Java 21 并发限流器实战", "java-rate-limiter"],
+    ] as const) {
+      const courseGrid = screen.getByTestId("course-grid");
+      const filterGroup = screen.getByRole("group", { name: "按语言筛选" });
+      await user.click(within(filterGroup).getByRole("button", { name: lang }));
+      expect(within(courseGrid).getAllByRole("button")).toHaveLength(1);
+      await user.click(
+        within(courseGrid).getByRole("button", { name: new RegExp(expectedTitle) })
+      );
+      expect(
+        await screen.findByRole("region", { name: "只读手册工作台" })
+      ).toBeInTheDocument();
+      expect(client.commandLog).toContainEqual({
+        type: "openCourse",
+        payload: { kind: "builtin", courseId },
+      });
+
+      // Return Home via TopBar dropdown and verify all 4 builtins are listed
+      await user.click(screen.getByRole("button", { name: /切换或导入 Course/ }));
+      const menu = screen.getByRole("menu", { name: "切换或导入 Course" });
+      expect(within(menu).getByRole("menuitem", { name: /Go 与 GoFrame 开发实践/ })).toBeInTheDocument();
+      expect(within(menu).getByRole("menuitem", { name: /TypeScript 数据流水线实战/ })).toBeInTheDocument();
+      expect(within(menu).getByRole("menuitem", { name: /Python 数据清洗与订单统计/ })).toBeInTheDocument();
+      expect(within(menu).getByRole("menuitem", { name: /Java 21 并发限流器实战/ })).toBeInTheDocument();
+      await user.click(within(menu).getByRole("menuitem", { name: "返回课程主页" }));
+      await screen.findByRole("heading", { level: 1 });
+    }
+  });
 });

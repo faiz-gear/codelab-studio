@@ -548,3 +548,88 @@ fn ships_applicable_reference_files_for_all_builtin_go_exercises() {
         }
     }
 }
+
+#[test]
+fn ships_applicable_reference_files_and_transparent_starter_tests_for_ts_python_and_java() {
+    let trust = TempDir::new().unwrap();
+    for (
+        course_id,
+        exercise_count,
+        expected_test_file,
+        sample_chapter,
+        sample_file,
+        expected_text,
+    ) in [
+        (
+            "ts-data-pipeline",
+            8,
+            "tests/ex1-filter.test.ts",
+            "ex-1",
+            "src/filter.ts",
+            "user.age >= 18",
+        ),
+        (
+            "python-data-clean",
+            6,
+            "tests/test_ex1_cleaner.py",
+            "ex-1",
+            "src/cleaner.py",
+            "ROUND_HALF_UP",
+        ),
+        (
+            "java-rate-limiter",
+            7,
+            "src/test/java/com/codelab/ratelimiter/Ex1TokenBucketTest.java",
+            "ex-1",
+            "src/main/java/com/codelab/ratelimiter/TokenBucket.java",
+            "synchronized boolean tryAcquire",
+        ),
+    ] {
+        let (app, temp, id) = open(
+            trust.path(),
+            OpenCourseRequest::Builtin {
+                course_id: course_id.into(),
+            },
+        );
+        let AppResponse::StarterFiles(starter_files) = app
+            .execute(AppCommand::ListStarterFiles { workspace_id: id })
+            .unwrap()
+        else {
+            panic!("expected starter files");
+        };
+        assert!(
+            starter_files.iter().any(|path| path == expected_test_file),
+            "{course_id} starter must include transparent test {expected_test_file}"
+        );
+        assert!(
+            temp.path()
+                .join("workspace")
+                .join(expected_test_file)
+                .is_file(),
+            "{course_id} workspace must contain {expected_test_file}"
+        );
+
+        for index in 1..=exercise_count {
+            let chapter_id = format!("ex-{index}");
+            let comparisons = preview(&app, id, &chapter_id);
+            assert!(
+                !comparisons.is_empty(),
+                "{course_id} {chapter_id} missing Reference Solution"
+            );
+            if chapter_id == sample_chapter {
+                assert!(
+                    comparisons.iter().any(|file| {
+                        file.current.path == sample_file && file.proposed.contains(expected_text)
+                    }),
+                    "{course_id} {chapter_id} missing expected snippet"
+                );
+            }
+            for file in comparisons {
+                assert!(matches!(
+                    apply(&app, id, &file),
+                    AppResponse::WorkspaceFile(_)
+                ));
+            }
+        }
+    }
+}

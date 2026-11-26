@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "java-rate-limiter",
+  "language": "java",
+  "chapters": [
+    {
+      "chapterId": "ex-1",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "固定令牌桶边界与多线程安全 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex1TokenBucketTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "allowsRequestsUpToCapacityAndRejectsBeyond",
+            "rejectsNonPositiveCapacity",
+            "preventsOverAllocationUnderConcurrency"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-2",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "时间补充令牌桶 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex2RefillingTokenBucketTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "refillsTokensAsClockAdvancesWithoutExceedingCapacity",
+            "reportsRetryAfterMillisWhenEmpty",
+            "consumesBurstThenRefillsIncrementally"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-3",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "固定时间窗口计数器 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex3FixedWindowLimiterTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "enforcesLimitWithinSingleWindow",
+            "resetsQuotaAtNextWindowBoundary",
+            "returnsExactRetryAfterUntilWindowReset"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-4",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "滑动窗口日志限流器 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex4SlidingWindowLogLimiterTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "preventsBoundaryBurstAcrossFixedWindowEdges",
+            "evictsExpiredTimestampsAndComputesRetryAfter",
+            "tracksRemainingCapacityAccurately"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-5",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "按键隔离并发限流器 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex5TenantRateLimiterTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "isolatesQuotasBetweenDistinctTenants",
+            "rejectsNullOrBlankTenants",
+            "safelyInitializesSharedTenantUnderConcurrency"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-6",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "Java 21 虚拟线程并发压测器 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex6VirtualThreadLoadRunnerTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "executesAllRequestsOnVirtualThreadsWithoutOverAllocation",
+            "countsAllowedAndRejectedConsistently",
+            "rejectsNegativeRequestCount"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-7",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "突发与持续双层组合限流器 JUnit 5 测试通过",
+          "type": "test_suite",
+          "command": "junit --select-class com.codelab.ratelimiter.Ex7CompositeRateLimiterTest",
+          "timeoutSec": 12,
+          "requireTests": [
+            "enforcesBurstLimitBeforeSustainedLimit",
+            "doesNotConsumeBurstQuotaWhenSustainedLimitRejects",
+            "returnsLargerRetryAfterWhenBothWindowsBlock"
+          ]
+        }
+      ]
+    }
+  ]
+}

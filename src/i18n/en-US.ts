@@ -477,7 +477,7 @@ export const enUS: Messages = {
     COURSE_CHECKS_INVALID:
       "Checks specification (.codelab-checks.json) is invalid. Check schemaVersion and check types.",
     TEST_SUITE_ADAPTER_UNAVAILABLE:
-      "Test Suite {checkId} needs a supported Course language. This version supports Go Test Suites.",
+      "Test Suite {checkId} needs a supported Course language (Go, JS/TS, Python, or Java).",
     GIT_COURSE_FETCH_FAILED: "Unable to fetch “{url}”. Check that Git is installed and the repository is reachable.",
     GIT_COURSE_CACHE_FAILED: "Unable to read or write the Git Course cache.",
     NO_ACTIVE_GIT_COURSE: "Open a Git Course Pack to pull upstream updates.",

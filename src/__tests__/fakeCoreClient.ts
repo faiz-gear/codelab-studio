@@ -197,6 +197,206 @@ export function createBuiltinGoCourseFixture(): LoadedCourse {
   };
 }
 
+export function createBuiltinTsCourseFixture(): LoadedCourse {
+  return {
+    courseId: "ts-data-pipeline",
+    title: "TypeScript 数据流水线实战",
+    description: "多文件函数判题：筛选过滤、去重聚合与并发限流。",
+    language: "JS/TS",
+    version: "1.0.0",
+    author: "CodeLab Studio",
+    dependencies: ["bun>=1.1 | node>=22"],
+    source: { kind: "builtin", courseId: "ts-data-pipeline" },
+    entryMarkdownPath: null,
+    isBuiltin: true,
+    trusted: true,
+    introHtml: "<p>多文件 TypeScript 数据流水线练习。</p>",
+    totalExercises: 8,
+    chapters: [
+      {
+        chapterId: "ex-1",
+        title: "练习 1：成年用户筛选与不可变映射",
+        kind: "exercise",
+        presentation: "threeStep",
+        defaultCwd: null,
+        entryFile: "src/filter.ts",
+        summaryHtml: "<p>补全 <code>getAdultNames</code>，筛出成年用户姓名。</p>",
+        blocks: [{ kind: "prose", html: "<p>编辑 <code>src/filter.ts</code>。</p>" }],
+        commands: [
+          {
+            id: "ex-1:cmd-1",
+            shell: "bash",
+            command: "bun test tests/ex1-filter.test.ts",
+            cwd: null,
+            cwdOrigin: "workspaceRoot",
+            mode: "oneshot",
+            modeOrigin: "explicit",
+            label: null,
+            port: null,
+            isSecondary: false,
+          },
+        ],
+        threeStep: {
+          step1IntroHtml: null,
+          step1CommandIds: ["ex-1:cmd-1"],
+          step2EntryFile: "src/filter.ts",
+          step2Html: "<p>仅保留 <code>age &gt;= 18</code> 的用户。</p>",
+          step3IntroHtml: null,
+          step3Checks: [
+            {
+              id: "v1",
+              title: "用户筛选单测全部通过（边界 18 岁与不可变性）",
+              kind: "testSuite",
+              required: true,
+              cwd: null,
+              command: "bun test tests/ex1-filter.test.ts",
+              method: null,
+              url: null,
+              timeoutSec: 5,
+            },
+          ],
+          requiresDaemon: null,
+          secondaryCommandIds: [],
+          reflectionsHtml: null,
+        },
+        reflectionsHtml: null,
+      },
+    ],
+  };
+}
+
+export function createBuiltinPythonCourseFixture(): LoadedCourse {
+  return {
+    courseId: "python-data-clean",
+    title: "Python 数据清洗与订单统计",
+    description: "通过 uv 隔离环境运行多模块 pytest 自动化验收。",
+    language: "Python",
+    version: "1.0.0",
+    author: "CodeLab Studio",
+    dependencies: ["python>=3.11", "pytest", "pytest-json-report"],
+    source: { kind: "builtin", courseId: "python-data-clean" },
+    entryMarkdownPath: null,
+    isBuiltin: true,
+    trusted: true,
+    introHtml: "<p>使用 pytest --json-report 验证数据清洗结果。</p>",
+    totalExercises: 6,
+    chapters: [
+      {
+        chapterId: "ex-1",
+        title: "练习 1：清洗无效订单并按类目汇总金额",
+        kind: "exercise",
+        presentation: "threeStep",
+        defaultCwd: null,
+        entryFile: "src/cleaner.py",
+        summaryHtml: "<p>过滤非正金额与取消订单并用 Decimal 汇总。</p>",
+        blocks: [{ kind: "prose", html: "<p>编辑 <code>src/cleaner.py</code>。</p>" }],
+        commands: [
+          {
+            id: "ex-1:cmd-1",
+            shell: "bash",
+            command: "pytest -q tests/test_ex1_cleaner.py",
+            cwd: null,
+            cwdOrigin: "workspaceRoot",
+            mode: "oneshot",
+            modeOrigin: "explicit",
+            label: null,
+            port: null,
+            isSecondary: false,
+          },
+        ],
+        threeStep: {
+          step1IntroHtml: null,
+          step1CommandIds: ["ex-1:cmd-1"],
+          step2EntryFile: "src/cleaner.py",
+          step2Html: "<p>实现 <code>sum_valid_by_category</code>。</p>",
+          step3IntroHtml: null,
+          step3Checks: [
+            {
+              id: "v1",
+              title: "订单清洗与类目金额汇总 pytest 用例全部通过",
+              kind: "testSuite",
+              required: true,
+              cwd: null,
+              command: "pytest --json-report tests/test_ex1_cleaner.py",
+              method: null,
+              url: null,
+              timeoutSec: 8,
+            },
+          ],
+          requiresDaemon: null,
+          secondaryCommandIds: [],
+          reflectionsHtml: null,
+        },
+        reflectionsHtml: null,
+      },
+    ],
+  };
+}
+
+export function createBuiltinJavaCourseFixture(): LoadedCourse {
+  return {
+    courseId: "java-rate-limiter",
+    title: "Java 21 并发限流器实战",
+    description: "Temurin JDK 21 与 JUnit 5 多线程安全验收。",
+    language: "Java",
+    version: "1.0.0",
+    author: "CodeLab Studio",
+    dependencies: ["jdk>=21", "junit5"],
+    source: { kind: "builtin", courseId: "java-rate-limiter" },
+    entryMarkdownPath: null,
+    isBuiltin: true,
+    trusted: true,
+    introHtml: "<p>使用 JDK 21 与 JUnit 5 验证并发限流器。</p>",
+    totalExercises: 7,
+    chapters: [
+      {
+        chapterId: "ex-1",
+        title: "练习 1：线程安全的固定令牌桶",
+        kind: "exercise",
+        presentation: "threeStep",
+        defaultCwd: null,
+        entryFile: "src/main/java/com/codelab/ratelimiter/TokenBucket.java",
+        summaryHtml: "<p>修复 <code>TokenBucket.tryAcquire()</code> 并发竞态。</p>",
+        blocks: [{ kind: "prose", html: "<p>编辑 <code>TokenBucket.java</code>。</p>" }],
+        commands: [],
+        threeStep: {
+          step1IntroHtml: null,
+          step1CommandIds: [],
+          step2EntryFile: "src/main/java/com/codelab/ratelimiter/TokenBucket.java",
+          step2Html: "<p>添加同步控制并修正边界条件。</p>",
+          step3IntroHtml: null,
+          step3Checks: [
+            {
+              id: "v1",
+              title: "固定令牌桶边界与多线程安全 JUnit 5 测试通过",
+              kind: "testSuite",
+              required: true,
+              cwd: null,
+              command: "junit --select-class com.codelab.ratelimiter.Ex1TokenBucketTest",
+              method: null,
+              url: null,
+              timeoutSec: 12,
+            },
+          ],
+          requiresDaemon: null,
+          secondaryCommandIds: [],
+          reflectionsHtml: null,
+        },
+        reflectionsHtml: null,
+      },
+    ],
+  };
+}
+
+export function createBuiltinCourseFixtures(): LoadedCourse[] {
+  return [
+    createBuiltinGoCourseFixture(),
+    createBuiltinTsCourseFixture(),
+    createBuiltinPythonCourseFixture(),
+    createBuiltinJavaCourseFixture(),
+  ];
+}
+
 export function summarizeCourse(course: LoadedCourse): CourseSummary {
   return {
     courseId: course.courseId,
@@ -263,7 +463,7 @@ export class FakeCoreClient implements CoreClient {
     this.recoveryNotices = options.recoveryNotices
       ? [...options.recoveryNotices]
       : [];
-    const builtins = options.builtinCourses ?? [createBuiltinGoCourseFixture()];
+    const builtins = options.builtinCourses ?? createBuiltinCourseFixtures();
     for (const course of builtins) {
       this.builtinCourses.set(course.courseId, course);
     }

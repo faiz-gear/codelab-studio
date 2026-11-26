@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "python-data-clean",
+  "title": "Python 数据清洗与订单统计",
+  "description": "通过隔离 Python 与 pytest 环境运行多模块函数判题：脏数据过滤、CSV 解析校验、订单去重、Top 类目排行、异常检测与完整报表生成，覆盖练习 1 至 6。",
+  "language": "python",
+  "version": "1.0.0",
+  "author": "CodeLab Studio",
+  "entryFile": "README.md",
+  "starterDir": "starter",
+  "checksFile": ".codelab-checks.json",
+  "dependencies": [
+    "python>=3.11",
+    "pytest",
+    "pytest-json-report"
+  ],
+  "chapters": [
+    {
+      "chapterId": "ex-1",
+      "title": "练习 1：清洗无效订单并按类目汇总金额",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 1："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/cleaner.py"
+    },
+    {
+      "chapterId": "ex-2",
+      "title": "练习 2：使用 dataclass 解析与校验订单 CSV",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 2："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/csv_loader.py"
+    },
+    {
+      "chapterId": "ex-3",
+      "title": "练习 3：按订单号去重并保留最新状态",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 3："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/dedup.py"
+    },
+    {
+      "chapterId": "ex-4",
+      "title": "练习 4：计算消费额 Top-N 类目排行",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 4："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/analytics.py"
+    },
+    {
+      "chapterId": "ex-5",
+      "title": "练习 5：检测异常金额与重复订单",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 5："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/anomaly.py"
+    },
+    {
+      "chapterId": "ex-6",
+      "title": "练习 6：组装端到端订单统计报表",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 6："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/report.py"
+    }
+  ]
+}

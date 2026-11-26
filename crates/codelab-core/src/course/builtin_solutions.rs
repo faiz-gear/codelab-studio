@@ -1,15 +1,23 @@
 use super::EmbeddedFiles;
 
-macro_rules! go_solution {
-    ($chapter:literal, $($path:literal),+ $(,)?) => {
+macro_rules! pack_solution {
+    ($pack:literal, $chapter:literal, $($path:literal),+ $(,)?) => {
         ($chapter, &[$(
             ($path, include_bytes!(concat!(
-                "../../../../builtin-courses/go-goframe-practice/solutions/",
+                "../../../../builtin-courses/",
+                $pack,
+                "/solutions/",
                 $chapter,
                 "/",
                 $path
             ))),
         )+])
+    };
+}
+
+macro_rules! go_solution {
+    ($chapter:literal, $($path:literal),+ $(,)?) => {
+        pack_solution!("go-goframe-practice", $chapter, $($path),+)
     };
 }
 
@@ -111,5 +119,85 @@ pub(super) const GO_GOFRAME_SOLUTIONS: &[(&str, EmbeddedFiles)] = &[
         "task-api-gf/migrations/001_create_tasks.sql",
         "task-api-gf/migrations/002_create_task_events.sql",
         "task-api-gf/orm_test.go",
+    ),
+];
+
+pub(super) const TS_DATA_PIPELINE_SOLUTIONS: &[(&str, EmbeddedFiles)] = &[
+    pack_solution!("ts-data-pipeline", "ex-1", "src/filter.ts"),
+    pack_solution!("ts-data-pipeline", "ex-2", "src/normalize.ts"),
+    pack_solution!("ts-data-pipeline", "ex-3", "src/dedup.ts"),
+    pack_solution!("ts-data-pipeline", "ex-4", "src/aggregate.ts"),
+    pack_solution!("ts-data-pipeline", "ex-5", "src/paginate.ts"),
+    pack_solution!("ts-data-pipeline", "ex-6", "src/settled.ts"),
+    pack_solution!("ts-data-pipeline", "ex-7", "src/concurrency.ts"),
+    pack_solution!(
+        "ts-data-pipeline",
+        "ex-8",
+        "src/aggregate.ts",
+        "src/concurrency.ts",
+        "src/dedup.ts",
+        "src/normalize.ts",
+        "src/pipeline.ts",
+    ),
+];
+
+pub(super) const PYTHON_DATA_CLEAN_SOLUTIONS: &[(&str, EmbeddedFiles)] = &[
+    pack_solution!("python-data-clean", "ex-1", "src/cleaner.py"),
+    pack_solution!("python-data-clean", "ex-2", "src/csv_loader.py"),
+    pack_solution!("python-data-clean", "ex-3", "src/dedup.py"),
+    pack_solution!(
+        "python-data-clean",
+        "ex-4",
+        "src/analytics.py",
+        "src/cleaner.py",
+    ),
+    pack_solution!("python-data-clean", "ex-5", "src/anomaly.py"),
+    pack_solution!(
+        "python-data-clean",
+        "ex-6",
+        "src/analytics.py",
+        "src/anomaly.py",
+        "src/cleaner.py",
+        "src/csv_loader.py",
+        "src/dedup.py",
+        "src/report.py",
+    ),
+];
+
+pub(super) const JAVA_RATE_LIMITER_SOLUTIONS: &[(&str, EmbeddedFiles)] = &[
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-1",
+        "src/main/java/com/codelab/ratelimiter/TokenBucket.java",
+    ),
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-2",
+        "src/main/java/com/codelab/ratelimiter/RefillingTokenBucket.java",
+    ),
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-3",
+        "src/main/java/com/codelab/ratelimiter/FixedWindowLimiter.java",
+    ),
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-4",
+        "src/main/java/com/codelab/ratelimiter/SlidingWindowLogLimiter.java",
+    ),
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-5",
+        "src/main/java/com/codelab/ratelimiter/TenantRateLimiter.java",
+    ),
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-6",
+        "src/main/java/com/codelab/ratelimiter/VirtualThreadLoadRunner.java",
+    ),
+    pack_solution!(
+        "java-rate-limiter",
+        "ex-7",
+        "src/main/java/com/codelab/ratelimiter/CompositeRateLimiter.java",
     ),
 ];
