@@ -853,7 +853,13 @@ export const zhCN: Messages = {
     COURSE_CHECKS_INVALID:
       "验收规则文件（.codelab-checks.json）格式无效，请检查字段与检查类型。",
     TEST_SUITE_ADAPTER_UNAVAILABLE:
-      "Test Suite {checkId} 需要受支持的 Course 语言。当前版本支持 Go Test Suite。",
+      "Test Suite {checkId} 需要声明受支持的 Course 语言（Go / JS/TS / Python / Java）。",
+    JAVA_TOOLCHAIN_UNAVAILABLE:
+      "未找到可用的 JDK 21（javac / java）。请安装本机 JDK 21，或在环境自检中安装托管 Java 运行时。",
+    JAVA_JUNIT_LAUNCHER_UNAVAILABLE:
+      "未找到 JUnit 5 Console Launcher JAR。请在环境自检中安装托管 Java 运行时，或设置 CODELAB_JUNIT_JAR。",
+    JAVA_SOURCES_NOT_FOUND:
+      "当前 Workspace 目录中未找到任何 .java 源文件。",
     GIT_COURSE_FETCH_FAILED: "无法获取 “{url}”。请检查 Git 是否已安装且仓库可以访问。",
     GIT_COURSE_CACHE_FAILED: "无法读写 Git 课程缓存。",
     NO_ACTIVE_GIT_COURSE: "请先打开 Git Course Pack。",

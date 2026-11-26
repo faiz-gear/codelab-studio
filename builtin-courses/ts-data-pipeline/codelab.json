@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "ts-data-pipeline",
+  "title": "TypeScript 数据流水线实战",
+  "description": "多文件函数判题：从记录过滤、字段归一化、去重聚合到游标分页、并发限流与端到端数据流水线，覆盖练习 1 至 8。",
+  "language": "ts",
+  "version": "1.0.0",
+  "author": "CodeLab Studio",
+  "entryFile": "README.md",
+  "starterDir": "starter",
+  "checksFile": ".codelab-checks.json",
+  "dependencies": [
+    "bun>=1.1 | node>=22"
+  ],
+  "chapters": [
+    {
+      "chapterId": "ex-1",
+      "title": "练习 1：成年用户筛选与不可变映射",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 1："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/filter.ts"
+    },
+    {
+      "chapterId": "ex-2",
+      "title": "练习 2：原始事件清洗与字段归一化",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 2："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/normalize.ts"
+    },
+    {
+      "chapterId": "ex-3",
+      "title": "练习 3：按 ID 去重并保留最新事件",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 3："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/dedup.ts"
+    },
+    {
+      "chapterId": "ex-4",
+      "title": "练习 4：按类目分组汇总金额与峰值延迟",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 4："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/aggregate.ts"
+    },
+    {
+      "chapterId": "ex-5",
+      "title": "练习 5：确定性游标分页器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 5："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/paginate.ts"
+    },
+    {
+      "chapterId": "ex-6",
+      "title": "练习 6：Promise.allSettled 容错批量收集",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 6："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/settled.ts"
+    },
+    {
+      "chapterId": "ex-7",
+      "title": "练习 7：有界并发任务调度器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 7："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/concurrency.ts"
+    },
+    {
+      "chapterId": "ex-8",
+      "title": "练习 8：组装端到端异步数据流水线",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 8："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/pipeline.ts"
+    }
+  ]
+}

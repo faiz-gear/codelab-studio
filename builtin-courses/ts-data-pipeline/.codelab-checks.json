@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "ts-data-pipeline",
+  "language": "ts",
+  "chapters": [
+    {
+      "chapterId": "ex-1",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "用户筛选单测全部通过（边界 18 岁与不可变性）",
+          "type": "test_suite",
+          "command": "bun test tests/ex1-filter.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "filters underage users and returns names only",
+            "treats age 18 as an adult",
+            "returns empty array without mutating input"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-2",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "原始事件清洗与归一化单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex2-normalize.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "trims fields and lowercases category and tags",
+            "drops records with blank id or category",
+            "clamps negative latency to zero and removes duplicate tags"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-3",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "按 ID 去重并按时间排序单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex3-dedup.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "keeps the record with the largest timestamp per id",
+            "breaks timestamp ties by keeping the later input record",
+            "returns results sorted ascending by timestamp then id"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-4",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "按类目分组汇总单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex4-aggregate.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "aggregates count totalAmount and maxLatencyMs per category",
+            "rounds floating point amounts to two decimals",
+            "returns empty object for empty event list"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-5",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "游标分页单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex5-paginate.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "returns first page and nextCursor when more items remain",
+            "continues after given cursor until last page",
+            "rejects non-positive limit and handles unknown cursor"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-6",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "Promise.allSettled 批量收集单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex6-settled.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "collects fulfilled values and rejected messages without short-circuiting",
+            "preserves fulfilled order matching input sequence",
+            "handles empty batch cleanly"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-7",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "有界并发限流器单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex7-concurrency.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "never exceeds the configured concurrency limit",
+            "preserves input ordering despite out-of-order completion",
+            "rejects non-positive concurrency limit"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-8",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "端到端异步数据流水线单测全部通过",
+          "type": "test_suite",
+          "command": "bun test tests/ex8-pipeline.test.ts",
+          "timeoutSec": 5,
+          "requireTests": [
+            "normalizes deduplicates enriches and summarizes end-to-end",
+            "enforces concurrency limit during enrichment",
+            "returns null topCategory when no valid events remain"
+          ]
+        }
+      ]
+    }
+  ]
+}

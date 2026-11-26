@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "java-rate-limiter",
+  "title": "Java 21 并发限流器实战",
+  "description": "使用 Temurin JDK 21 与 JUnit 5 逐步实现线程安全的限流器组件：令牌桶、时间补充、固定窗口、滑动日志、按键隔离、虚拟线程压测与组合限流策略，覆盖练习 1 至 7。",
+  "language": "java",
+  "version": "1.0.0",
+  "author": "CodeLab Studio",
+  "entryFile": "README.md",
+  "starterDir": "starter",
+  "checksFile": ".codelab-checks.json",
+  "dependencies": [
+    "jdk>=21",
+    "junit5"
+  ],
+  "chapters": [
+    {
+      "chapterId": "ex-1",
+      "title": "练习 1：线程安全的固定令牌桶",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 1："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/TokenBucket.java"
+    },
+    {
+      "chapterId": "ex-2",
+      "title": "练习 2：按时间均匀补充的令牌桶",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 2："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/RefillingTokenBucket.java"
+    },
+    {
+      "chapterId": "ex-3",
+      "title": "练习 3：固定时间窗口计数器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 3："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/FixedWindowLimiter.java"
+    },
+    {
+      "chapterId": "ex-4",
+      "title": "练习 4：滑动时间窗口日志限流器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 4："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/SlidingWindowLogLimiter.java"
+    },
+    {
+      "chapterId": "ex-5",
+      "title": "练习 5：按租户 Key 隔离的并发限流器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 5："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/TenantRateLimiter.java"
+    },
+    {
+      "chapterId": "ex-6",
+      "title": "练习 6：Java 21 虚拟线程并发压测器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 6："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/VirtualThreadLoadRunner.java"
+    },
+    {
+      "chapterId": "ex-7",
+      "title": "练习 7：突发与持续双层组合限流器",
+      "kind": "exercise",
+      "match": {
+        "headingPrefix": "练习 7："
+      },
+      "defaultCwd": null,
+      "entryFile": "src/main/java/com/codelab/ratelimiter/CompositeRateLimiter.java"
+    }
+  ]
+}

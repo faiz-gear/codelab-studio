@@ -189,6 +189,7 @@ pub(super) fn parse_report(output: &str) -> SuiteReport {
     SuiteReport {
         completed_successfully: complete && packages.is_empty(),
         tests,
+        compile_error: None,
     }
 }
 

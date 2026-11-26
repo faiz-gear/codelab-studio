@@ -207,8 +207,23 @@ fn find_on_path_command(name: &str) -> impl Iterator<Item = PathBuf> {
         .filter(|path| is_executable(path))
 }
 
-pub(super) fn executable_name(name: &str) -> String {
+pub(crate) fn find_host_executable(name: &str) -> Option<PathBuf> {
+    find_on_path_command(name).next()
+}
+
+pub(crate) fn executable_name(name: &str) -> String {
     format!("{name}{}", env::consts::EXE_SUFFIX)
+}
+
+pub(crate) fn probe_executable_output(
+    executable: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<String> {
+    match run_probe(executable, args, Instant::now() + timeout) {
+        HostProbeResult::Found { output, .. } => Some(output),
+        _ => None,
+    }
 }
 
 fn is_executable(path: &Path) -> bool {

@@ -88,3 +88,69 @@ it("aborts checks and focuses the disk-conflict banner while preserving the draf
   await waitFor(()=>expect(screen.getByRole("region",{name:"Changed on disk"})).toHaveFocus());
   expect(editor).toHaveValue("// draft"); expect(client.progress?.runningChapterId).not.toBe("ex-0");
 });
+
+it("renders multi-language testSuite per-case statuses, durations, and Expected vs Actual diffs", async () => {
+  const client = new FakeCoreClient({
+    settings: { ...DEFAULT_SETTINGS, locale: "en-US" },
+    pickedPaths: { workspaceDir: "/work/ts-pipeline" },
+  });
+  client.writeDiskFile("/work/ts-pipeline", "src/filter.ts", "export const x = 1;\n");
+  const user = userEvent.setup();
+  render(<App client={client} />);
+
+  const courseGrid = await screen.findByTestId("course-grid");
+  await user.click(within(courseGrid).getByRole("button", { name: /TypeScript Data Pipeline Lab/ }));
+  await user.click(await screen.findByRole("button", { name: "Choose Workspace" }));
+  await user.click(screen.getByRole("button", { name: "Run checks" }));
+
+  const progress: LearningProgress = {
+    workspaceId: client.progress!.workspaceId,
+    completedExercises: 0,
+    totalExercises: 8,
+    runningChapterId: null,
+    chapters: {
+      "ex-1": {
+        completionState: "in_progress",
+        selfChecks: {},
+        lastCheckResults: [
+          {
+            checkId: "v1",
+            status: "failed",
+            durationMs: 31,
+            diffs: [
+              {
+                label: "filter > treats age 18 as an adult",
+                expected: "[\"阿明\"]",
+                actual: "[\"阿明\", \"小雨\"]",
+              },
+            ],
+            rawOutput: "bun test output",
+            testCases: [
+              {
+                name: "filter > returns empty array without mutating input",
+                status: "passed",
+                durationMs: 2,
+                output: "",
+              },
+              {
+                name: "filter > treats age 18 as an adult",
+                status: "failed",
+                durationMs: 5,
+                output: "Expected: [\"阿明\"]\nReceived: [\"阿明\", \"小雨\"]",
+              },
+            ],
+            error: null,
+          },
+        ],
+      },
+    },
+  };
+  act(() => client.emitEvent({ type: "progressUpdated", payload: progress }));
+
+  const panel = await screen.findByRole("tabpanel", { name: /Check results/ });
+  expect(within(panel).getByText("31 ms")).toBeInTheDocument();
+  expect(within(panel).getByText("[\"阿明\"]")).toBeInTheDocument();
+  expect(within(panel).getByText("[\"阿明\", \"小雨\"]")).toBeInTheDocument();
+  expect(within(panel).getByText(/filter > treats age 18 as an adult · 5 ms/)).toBeInTheDocument();
+  expect(within(panel).getByText(/filter > returns empty array without mutating input · 2 ms/)).toBeInTheDocument();
+});

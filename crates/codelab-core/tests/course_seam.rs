@@ -950,3 +950,85 @@ go test -race ./...
         .expect_err("reload after close must fail");
     assert_eq!(err_after_close.code, ErrorCode::NoActiveCourse);
 }
+
+#[test]
+fn builtin_four_language_catalog_exposes_ts_python_and_java_course_packs() {
+    let dir = TempDir::new().expect("temp dir");
+    let app = App::open(AppConfig {
+        data_dir: dir.path().to_path_buf(),
+    })
+    .expect("open app");
+
+    let catalog = match app
+        .execute(AppCommand::ListBuiltinCourses)
+        .expect("list builtin courses")
+    {
+        AppResponse::BuiltinCourses(list) => list,
+        other => panic!("expected BuiltinCourses, got {other:?}"),
+    };
+    assert_eq!(catalog.len(), 4);
+
+    for (course_id, language, expected_exercises, expected_timeout) in [
+        ("go-goframe-practice", CourseLanguage::Go, 10_u32, None),
+        ("ts-data-pipeline", CourseLanguage::JsTs, 8_u32, Some(5_u64)),
+        (
+            "python-data-clean",
+            CourseLanguage::Python,
+            6_u32,
+            Some(8_u64),
+        ),
+        (
+            "java-rate-limiter",
+            CourseLanguage::Java,
+            7_u32,
+            Some(12_u64),
+        ),
+    ] {
+        let summary = catalog
+            .iter()
+            .find(|c| c.course_id == course_id)
+            .unwrap_or_else(|| panic!("missing builtin course {course_id}"));
+        assert_eq!(summary.language, Some(language));
+        assert_eq!(summary.total_exercises, expected_exercises);
+        assert!(summary.is_builtin);
+
+        let loaded = match app
+            .execute(AppCommand::OpenCourse(OpenCourseRequest::Builtin {
+                course_id: course_id.into(),
+            }))
+            .expect("open builtin course")
+        {
+            AppResponse::LoadedCourse(course) => course,
+            other => panic!("expected LoadedCourse, got {other:?}"),
+        };
+        assert_eq!(loaded.language, Some(language));
+        assert_eq!(loaded.total_exercises, expected_exercises);
+        assert!(loaded.trusted);
+
+        if let Some(timeout) = expected_timeout {
+            let exercises: Vec<_> = loaded
+                .chapters
+                .iter()
+                .filter(|ch| ch.kind == ChapterKind::Exercise)
+                .collect();
+            assert_eq!(exercises.len() as u32, expected_exercises);
+            for (idx, chapter) in exercises.iter().enumerate() {
+                assert_eq!(chapter.chapter_id, format!("ex-{}", idx + 1));
+                assert_eq!(chapter.presentation, ChapterPresentation::ThreeStep);
+                let step = chapter
+                    .three_step
+                    .as_ref()
+                    .expect("exercise three-step projection");
+                assert!(
+                    step.step3_checks.iter().any(|check| {
+                        check.kind == CheckKind::TestSuite
+                            && check.timeout_sec == Some(timeout)
+                            && !check.require_tests.is_empty()
+                    }),
+                    "{course_id} {} must declare test_suite check with timeout {timeout}s",
+                    chapter.chapter_id
+                );
+            }
+        }
+    }
+}

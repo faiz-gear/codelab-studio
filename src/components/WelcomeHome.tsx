@@ -42,11 +42,6 @@ export function WelcomeHome({
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
   const latestRecent = recents[0] ?? null;
 
-  const builtinById = new Map<string, CourseSummary>();
-  for (const course of builtinCourses) {
-    builtinById.set(course.courseId, course);
-  }
-
   const progressByCourse = new Map<string, RecentWorkspace>();
   for (const recent of recents) {
     if (!progressByCourse.has(recent.courseId)) {
@@ -54,7 +49,30 @@ export function WelcomeHome({
     }
   }
 
-  const visibleCourses = COURSE_PLACEHOLDER_META.filter(
+  const catalogCourses =
+    builtinCourses.length > 0
+      ? builtinCourses.map((course) => ({
+          id: course.courseId,
+          language: course.language,
+          totalExercises: course.totalExercises,
+          title:
+            messages.welcome.courseTexts[course.courseId]?.title ?? course.title,
+          description:
+            messages.welcome.courseTexts[course.courseId]?.description ??
+            course.description,
+          builtin: course,
+        }))
+      : COURSE_PLACEHOLDER_META.map((course) => ({
+          id: course.id,
+          language: course.language,
+          totalExercises: course.totalExercises,
+          title: messages.welcome.courseTexts[course.id]?.title ?? course.id,
+          description:
+            messages.welcome.courseTexts[course.id]?.description ?? "",
+          builtin: undefined,
+        }));
+
+  const visibleCourses = catalogCourses.filter(
     (course) => languageFilter === "all" || course.language === languageFilter
   );
 
@@ -161,8 +179,7 @@ export function WelcomeHome({
 
           <div className="course-grid" data-testid="course-grid">
             {visibleCourses.map((course) => {
-              const builtin = builtinById.get(course.id);
-              const copy = messages.welcome.courseTexts[course.id];
+              const builtin = course.builtin;
               const matchedRecent = progressByCourse.get(course.id);
               const completed = matchedRecent?.completedExercises ?? 0;
               const total =
@@ -183,20 +200,22 @@ export function WelcomeHome({
                     if (builtin) {
                       onOpenBuiltinCourse(builtin.courseId);
                     } else {
-                      onPlaceholderAction(copy.title);
+                      onPlaceholderAction(course.title);
                     }
                   }}
                 >
                   <div className="course-card-top">
-                    <span className="lang-tag" data-lang={course.language}>
-                      {course.language}
-                    </span>
+                    {course.language ? (
+                      <span className="lang-tag" data-lang={course.language}>
+                        {course.language}
+                      </span>
+                    ) : null}
                     <span className="mono muted" style={{ fontSize: "12px" }}>
                       {completed} / {total}
                     </span>
                   </div>
-                  <h3>{copy.title}</h3>
-                  <p>{copy.description}</p>
+                  <h3>{course.title}</h3>
+                  <p>{course.description}</p>
                   <div className="course-card-foot">
                     <div className="prog-track" aria-hidden="true">
                       <div className="prog-fill" style={{ width: `${pct}%` }} />

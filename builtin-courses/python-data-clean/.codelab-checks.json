@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "1.0",
+  "courseId": "python-data-clean",
+  "language": "python",
+  "chapters": [
+    {
+      "chapterId": "ex-1",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "订单清洗与类目金额汇总 pytest 用例全部通过",
+          "type": "test_suite",
+          "command": "pytest --json-report tests/test_ex1_cleaner.py",
+          "timeoutSec": 8,
+          "requireTests": [
+            "test_sums_valid_orders_by_normalized_category",
+            "test_filters_non_positive_and_cancelled_orders",
+            "test_rounds_decimal_totals_half_up"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-2",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "CSV 订单解析与非法行号记录 pytest 用例全部通过",
+          "type": "test_suite",
+          "command": "pytest --json-report tests/test_ex2_csv_loader.py",
+          "timeoutSec": 8,
+          "requireTests": [
+            "test_parses_valid_csv_rows_into_orders",
+            "test_records_one_based_line_numbers_for_invalid_rows",
+            "test_handles_header_only_csv"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-3",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "订单去重与确定性排序 pytest 用例全部通过",
+          "type": "test_suite",
+          "command": "pytest --json-report tests/test_ex3_dedup.py",
+          "timeoutSec": 8,
+          "requireTests": [
+            "test_keeps_latest_order_by_created_at",
+            "test_breaks_timestamp_ties_with_later_record",
+            "test_sorts_output_by_created_at_then_order_id"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-4",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "Top-N 类目排行 pytest 用例全部通过",
+          "type": "test_suite",
+          "command": "pytest --json-report tests/test_ex4_analytics.py",
+          "timeoutSec": 8,
+          "requireTests": [
+            "test_returns_top_n_categories_by_total_desc",
+            "test_breaks_equal_totals_alphabetically",
+            "test_non_positive_top_n_returns_empty_list"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-5",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "异常订单检测 pytest 用例全部通过",
+          "type": "test_suite",
+          "command": "pytest --json-report tests/test_ex5_anomaly.py",
+          "timeoutSec": 8,
+          "requireTests": [
+            "test_identifies_non_positive_and_duplicate_order_ids",
+            "test_flags_high_value_outliers_above_threshold",
+            "test_clean_dataset_produces_empty_anomaly_report"
+          ]
+        }
+      ]
+    },
+    {
+      "chapterId": "ex-6",
+      "checks": [
+        {
+          "id": "v1",
+          "title": "端到端订单统计报表 pytest 用例全部通过",
+          "type": "test_suite",
+          "command": "pytest --json-report tests/test_ex6_report.py",
+          "timeoutSec": 8,
+          "requireTests": [
+            "test_builds_end_to_end_order_report",
+            "test_counts_invalid_csv_lines_and_anomalies",
+            "test_empty_csv_returns_zeroed_report"
+          ]
+        }
+      ]
+    }
+  ]
+}
