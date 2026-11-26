@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use crate::storage::JsonStore;
+use crate::workspace::MetricEventDetail;
 use crate::{CourseLanguage, DomainError, ErrorCode, StorageRecoveryNotice, StoreKind};
 
 pub use download::{HttpRuntimeDownloader, RuntimeArtifact, RuntimeDownloadAdapter};
@@ -55,6 +56,7 @@ pub(crate) struct RuntimeManager {
     downloads: Arc<dyn RuntimeDownloadAdapter>,
     host: Arc<dyn HostToolchainProbe>,
     on_update: Box<dyn Fn(PreflightReport) + Send + Sync>,
+    on_metric: Box<dyn Fn(MetricEventDetail) + Send + Sync>,
 }
 
 impl RuntimeManager {
@@ -62,6 +64,7 @@ impl RuntimeManager {
         data_dir: &Path,
         adapters: RuntimeAdapters,
         on_update: impl Fn(PreflightReport) + Send + Sync + 'static,
+        on_metric: impl Fn(MetricEventDetail) + Send + Sync + 'static,
     ) -> Result<(Arc<Self>, Option<StorageRecoveryNotice>), DomainError> {
         let preferences = JsonStore::new(
             data_dir,
@@ -109,6 +112,7 @@ impl RuntimeManager {
             downloads: adapters.downloads,
             host: adapters.host,
             on_update: Box::new(on_update),
+            on_metric: Box::new(on_metric),
         });
         Ok((manager, loaded.recovery))
     }
@@ -193,6 +197,10 @@ impl RuntimeManager {
                 });
                 let mut report = runtime.lock_report();
                 let row = &mut report.languages[index];
+                let (succeeded, error_code) = match &result {
+                    Ok(_) => (true, None),
+                    Err(error) => (false, Some(error.code)),
+                };
                 row.install = Some(match result {
                     Ok(managed) => {
                         row.managed = Some(managed);
@@ -205,6 +213,11 @@ impl RuntimeManager {
                     && !report.probing;
                 runtime.publish(&mut report);
                 drop(report);
+                (runtime.on_metric)(MetricEventDetail::RuntimeInstalled {
+                    language,
+                    succeeded,
+                    error_code,
+                });
                 if recheck_proxy {
                     let _ = runtime.refresh();
                 }
@@ -235,8 +248,18 @@ impl RuntimeManager {
                 .and_then(|recipe| recipe.installed(&install_dir));
         }
         let recheck_proxy = managed_go_path(&report) != probed_managed_go;
-        self.publish(&mut report);
+        let published = self.publish(&mut report);
         drop(report);
+        let ready_count = published
+            .languages
+            .iter()
+            .filter(|row| row.status == ProbeStatus::Ok)
+            .count() as u8;
+        let total_languages = published.languages.len() as u8;
+        (self.on_metric)(MetricEventDetail::PreflightExecuted {
+            ready_count,
+            total_languages,
+        });
         if recheck_proxy {
             let _ = self.refresh();
         }

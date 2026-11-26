@@ -56,7 +56,11 @@ pub use tutor::{
     TutorTurnInput, WorkspaceTutorRequest,
 };
 pub use workspace::{
-    ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceComparison, WorkspaceEntry, WorkspaceEntryKind,
-    WorkspaceFile, WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite,
-    WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath, WorkspaceSummary,
+    ExternalIde, LocalMetricEvent, LocalMetricRecord, MAX_RETAINED_METRIC_EVENTS,
+    MAX_WORKSPACE_TEXT_BYTES, MetricCompletionTrigger, MetricCourseKind, MetricEventDetail,
+    MetricEventName, MetricPermissionDecision, MetricRiskDecision, MetricRiskSource,
+    MetricSelectionAction, MetricSelectionZone, RecordLocalMetric, WorkspaceComparison,
+    WorkspaceEntry, WorkspaceEntryKind, WorkspaceFile, WorkspaceFileContents, WorkspaceFileRename,
+    WorkspaceFileWrite, WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspaceMetrics,
+    WorkspacePath, WorkspaceSummary,
 };

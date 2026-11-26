@@ -42,7 +42,7 @@
   align-items: center;
   gap: 6px;
   padding-inline-start: 4px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .terminal-tabs {
@@ -62,7 +62,7 @@
   padding: 4px 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-xs);
-  color: var(--muted);
+  color: var(--text-muted);
   background: transparent;
   font: inherit;
   cursor: pointer;
@@ -115,7 +115,7 @@
 
 .terminal-exit {
   padding: 2px 8px;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -193,15 +193,24 @@
   box-shadow: var(--focus-outline);
 }
 
-.verification-tabs {
+.verification-strip {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 4px 10px;
   border-top: 1px solid var(--border);
   background: var(--surface);
-  overflow-x: auto;
   flex-shrink: 0;
+}
+
+.verification-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  min-width: 0;
+  flex: 1;
 }
 
 .verification-tabs > [role="tab"] {
@@ -240,7 +249,7 @@
 .verification-tabs > [role="tab"]:hover { background: var(--hover-fill); }
 .verification-tabs > [role="tab"]:focus-visible { box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--accent); }
 .execution-terminal-container { flex: none; min-height: 0; }
-.verification-record-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 4px 10px; flex-shrink: 0; }
+.verification-record-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 0; }
 
 .badge--success {
   background: color-mix(in oklab, var(--success) var(--badge-tint), var(--surface));

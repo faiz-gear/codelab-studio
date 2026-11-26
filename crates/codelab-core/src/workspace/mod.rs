@@ -2,6 +2,7 @@ pub(crate) mod command_cwd;
 mod comparison;
 mod files;
 mod metadata;
+pub mod metrics;
 mod model;
 mod paths;
 pub(crate) mod progress;
@@ -17,6 +18,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub use comparison::WorkspaceComparison;
+pub use metrics::{
+    LocalMetricEvent, LocalMetricRecord, MAX_RETAINED_METRIC_EVENTS, MetricCompletionTrigger,
+    MetricCourseKind, MetricEventDetail, MetricEventName, MetricPermissionDecision,
+    MetricRiskDecision, MetricRiskSource, MetricSelectionAction, MetricSelectionZone,
+    RecordLocalMetric, WorkspaceMetrics,
+};
 pub use model::{
     ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceEntry, WorkspaceEntryKind, WorkspaceFile,
     WorkspaceFileContents, WorkspaceFileRename, WorkspaceFileWrite, WorkspaceFilesChanged,
@@ -39,6 +46,8 @@ pub(crate) struct Workspace {
     progress: progress::Progress,
     progress_course: progress::ProgressCourse,
     progress_store: JsonStore<progress::Progress>,
+    metrics: WorkspaceMetrics,
+    metrics_store: JsonStore<WorkspaceMetrics>,
     tutor_history: Option<(JsonStore<TutorHistory>, TutorHistory)>,
     last_saved_at: Arc<Mutex<DateTime<Utc>>>,
     pub files: Arc<WorkspacePaths>,
@@ -150,6 +159,8 @@ impl Workspace {
             progress: metadata.progress,
             progress_course: metadata.progress_course,
             progress_store: metadata.progress_store,
+            metrics: metadata.metrics,
+            metrics_store: metadata.metrics_store,
             tutor_history: Some((metadata.tutor_history_store, metadata.tutor_history)),
             last_saved_at,
             files: Arc::new(files),
@@ -256,11 +267,13 @@ impl Workspace {
         })
     }
 
-    pub fn finish_checks(&mut self, chapter: &crate::Chapter) -> Result<(), DomainError> {
+    pub fn finish_checks(&mut self, chapter: &crate::Chapter) -> Result<bool, DomainError> {
+        let was_completed = self.is_chapter_completed(&chapter.chapter_id);
         self.update_progress(|progress| {
             progress.finish_checks(chapter);
             Ok(())
-        })
+        })?;
+        Ok(!was_completed && self.is_chapter_completed(&chapter.chapter_id))
     }
 
     pub fn set_self_check(
@@ -268,12 +281,49 @@ impl Workspace {
         chapter: &crate::Chapter,
         check_id: &str,
         checked: bool,
-    ) -> Result<(), DomainError> {
-        self.update_progress(|progress| progress.set_self_check(chapter, check_id, checked))
+    ) -> Result<bool, DomainError> {
+        let was_completed = self.is_chapter_completed(&chapter.chapter_id);
+        self.update_progress(|progress| progress.set_self_check(chapter, check_id, checked))?;
+        Ok(!was_completed && self.is_chapter_completed(&chapter.chapter_id))
     }
 
-    pub fn complete_exercise(&mut self, chapter: &crate::Chapter) -> Result<(), DomainError> {
-        self.update_progress(|progress| progress.complete_exercise(chapter))
+    pub fn complete_exercise(&mut self, chapter: &crate::Chapter) -> Result<bool, DomainError> {
+        let was_completed = self.is_chapter_completed(&chapter.chapter_id);
+        self.update_progress(|progress| progress.complete_exercise(chapter))?;
+        Ok(!was_completed && self.is_chapter_completed(&chapter.chapter_id))
+    }
+
+    fn is_chapter_completed(&self, chapter_id: &str) -> bool {
+        self.progress
+            .chapters
+            .get(chapter_id)
+            .is_some_and(|item| item.completion_state == crate::CompletionState::Completed)
+    }
+
+    pub fn metrics_snapshot(&self) -> WorkspaceMetrics {
+        self.metrics.clone()
+    }
+
+    pub fn record_metric(&mut self, detail: MetricEventDetail) -> Result<(), DomainError> {
+        self.record_metric_records(std::iter::once(LocalMetricRecord::now(detail)))
+    }
+
+    pub fn record_metric_records(
+        &mut self,
+        records: impl IntoIterator<Item = LocalMetricRecord>,
+    ) -> Result<(), DomainError> {
+        let mut next = self.metrics.clone();
+        let mut added = false;
+        for record in records {
+            next.push(record);
+            added = true;
+        }
+        if !added {
+            return Ok(());
+        }
+        self.metrics_store.save_atomic(&next)?;
+        self.metrics = next;
+        Ok(())
     }
 
     pub fn reset_progress(&mut self) -> Result<(), DomainError> {

@@ -26,7 +26,15 @@ impl App {
         let chapter = exercise(&state, &request.target)?.clone();
         let course = &state.course()?.course;
         let plan = run::VerificationPlan::prepare(course, chapter, workspace)?;
-        let target = plan.confirmation_target(workspace.files.root.clone());
+        let had_confirmation = request.confirmation.is_some();
+        if !had_confirmation {
+            state.record_metric(MetricEventDetail::VerifyChapterClicked {
+                check_count: plan.check_count(),
+                requires_daemon: plan.has_daemon(),
+            });
+        }
+        let target =
+            plan.confirmation_target(state.active_workspace.as_ref().unwrap().files.root.clone());
         let AppState {
             execution,
             active_workspace,
@@ -41,7 +49,15 @@ impl App {
             CommandPreparation::Ready {
                 target: ConfirmationTarget::Checks { chapter_id, .. },
                 saved,
-            } if chapter_id == plan.chapter().chapter_id => saved,
+            } if chapter_id == plan.chapter().chapter_id => {
+                if had_confirmation {
+                    state.record_metric(MetricEventDetail::CmdRiskModalAction {
+                        source: MetricRiskSource::Verification,
+                        decision: MetricRiskDecision::Confirm,
+                    });
+                }
+                saved
+            }
             CommandPreparation::Ready { .. } => {
                 unreachable!("Check preparation target")
             }
@@ -49,6 +65,12 @@ impl App {
                 return Ok(AppResponse::CommandConfirmationRequired(prompt));
             }
             CommandPreparation::SaveConflict(conflict) => {
+                if had_confirmation {
+                    state.record_metric(MetricEventDetail::CmdRiskModalAction {
+                        source: MetricRiskSource::Verification,
+                        decision: MetricRiskDecision::Confirm,
+                    });
+                }
                 return Ok(AppResponse::CommandSaveConflict(conflict));
             }
             CommandPreparation::Failed(failed) => return Ok(AppResponse::CommandFailed(failed)),
@@ -82,11 +104,19 @@ impl App {
     pub(super) fn set_self_check(&self, request: SetSelfCheck) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
         let chapter = exercise(&state, &request.target)?.clone();
-        state.active_workspace.as_mut().unwrap().set_self_check(
+        let total_exercises = state.course()?.course.total_exercises;
+        let completed_now = state.active_workspace.as_mut().unwrap().set_self_check(
             &chapter,
             &request.check_id,
             request.checked,
         )?;
+        if completed_now {
+            record_chapter_done(
+                &mut state,
+                MetricCompletionTrigger::SelfCheck,
+                total_exercises,
+            );
+        }
         self.publish_progress(&mut state)
     }
     pub(super) fn complete_exercise(
@@ -95,11 +125,15 @@ impl App {
     ) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
         let chapter = exercise(&state, &target)?.clone();
-        state
+        let total_exercises = state.course()?.course.total_exercises;
+        let completed_now = state
             .active_workspace
             .as_mut()
             .unwrap()
             .complete_exercise(&chapter)?;
+        if completed_now {
+            record_chapter_done(&mut state, MetricCompletionTrigger::Manual, total_exercises);
+        }
         self.publish_progress(&mut state)
     }
     pub(super) fn reset_progress(&self, id: u64) -> Result<AppResponse, DomainError> {
@@ -164,4 +198,21 @@ fn publish_progress_snapshot(
     emit_to_subscribers(subscribers, AppEvent::RecentsUpdated(state.recents.clone()));
     emit_to_subscribers(subscribers, AppEvent::ProgressUpdated(snapshot.clone()));
     Ok(snapshot)
+}
+
+fn record_chapter_done(
+    state: &mut AppState,
+    trigger: MetricCompletionTrigger,
+    total_exercises: u32,
+) {
+    let completed_exercises = state
+        .active_workspace
+        .as_ref()
+        .unwrap()
+        .completed_exercises();
+    state.record_metric(MetricEventDetail::ChapterMarkedDone {
+        trigger,
+        completed_exercises,
+        total_exercises,
+    });
 }

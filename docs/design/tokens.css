@@ -151,6 +151,7 @@
   --success: var(--tone-green);
   --warning: var(--tone-amber);
   --danger: var(--tone-rose);
+  --danger-glyph: var(--neutral-0);
   --info: var(--tone-sky);
   --ai: var(--tone-violet);
 
@@ -229,6 +230,7 @@
   --success: var(--tone-green);
   --warning: var(--tone-amber);
   --danger: var(--tone-rose);
+  --danger-glyph: oklch(15% 0 0);
   --info: var(--tone-sky);
   --ai: var(--tone-violet);
 

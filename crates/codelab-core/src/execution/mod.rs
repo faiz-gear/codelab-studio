@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 
 use crate::runtime::{PreflightReport, RuntimeSource};
+use crate::workspace::MetricEventDetail;
 use crate::{CommandBlock, CommandMode, CourseLanguage, DomainError, ErrorCode};
 
 use self::model::*;
@@ -83,23 +84,32 @@ impl Terminal {
         }
     }
 
-    fn reap(&mut self) {
-        if let Some(code) = self.process.as_mut().and_then(TerminalProcess::exit_code) {
-            self.exited(code);
-        }
+    fn reap(&mut self) -> Option<MetricEventDetail> {
+        let code = self.process.as_mut().and_then(TerminalProcess::exit_code)?;
+        self.exited(code, false)
     }
 
-    fn stop(&mut self) {
-        if let Some(process) = self.process.as_mut() {
-            let code = process.stop();
-            self.exited(code);
-        }
+    fn stop(&mut self) -> Option<MetricEventDetail> {
+        let code = self.process.as_mut()?.stop();
+        self.exited(code, true)
     }
 
-    fn exited(&mut self, code: u32) {
+    fn exited(&mut self, code: u32, stopped: bool) -> Option<MetricEventDetail> {
         self.process = None;
         self.summary.running = false;
         self.summary.exit_code = Some(code);
+        self.launch.as_ref().map(|_| {
+            let duration_ms = Utc::now()
+                .signed_duration_since(self.started_at)
+                .num_milliseconds()
+                .max(0) as u64;
+            MetricEventDetail::CmdFinished {
+                mode: self.summary.mode,
+                exit_code: code,
+                stopped,
+                duration_ms,
+            }
+        })
     }
 }
 
@@ -109,6 +119,7 @@ pub(crate) struct Execution {
     next_id: u64,
     confirmation: Option<(u64, preparation::ConfirmationTarget)>,
     errors: ErrorLog,
+    finished_metrics: Vec<MetricEventDetail>,
 }
 
 impl Execution {
@@ -116,6 +127,11 @@ impl Execution {
         self.terminals.clear();
         self.confirmation = None;
         self.errors = ErrorLog::default();
+        self.finished_metrics.clear();
+    }
+
+    pub fn take_finished_metrics(&mut self) -> Vec<MetricEventDetail> {
+        std::mem::take(&mut self.finished_metrics)
     }
 
     pub fn invalidate_confirmation(&mut self) {
@@ -140,8 +156,10 @@ impl Execution {
         let restart = launch
             .as_ref()
             .and_then(|launch| launch.restart_terminal_id);
-        if let Some(id) = restart {
-            self.terminal_mut(id)?.stop();
+        if let Some(id) = restart
+            && let Some(metric) = self.terminal_mut(id)?.stop()
+        {
+            self.finished_metrics.push(metric);
         }
         self.reap();
         let reusable = if mode == Some(CommandMode::Oneshot) {
@@ -254,14 +272,20 @@ impl Execution {
     }
 
     pub fn stop(&mut self, id: u64) -> Result<(), DomainError> {
-        self.terminal_mut(id)?.stop();
+        if let Some(metric) = self.terminal_mut(id)?.stop() {
+            self.finished_metrics.push(metric);
+        }
         Ok(())
     }
 
     pub fn close(&mut self, id: u64) -> Result<(), DomainError> {
-        self.terminals
+        let mut terminal = self
+            .terminals
             .remove(&id)
             .ok_or_else(|| DomainError::new(ErrorCode::TerminalNotFound))?;
+        if let Some(metric) = terminal.stop() {
+            self.finished_metrics.push(metric);
+        }
         Ok(())
     }
 
@@ -272,7 +296,11 @@ impl Execution {
     }
 
     fn reap(&mut self) {
-        self.terminals.values_mut().for_each(Terminal::reap);
+        for terminal in self.terminals.values_mut() {
+            if let Some(metric) = terminal.reap() {
+                self.finished_metrics.push(metric);
+            }
+        }
     }
 }
 

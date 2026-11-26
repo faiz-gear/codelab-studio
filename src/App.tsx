@@ -26,6 +26,7 @@ import {
   type PreflightCommand,
   type PreflightReport,
   type RecentWorkspace,
+  type TrustEntry,
   type TutorSessionSnapshot,
   type UpdateSettingsPatch,
   type WorkspaceSummary,
@@ -79,6 +80,7 @@ function toCourseSummary(course: LoadedCourse): CourseSummary {
 export function App({ client }: AppProps) {
   const [settings, setSettings] = useState<GlobalSettings>(readCachedSettings);
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
+  const [trustEntries, setTrustEntries] = useState<TrustEntry[]>([]);
   const [builtinCourses, setBuiltinCourses] = useState<CourseSummary[]>([]);
   const [importedCourses, setImportedCourses] = useState<CourseSummary[]>([]);
   const [activeCourse, setActiveCourse] = useState<LoadedCourse | null>(null);
@@ -112,6 +114,7 @@ export function App({ client }: AppProps) {
   const appearanceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const tutorTriggerRef = useRef<HTMLButtonElement | null>(null);
   const runtimeSettingsTrigger = useRef<HTMLElement | null>(null);
+  const importTriggerRef = useRef<HTMLElement | null>(null);
   const nextToastId = useRef(1);
   const localeRef = useRef(settings.locale);
   const activeCourseRef = useRef<LoadedCourse | null>(null);
@@ -197,6 +200,8 @@ export function App({ client }: AppProps) {
             });
           } else if (event.type === "recentsUpdated") {
             setRecents(event.payload);
+          } else if (event.type === "trustUpdated") {
+            setTrustEntries(event.payload);
           } else if (event.type === "preflightUpdated") {
             acceptPreflight(event.payload);
           } else if (event.type === "workspaceFilesChanged") {
@@ -234,6 +239,7 @@ export function App({ client }: AppProps) {
         if (!active) return;
         setSettings(bootstrap.settings);
         setRecents(bootstrap.recents);
+        setTrustEntries(bootstrap.trustEntries);
         setBuiltinCourses(bootstrap.builtinCourses);
         applySettingsToDocument(bootstrap.settings, {
           disableTransitions: true,
@@ -327,6 +333,54 @@ export function App({ client }: AppProps) {
       }
     },
     [client, pushToast]
+  );
+
+  const handleRevokeTrustEntry = useCallback(
+    async (source: TrustSource) => {
+      try {
+        const response = await client.dispatch({
+          type: "revokeTrust",
+          payload: source,
+        });
+        setTrustEntries(expectResponse(response, "trustEntries").payload);
+        pushToast(messages.settings.privacy.trustRevokedToast, "ok");
+      } catch (error) {
+        pushToast(formatDomainError(domainError(error), localeRef.current), "err");
+      }
+    },
+    [client, messages.settings.privacy.trustRevokedToast, pushToast]
+  );
+
+  const handleClearTutorHistory = useCallback(
+    async (workspaceId: number) => {
+      try {
+        const response = await client.dispatch({
+          type: "clearTutorSession",
+          payload: { workspaceId },
+        });
+        setTutorSnapshot(expectResponse(response, "tutorSession").payload);
+        pushToast(messages.settings.privacy.clearTutorToast, "ok");
+      } catch (error) {
+        pushToast(formatDomainError(domainError(error), localeRef.current), "err");
+      }
+    },
+    [client, messages.settings.privacy.clearTutorToast, pushToast]
+  );
+
+  const handleResetWorkspaceProgress = useCallback(
+    async (workspaceId: number) => {
+      try {
+        const response = await client.dispatch({
+          type: "resetProgress",
+          payload: { workspaceId },
+        });
+        expectResponse(response, "progress");
+        pushToast(messages.settings.privacy.resetProgressToast, "ok");
+      } catch (error) {
+        pushToast(formatDomainError(domainError(error), localeRef.current), "err");
+      }
+    },
+    [client, messages.settings.privacy.resetProgressToast, pushToast]
   );
 
   const handleCopyThemeConfig = useCallback(async () => {
@@ -539,9 +593,21 @@ export function App({ client }: AppProps) {
     });
   }
 
-  function showImport(mode: ImportMode) {
+  function showImport(mode: ImportMode, trigger?: HTMLElement | null) {
+    importTriggerRef.current =
+      trigger ??
+      (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     setImportError(null);
     setImportMode(mode);
+  }
+
+  function closeImportModal() {
+    setImportMode(null);
+    setImportError(null);
+    const trigger = importTriggerRef.current;
+    if (trigger?.isConnected) {
+      queueMicrotask(() => trigger.focus());
+    }
   }
 
   const handleCopyCommand = useCallback(
@@ -602,7 +668,7 @@ export function App({ client }: AppProps) {
         appearanceTriggerRef={appearanceTriggerRef}
         onGoHome={handleGoHome}
         onSelectCourse={handleSelectCourseSummary}
-        onOpenImportModal={() => showImport("localMarkdown")}
+        onOpenImportModal={(trigger) => showImport("localMarkdown", trigger)}
         onToggleFocusMode={() => setFocusMode((prev) => !prev)}
         onToggleTutor={!authoring ? () => setTutorOpen((prev) => !prev) : undefined}
         onOpenAppearance={() => setAppearanceOpen(true)}
@@ -677,10 +743,7 @@ export function App({ client }: AppProps) {
         messages={messages}
         errorText={importError}
         submitting={importSubmitting}
-        onClose={() => {
-          setImportMode(null);
-          setImportError(null);
-        }}
+        onClose={closeImportModal}
         onBrowsePath={handleBrowsePath}
         onSubmit={(request) => handleOpenCourseRequest(request, true)}
         onOpenDraft={handleOpenDraft}
@@ -725,8 +788,15 @@ export function App({ client }: AppProps) {
           client={client}
           settings={settings}
           initialTab={settingsInitialTab}
+          trustEntries={trustEntries}
+          activeWorkspace={workspace?.workspace ?? null}
+          activeCourseTrusted={Boolean(activeCourse?.trusted)}
           onUpdateSettings={handleUpdateSettings}
+          onCopyThemeConfig={() => void handleCopyThemeConfig()}
           onSavedTutorConfig={() => pushToast(messages.tutor.savedConfigToast, "ok")}
+          onRevokeTrustEntry={handleRevokeTrustEntry}
+          onClearTutorHistory={handleClearTutorHistory}
+          onResetWorkspaceProgress={handleResetWorkspaceProgress}
           onClose={closeRuntimeSettings}
         />
       )}

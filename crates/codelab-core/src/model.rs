@@ -71,6 +71,8 @@ pub struct GlobalSettings {
     pub code_font_size: f32,
     pub locale: Locale,
     #[serde(default)]
+    pub preferred_ide: crate::workspace::ExternalIde,
+    #[serde(default)]
     pub tutor: crate::tutor::TutorSettings,
 }
 
@@ -81,6 +83,7 @@ impl Default for GlobalSettings {
             accent: AccentPreset::Neutral,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
             locale: Locale::ZhCn,
+            preferred_ide: crate::workspace::ExternalIde::default(),
             tutor: crate::tutor::TutorSettings::default(),
         }
     }
@@ -93,6 +96,8 @@ pub struct UpdateSettingsPatch {
     pub accent: Option<AccentPreset>,
     pub code_font_size: Option<f32>,
     pub locale: Option<Locale>,
+    #[serde(default)]
+    pub preferred_ide: Option<crate::workspace::ExternalIde>,
     #[serde(default)]
     pub tutor: Option<crate::tutor::TutorSettingsPatch>,
 }

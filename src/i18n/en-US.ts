@@ -26,7 +26,7 @@ export const enUS: Messages = {
     tutorLabel: "AI Tutor",
     tutorTooltip: "Toggle local ACP Tutor drawer",
     settingsLabel: "Settings",
-    settingsTooltip: "Settings (ACP Tutor & 4-Language Runtimes)",
+    settingsTooltip: "Settings (ACP Tutor, 4-Language Runtimes, Editor & Desktop, Privacy & Local Data)",
   },
   welcome: {
     ariaLabel: "Welcome Home",
@@ -505,6 +505,79 @@ export const enUS: Messages = {
     settings: "global settings",
     recents: "recent Workspaces",
     trust: "trust registry",
+  },
+  settings: {
+    tabs: {
+      tutor: "ACP Tutor",
+      runtime: "4-Language Runtimes",
+      editor: "Editor & Desktop",
+      privacy: "Privacy & Local Data",
+    },
+    editor: {
+      intro:
+        "Theme, accent color, code font size, preferred external IDE, and interface language sync immediately across the TopBar, Appearance drawer, Editor, and Welcome Home.",
+      externalIdeLabel: "Preferred external IDE",
+      externalIdeHint: "Default desktop editor used when clicking \"Open in IDE\" in the Workspace toolbar.",
+      shortcutsHeading: "Desktop shortcuts",
+      shortcutFocusMode: "Collapse / expand the manual pane (Focus mode)",
+      shortcutSaveFile: "Save the active file",
+      shortcutCloseOverlay: "Close active drawer, modal, or menu",
+    },
+    privacy: {
+      bannerTitle: "100% Local-First · Zero Remote Telemetry",
+      bannerBody:
+        "CodeLab Studio sends zero remote telemetry or cloud analytics. Settings, Trust State, Tutor Session history, and Workspace metrics stay strictly on local disk, and local metrics never store source code, raw commands, file paths, URLs, or chat transcripts.",
+      zeroTelemetryBadge: "Zero telemetry",
+      trustHeading: "Trusted External Courses (Trust State)",
+      trustHint:
+        "Built-in Course Packs never require trust entries. Revoking trust immediately locks local commands, checks, and the ACP Tutor for that external Course.",
+      trustEmpty: "No external local Courses or Git Course Packs are currently trusted.",
+      trustKindLocal: "Local path",
+      trustKindGit: "Git repository",
+      revokeTrust: "Revoke trust",
+      trustRevokedToast: "Revoked trust for external Course",
+      workspaceDataHeading: "Active Workspace Local Data Cleanup",
+      workspaceDataHint:
+        "These actions only affect metadata inside the active Workspace's .codelab/ folder; your source files are untouched.",
+      noActiveWorkspaceHint:
+        "Open a Course and bind a local Workspace first to clear Tutor Session history or reset Exercise progress here.",
+      untrustedWorkspaceHint:
+        "Trust the active external Course first before managing its Workspace local data.",
+      clearTutorTitle: "Clear Tutor Session history",
+      clearTutorHint:
+        "Remove all saved Tutor conversation messages for this Workspace and reset the local ACP session.",
+      clearTutorAction: "Clear Tutor history",
+      clearTutorToast: "Cleared Tutor Session history for the active Workspace",
+      resetProgressTitle: "Reset Exercise progress",
+      resetProgressHint:
+        "Clear Exercise completion records, self-check marks, and Check Results for this Workspace while keeping your code.",
+      resetProgressAction: "Reset Exercise progress",
+      resetProgressConfirm: "Confirm reset",
+      resetProgressToast: "Reset Exercise progress for the active Workspace",
+      metricsHeading: "Local Interaction Metrics Summary",
+      metricsHint:
+        "Records only sanitized counts and enum tags, persisted atomically per Workspace.",
+      metricsPathLabel: ".codelab/metrics.json",
+      metricsRefresh: "Refresh metrics",
+      metricsTotalLabel: "Total recorded: {count}",
+      metricsEmpty: "Bind a local Workspace to inspect counts across all 13 local interaction events.",
+      metricsLoading: "Loading local metrics…",
+      metricLabels: {
+        app_launched: "App launched",
+        course_opened: "Course opened",
+        preflight_executed: "Preflight executed",
+        runtime_installed: "Managed Runtime installed",
+        cmd_block_clicked: "Command Block clicked",
+        cmd_risk_modal_action: "Risk modal confirm/cancel",
+        cmd_finished: "Command finished",
+        file_tree_open: "File tree opened",
+        selection_ai_clicked: "Selection / Failure Ask AI",
+        ai_mode_switched: "AI teaching style switched",
+        acp_permission_decision: "ACP permission decision",
+        verify_chapter_clicked: "Verify chapter clicked",
+        chapter_marked_done: "Exercise marked done",
+      },
+    },
   },
   errors: {
     COURSE_UNTRUSTED: "Trust this Course before opening its Workspace or enabling local actions.",

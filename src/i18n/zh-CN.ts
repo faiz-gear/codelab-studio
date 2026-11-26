@@ -6,6 +6,7 @@ import type {
   ContextQuoteSource,
   CourseLanguage,
   ErrorCode,
+  MetricEventName,
   PermissionPolicy,
   StoreKind,
   HostTool,
@@ -419,6 +420,56 @@ export interface Messages {
     };
   };
   stores: Record<StoreKind, string>;
+  settings: {
+    tabs: {
+      tutor: string;
+      runtime: string;
+      editor: string;
+      privacy: string;
+    };
+    editor: {
+      intro: string;
+      externalIdeLabel: string;
+      externalIdeHint: string;
+      shortcutsHeading: string;
+      shortcutFocusMode: string;
+      shortcutSaveFile: string;
+      shortcutCloseOverlay: string;
+    };
+    privacy: {
+      bannerTitle: string;
+      bannerBody: string;
+      zeroTelemetryBadge: string;
+      trustHeading: string;
+      trustHint: string;
+      trustEmpty: string;
+      trustKindLocal: string;
+      trustKindGit: string;
+      revokeTrust: string;
+      trustRevokedToast: string;
+      workspaceDataHeading: string;
+      workspaceDataHint: string;
+      noActiveWorkspaceHint: string;
+      untrustedWorkspaceHint: string;
+      clearTutorTitle: string;
+      clearTutorHint: string;
+      clearTutorAction: string;
+      clearTutorToast: string;
+      resetProgressTitle: string;
+      resetProgressHint: string;
+      resetProgressAction: string;
+      resetProgressConfirm: string;
+      resetProgressToast: string;
+      metricsHeading: string;
+      metricsHint: string;
+      metricsPathLabel: string;
+      metricsRefresh: string;
+      metricsTotalLabel: string;
+      metricsEmpty: string;
+      metricsLoading: string;
+      metricLabels: Record<MetricEventName, string>;
+    };
+  };
   errors: Record<ErrorCode, string>;
   relativeTime: {
     justNow: string;
@@ -454,7 +505,7 @@ export const zhCN: Messages = {
     tutorLabel: "AI 助教",
     tutorTooltip: "展开 / 收起本机 ACP 助教抽屉",
     settingsLabel: "设置",
-    settingsTooltip: "设置（ACP 助教与四语言运行时）",
+    settingsTooltip: "设置（ACP 助教、四语言运行时、编辑器与桌面、隐私与本地数据）",
   },
   welcome: {
     ariaLabel: "课程主页",
@@ -928,6 +979,71 @@ export const zhCN: Messages = {
     settings: "全局偏好（settings）",
     recents: "最近 Workspace（recents）",
     trust: "信任列表（trust）",
+  },
+  settings: {
+    tabs: {
+      tutor: "ACP 助教",
+      runtime: "四语言运行时",
+      editor: "编辑器与桌面",
+      privacy: "隐私与本地数据",
+    },
+    editor: {
+      intro: "主题、强调色、代码字号、默认外部 IDE 与界面语言会即时同步到顶部栏、外观抽屉、编辑器与课程主页。",
+      externalIdeLabel: "默认外部 IDE",
+      externalIdeHint: "点击工作区「在 IDE 中打开」时默认使用的本地编辑器。",
+      shortcutsHeading: "桌面快捷键",
+      shortcutFocusMode: "折叠 / 展开左侧手册（专注模式）",
+      shortcutSaveFile: "保存当前活跃文件",
+      shortcutCloseOverlay: "关闭当前抽屉、弹窗或菜单",
+    },
+    privacy: {
+      bannerTitle: "100% 本地优先 · 零远程遥测",
+      bannerBody:
+        "CodeLab Studio 不上报任何远程埋点或云端分析。所有设置、Trust State、Tutor Session 对话历史与 Workspace 统计指标仅保存在本机磁盘，且本地指标严格不包含源码、原始命令、文件路径、URL 或聊天内容。",
+      zeroTelemetryBadge: "零远程遥测",
+      trustHeading: "已信任的外部 Course（Trust State）",
+      trustHint: "内置 Course Pack 无需授信。撤销信任会立即锁定该外部 Course 的本地执行、验收与 ACP 助教权限。",
+      trustEmpty: "当前没有已信任的外部本地课程或 Git Course Pack。",
+      trustKindLocal: "本地路径",
+      trustKindGit: "Git 仓库",
+      revokeTrust: "撤销信任",
+      trustRevokedToast: "已撤销外部 Course 信任",
+      workspaceDataHeading: "当前 Workspace 本地数据清理",
+      workspaceDataHint: "以下操作仅作用于当前活跃 Workspace 的 .codelab/ 元数据，不会删除你的代码文件。",
+      noActiveWorkspaceHint: "打开一门课程并绑定本地 Workspace 后，可在此清空助教历史或重置练习进度。",
+      untrustedWorkspaceHint: "当前外部 Course 尚未授信，无法操作其 Workspace 本地数据。",
+      clearTutorTitle: "清空 Tutor Session 对话历史",
+      clearTutorHint: "移除当前 Workspace 的全部本地助教对话记录并重置本机 ACP 会话。",
+      clearTutorAction: "一键清空对话历史",
+      clearTutorToast: "已清空当前 Workspace 的 Tutor Session 对话历史",
+      resetProgressTitle: "重置 Exercise 学习进度",
+      resetProgressHint: "清除当前 Workspace 的 Exercise 完成记录、自查勾选与验收结果，保留全部代码文件。",
+      resetProgressAction: "重置当前练习进度",
+      resetProgressConfirm: "确认重置进度",
+      resetProgressToast: "已重置当前 Workspace 的 Exercise 进度",
+      metricsHeading: "本地交互指标汇总",
+      metricsHint: "仅记录结构化计数与枚举标签，按 Workspace 原子持久化至本地文件。",
+      metricsPathLabel: ".codelab/metrics.json",
+      metricsRefresh: "刷新统计",
+      metricsTotalLabel: "累计记录：{count} 条",
+      metricsEmpty: "绑定本地 Workspace 后将显示该工作区的 13 项本地交互指标计数。",
+      metricsLoading: "正在读取本地指标…",
+      metricLabels: {
+        app_launched: "应用启动",
+        course_opened: "打开 Course",
+        preflight_executed: "环境体检",
+        runtime_installed: "托管运行时安装",
+        cmd_block_clicked: "运行 Command Block",
+        cmd_risk_modal_action: "高危命令确认/取消",
+        cmd_finished: "命令执行结束",
+        file_tree_open: "展开文件树",
+        selection_ai_clicked: "划词 / 失败项问 AI",
+        ai_mode_switched: "切换教学风格",
+        acp_permission_decision: "ACP 权限审批决策",
+        verify_chapter_clicked: "点击运行验收",
+        chapter_marked_done: "Exercise 标记完成",
+      },
+    },
   },
   errors: {
     COURSE_UNTRUSTED: "请先信任此课程，再打开 Workspace 或启用本地操作。",

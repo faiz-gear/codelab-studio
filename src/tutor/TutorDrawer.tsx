@@ -7,6 +7,7 @@ import {
   StopSquareIcon,
   TrashIcon,
 } from "../components/Icons";
+import { trapFocusOnTab } from "../components/focusTrap";
 import { expectResponse, type CoreClient } from "../core/client";
 import {
   ACP_AGENT_PRESETS,
@@ -160,6 +161,7 @@ export function TutorDrawer({
     quoteRef: ContextQuote | null;
   } | null>(null);
   const drawerRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -287,8 +289,12 @@ export function TutorDrawer({
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
       if (document.querySelector("dialog[open]")) return;
+      if (event.key === "Tab" && overlay) {
+        trapFocusOnTab(drawerRef.current, event);
+        return;
+      }
+      if (event.key !== "Escape") return;
       if (document.querySelector('[data-testid="selection-ask-pill"]')) return;
       if (overlay || drawerRef.current?.contains(document.activeElement)) {
         event.preventDefault();
@@ -310,8 +316,11 @@ export function TutorDrawer({
   }, [open, messageCount, lastContentLength]);
 
   useEffect(() => {
-    if (open && course.trusted && workspaceId !== null) {
+    if (!open) return;
+    if (course.trusted && workspaceId !== null) {
       queueMicrotask(() => inputRef.current?.focus());
+    } else {
+      queueMicrotask(() => closeButtonRef.current?.focus());
     }
   }, [askId, course.trusted, open, workspaceId]);
 
@@ -485,6 +494,7 @@ export function TutorDrawer({
               </button>
             )}
             <button
+              ref={closeButtonRef}
               type="button"
               className="btn btn--ghost btn--icon btn--xs"
               aria-label={t.closeDrawer}
