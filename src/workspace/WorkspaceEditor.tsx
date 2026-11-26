@@ -18,7 +18,7 @@ const IDES: Record<ExternalIde, string> = {
 };
 
 export function WorkspaceEditor({
-  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching, workspaceActionLabel, workspaceLabel,
+  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching, workspaceActionLabel, workspaceLabel, tutorOpen = false,
 }: {
   session: WorkspaceEditorSession;
   settings: GlobalSettings;
@@ -28,6 +28,7 @@ export function WorkspaceEditor({
   workspaceLabel?: string;
   onRevokeTrust?: () => void;
   switching: boolean;
+  tutorOpen?: boolean;
 }) {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
   const conflictBanner = useRef<HTMLDivElement>(null);
@@ -36,6 +37,19 @@ export function WorkspaceEditor({
     if (executionConflict > 0) conflictBanner.current?.focus();
   }, [executionConflict]);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [lastTutorOpen, setLastTutorOpen] = useState(tutorOpen);
+  if (tutorOpen !== lastTutorOpen) {
+    setLastTutorOpen(tutorOpen);
+    // At 1280px-1360px, collapse the file tree when the docked AI drawer opens so the editor keeps ample width.
+    if (
+      tutorOpen &&
+      typeof window !== "undefined" &&
+      window.innerWidth >= 1280 &&
+      window.innerWidth <= 1360
+    ) {
+      setTreeOpen(false);
+    }
+  }
   const [ide, setIde] = useState<ExternalIde>("vsCode");
   const [fileForm, setFileForm] = useState<{ rename: string | null; value: string } | null>(null);
   const [closingFile, setClosingFile] = useState<string | null>(null);

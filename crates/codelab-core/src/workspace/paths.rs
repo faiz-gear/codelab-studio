@@ -25,7 +25,7 @@ pub(super) fn is_metadata(name: &OsStr) -> bool {
         .is_some_and(|name| name.eq_ignore_ascii_case(METADATA_DIR))
 }
 
-fn is_sensitive(name: &OsStr) -> bool {
+pub(crate) fn is_sensitive_name(name: &OsStr) -> bool {
     name.to_str().is_some_and(|name| {
         let name = name.to_ascii_lowercase();
         name == ".env"
@@ -33,6 +33,15 @@ fn is_sensitive(name: &OsStr) -> bool {
             || name.contains("secret")
             || name.contains("key")
     })
+}
+
+pub(crate) fn is_sensitive_path(path: &Path) -> bool {
+    path.iter()
+        .any(|name| is_metadata(name) || is_sensitive_name(name))
+}
+
+fn is_sensitive(name: &OsStr) -> bool {
+    is_sensitive_name(name)
 }
 
 pub(super) fn is_ignored(path: &Path) -> bool {

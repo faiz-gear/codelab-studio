@@ -29,6 +29,11 @@ use crate::model::{
 };
 use crate::runtime::{PreflightReport, RuntimeAdapters, RuntimeManager, RuntimePreference};
 use crate::storage::JsonStore;
+use crate::tutor::{
+    AcpAgentPreset, AcpStdioBackend, RespondTutorPermission, SendTutorPrompt, TutorBackend,
+    TutorHandshakeRequest, TutorHandshakeResult, TutorManager, TutorSessionSnapshot,
+    WorkspaceTutorRequest,
+};
 use crate::workspace::{
     Workspace, WorkspaceComparison, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename,
     WorkspaceFileWrite, WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath,
@@ -131,6 +136,13 @@ pub enum AppCommand {
     InstallManagedRuntime {
         language: crate::CourseLanguage,
     },
+    TestTutorHandshake(TutorHandshakeRequest),
+    GetTutorSession(WorkspaceTutorRequest),
+    SendTutorPrompt(SendTutorPrompt),
+    StopTutorTurn(WorkspaceTutorRequest),
+    RetryTutorTurn(WorkspaceTutorRequest),
+    RespondTutorPermission(RespondTutorPermission),
+    ClearTutorSession(WorkspaceTutorRequest),
     Shutdown,
 }
 
@@ -169,6 +181,8 @@ pub enum AppResponse {
     Progress(LearningProgress),
     LearningRecord(Value),
     Preflight(PreflightReport),
+    TutorHandshake(TutorHandshakeResult),
+    TutorSession(TutorSessionSnapshot),
     Shutdown(ShutdownReport),
 }
 
@@ -184,6 +198,7 @@ pub enum AppEvent {
     CourseTrustChanged(CourseTrustChanged),
     WorkspaceFilesChanged(WorkspaceFilesChanged),
     PreflightUpdated(PreflightReport),
+    TutorSessionUpdated(TutorSessionSnapshot),
     ShutdownCompleted(ShutdownReport),
 }
 
@@ -247,6 +262,7 @@ pub struct App {
     state: Arc<Mutex<AppState>>,
     subscribers: Arc<Subscribers>,
     runtime: Arc<RuntimeManager>,
+    tutor: Arc<TutorManager>,
     git: Arc<dyn GitFetchAdapter>,
     activation: activation::CourseWorkspaceActivation,
 }
@@ -260,20 +276,38 @@ impl App {
         config: AppConfig,
         adapters: RuntimeAdapters,
     ) -> Result<Self, DomainError> {
-        Self::open_with_adapters(config, adapters, Arc::new(GitCli))
+        Self::open_with_adapters(
+            config,
+            adapters,
+            Arc::new(GitCli),
+            Arc::new(AcpStdioBackend),
+        )
     }
 
     pub fn open_with_git_fetcher(
         config: AppConfig,
         git: Arc<dyn GitFetchAdapter>,
     ) -> Result<Self, DomainError> {
-        Self::open_with_adapters(config, RuntimeAdapters::default(), git)
+        Self::open_with_adapters(
+            config,
+            RuntimeAdapters::default(),
+            git,
+            Arc::new(AcpStdioBackend),
+        )
+    }
+
+    pub fn open_with_tutor_backend(
+        config: AppConfig,
+        tutor: Arc<dyn TutorBackend>,
+    ) -> Result<Self, DomainError> {
+        Self::open_with_adapters(config, RuntimeAdapters::default(), Arc::new(GitCli), tutor)
     }
 
     fn open_with_adapters(
         config: AppConfig,
         adapters: RuntimeAdapters,
         git: Arc<dyn GitFetchAdapter>,
+        tutor_backend: Arc<dyn TutorBackend>,
     ) -> Result<Self, DomainError> {
         fs::create_dir_all(&config.data_dir).map_err(|err| {
             DomainError::new(ErrorCode::StorageWriteFailed)
@@ -325,7 +359,25 @@ impl App {
         .flatten()
         .collect();
 
-        let activation = activation::CourseWorkspaceActivation::new(&data_dir, &subscribers);
+        let tutor_subscribers = Arc::downgrade(&subscribers);
+        let tutor_fs_subscribers = Arc::downgrade(&subscribers);
+        let tutor = Arc::new(TutorManager::new(
+            tutor_backend,
+            settings_loaded.value.tutor.clone(),
+            move |snapshot| {
+                if let Some(subscribers) = tutor_subscribers.upgrade() {
+                    emit_to_subscribers(&subscribers, AppEvent::TutorSessionUpdated(snapshot));
+                }
+            },
+            move |changed| {
+                if let Some(subscribers) = tutor_fs_subscribers.upgrade() {
+                    emit_to_subscribers(&subscribers, AppEvent::WorkspaceFilesChanged(changed));
+                }
+            },
+        ));
+
+        let activation =
+            activation::CourseWorkspaceActivation::new(&data_dir, &subscribers, &tutor);
         Ok(Self {
             data_dir,
             settings_store,
@@ -351,6 +403,7 @@ impl App {
             })),
             subscribers,
             runtime,
+            tutor,
             git,
             activation,
         })
@@ -548,6 +601,15 @@ impl App {
             AppCommand::InstallManagedRuntime { language } => {
                 self.runtime.install(language).map(AppResponse::Preflight)
             }
+            AppCommand::TestTutorHandshake(request) => self.test_tutor_handshake(request),
+            AppCommand::GetTutorSession(request) => self.get_tutor_session(request.workspace_id),
+            AppCommand::SendTutorPrompt(request) => self.send_tutor_prompt(request),
+            AppCommand::StopTutorTurn(request) => self.stop_tutor_turn(request.workspace_id),
+            AppCommand::RetryTutorTurn(request) => self.retry_tutor_turn(request.workspace_id),
+            AppCommand::RespondTutorPermission(request) => self.respond_tutor_permission(request),
+            AppCommand::ClearTutorSession(request) => {
+                self.clear_tutor_session(request.workspace_id)
+            }
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
     }
@@ -706,6 +768,7 @@ impl App {
         drop(active_workspace);
         drop(active_course);
         drop(trial_workspace);
+        self.tutor.shutdown();
 
         let mut hooks_executed = 0;
         let mut failures = Vec::new();
@@ -754,13 +817,124 @@ impl App {
             if let Some(locale) = patch.locale {
                 next.locale = locale;
             }
+            if let Some(tutor_patch) = patch.tutor {
+                if let Some(preset) = tutor_patch.preset {
+                    next.tutor.preset = preset;
+                    if tutor_patch.command.is_none() && preset != AcpAgentPreset::Custom {
+                        next.tutor.command = preset.default_command().to_owned();
+                    }
+                }
+                if let Some(command) = tutor_patch.command {
+                    next.tutor.command = command.trim().to_owned();
+                }
+                if let Some(permission_policy) = tutor_patch.permission_policy {
+                    next.tutor.permission_policy = permission_policy;
+                }
+                if let Some(teaching_style) = tutor_patch.teaching_style {
+                    next.tutor.teaching_style = teaching_style;
+                }
+            }
+            if !next.tutor.is_valid() {
+                return Err(DomainError::new(ErrorCode::AcpCommandInvalid));
+            }
             self.settings_store.save_atomic(&next)?;
             state.settings = next.clone();
             next
         };
 
+        self.tutor.sync_settings(updated.tutor.clone());
         self.emit(AppEvent::SettingsUpdated(updated.clone()));
         Ok(AppResponse::Settings(updated))
+    }
+
+    fn test_tutor_handshake(
+        &self,
+        request: TutorHandshakeRequest,
+    ) -> Result<AppResponse, DomainError> {
+        let cwd = {
+            let state = self.lock_state();
+            if state.shut_down {
+                return Err(DomainError::new(ErrorCode::AcpHandshakeFailed));
+            }
+            if state
+                .active_course
+                .as_ref()
+                .is_some_and(|active| !active.course.trusted)
+            {
+                return Err(DomainError::new(ErrorCode::CourseUntrusted));
+            }
+            state
+                .active_workspace
+                .as_ref()
+                .map(|ws| ws.files.root.clone())
+                .unwrap_or_else(|| self.data_dir.clone())
+        };
+        self.tutor
+            .handshake(request, cwd)
+            .map(AppResponse::TutorHandshake)
+    }
+
+    fn get_tutor_session(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
+        {
+            let state = self.lock_state();
+            state.workspace(workspace_id)?;
+        }
+        self.tutor
+            .snapshot(workspace_id)
+            .map(AppResponse::TutorSession)
+    }
+
+    fn send_tutor_prompt(&self, request: SendTutorPrompt) -> Result<AppResponse, DomainError> {
+        {
+            let state = self.lock_state();
+            state.workspace(request.workspace_id)?;
+        }
+        self.tutor
+            .send_prompt(request)
+            .map(AppResponse::TutorSession)
+    }
+
+    fn stop_tutor_turn(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
+        {
+            let state = self.lock_state();
+            state.workspace(workspace_id)?;
+        }
+        self.tutor
+            .stop_turn(workspace_id)
+            .map(AppResponse::TutorSession)
+    }
+
+    fn retry_tutor_turn(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
+        {
+            let state = self.lock_state();
+            state.workspace(workspace_id)?;
+        }
+        self.tutor
+            .retry_turn(workspace_id)
+            .map(AppResponse::TutorSession)
+    }
+
+    fn respond_tutor_permission(
+        &self,
+        request: RespondTutorPermission,
+    ) -> Result<AppResponse, DomainError> {
+        {
+            let state = self.lock_state();
+            state.workspace(request.workspace_id)?;
+        }
+        self.tutor
+            .respond_permission(request)
+            .map(AppResponse::TutorSession)
+    }
+
+    fn clear_tutor_session(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
+        {
+            let state = self.lock_state();
+            state.workspace(workspace_id)?;
+        }
+        self.tutor
+            .clear_session(workspace_id)
+            .map(AppResponse::TutorSession)
     }
 
     fn record_recent_workspace(
@@ -935,6 +1109,7 @@ impl App {
             if !changed.trusted {
                 state.verification = None;
                 state.execution.clear();
+                self.tutor.stop_process();
             }
             self.emit(AppEvent::CourseTrustChanged(changed));
         }
@@ -990,13 +1165,16 @@ impl App {
         request: &OpenCourseRequest,
     ) -> Result<AppResponse, DomainError> {
         let (mut state, opened) = self.prepare_course(state, request, false)?;
-        state.close_trial();
-        if state
+        let closed_trial = state.close_trial();
+        let switched_course = state
             .active_course
             .as_ref()
-            .is_some_and(|active| active.course.source != opened.course.source)
-        {
+            .is_some_and(|active| active.course.source != opened.course.source);
+        if switched_course {
             state.deactivate_workspace();
+        }
+        if closed_trial || switched_course {
+            self.tutor.detach_workspace();
         }
         Ok(AppResponse::LoadedCourse(
             self.activation.activate_course(&mut state, opened)?,
@@ -1038,6 +1216,7 @@ impl App {
         let mut state = self.lock_state();
         state.course_load_generation += 1;
         state.deactivate_workspace();
+        self.tutor.detach_workspace();
         state.trial_workspace = None;
         state.active_course = None;
         AppResponse::CourseClosed
@@ -1090,6 +1269,7 @@ impl App {
             Some(self.activation.activate_workspace(&mut state, workspace))
         } else {
             state.deactivate_workspace();
+            self.tutor.detach_workspace();
             None
         };
         state.trial_workspace = None;
@@ -1117,6 +1297,7 @@ impl App {
         state.course_load_generation += 1;
         state.next_draft_id += 1;
         state.deactivate_workspace();
+        self.tutor.detach_workspace();
         state.trial_workspace = None;
         state.active_course = None;
         state.draft = Some(draft);
@@ -1192,10 +1373,13 @@ impl AppState {
         self.active_workspace = None;
     }
 
-    fn close_trial(&mut self) {
+    fn close_trial(&mut self) -> bool {
         if self.trial_workspace.is_some() {
             self.deactivate_workspace();
             self.trial_workspace = None;
+            true
+        } else {
+            false
         }
     }
 
@@ -1313,7 +1497,7 @@ fn is_valid_code_font_size(size: f32) -> bool {
 }
 
 fn is_valid_settings(settings: &GlobalSettings) -> bool {
-    is_valid_code_font_size(settings.code_font_size)
+    is_valid_code_font_size(settings.code_font_size) && settings.tutor.is_valid()
 }
 
 fn normalize_absolute_path(raw: &str) -> Option<String> {

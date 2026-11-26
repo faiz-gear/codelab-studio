@@ -16,6 +16,7 @@ import {
   PanelLeftOpenIcon,
   SettingsIcon,
   SlidersIcon,
+  SparklesIcon,
 } from "./Icons";
 
 export interface TopBarProps {
@@ -25,12 +26,15 @@ export interface TopBarProps {
   activeCourse: LoadedCourse | null;
   completedExercises?: number;
   focusMode: boolean;
+  tutorOpen?: boolean;
+  tutorTriggerRef?: RefObject<HTMLButtonElement | null>;
   appearanceOpen: boolean;
   appearanceTriggerRef: RefObject<HTMLButtonElement | null>;
   onGoHome: () => void;
   onSelectCourse: (course: CourseSummary) => void;
   onOpenImportModal: () => void;
   onToggleFocusMode: () => void;
+  onToggleTutor?: () => void;
   onOpenAppearance: () => void;
   runtimePanel: RuntimePanelProps;
   runtimeSettingsOpen: boolean;
@@ -44,12 +48,15 @@ export function TopBar({
   activeCourse,
   completedExercises = 0,
   focusMode,
+  tutorOpen = false,
+  tutorTriggerRef,
   appearanceOpen,
   appearanceTriggerRef,
   onGoHome,
   onSelectCourse,
   onOpenImportModal,
   onToggleFocusMode,
+  onToggleTutor,
   onOpenAppearance,
   runtimePanel,
   runtimeSettingsOpen,
@@ -257,6 +264,21 @@ export function TopBar({
               <PanelLeftCloseIcon size={14} />
             )}
             <span>{messages.topbar.focusModeLabel}</span>
+          </button>
+        ) : null}
+
+        {activeCourse && onToggleTutor ? (
+          <button
+            ref={tutorTriggerRef}
+            type="button"
+            className={`btn btn--sm btn--pill ${tutorOpen ? "btn--ai-soft" : "btn--ghost"}`}
+            aria-expanded={tutorOpen}
+            aria-controls="tutor-drawer"
+            title={messages.topbar.tutorTooltip}
+            onClick={onToggleTutor}
+          >
+            <SparklesIcon size={14} />
+            <span>{messages.topbar.tutorLabel}</span>
           </button>
         ) : null}
 

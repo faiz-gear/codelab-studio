@@ -26,9 +26,11 @@ pub use model::{
 use chrono::{DateTime, Utc};
 
 use self::metadata::WorkspaceMetadata;
-pub(crate) use self::paths::WorkspacePaths;
+pub(crate) use self::paths::{WorkspacePaths, is_sensitive_path};
 use self::watcher::WorkspaceWatcher;
 use crate::course::{CourseSource, LoadedCourse, Starter};
+use crate::storage::JsonStore;
+use crate::tutor::{TutorHistory, TutorWorkspaceAttachment};
 use crate::{DomainError, ErrorCode};
 
 pub(crate) struct Workspace {
@@ -36,9 +38,10 @@ pub(crate) struct Workspace {
     completed_exercises: u32,
     progress: progress::Progress,
     progress_course: progress::ProgressCourse,
-    progress_store: crate::storage::JsonStore<progress::Progress>,
+    progress_store: JsonStore<progress::Progress>,
+    tutor_history: Option<(JsonStore<TutorHistory>, TutorHistory)>,
     last_saved_at: Arc<Mutex<DateTime<Utc>>>,
-    pub files: WorkspacePaths,
+    pub files: Arc<WorkspacePaths>,
     pub command_cwds: command_cwd::CommandCwds,
     pub git_starter_snapshot: Option<String>,
     events_enabled: Arc<AtomicBool>,
@@ -147,8 +150,9 @@ impl Workspace {
             progress: metadata.progress,
             progress_course: metadata.progress_course,
             progress_store: metadata.progress_store,
+            tutor_history: Some((metadata.tutor_history_store, metadata.tutor_history)),
             last_saved_at,
-            files,
+            files: Arc::new(files),
             command_cwds: metadata.command_cwds,
             git_starter_snapshot: metadata.git_starter_snapshot,
             events_enabled,
@@ -158,6 +162,18 @@ impl Workspace {
 
     pub fn last_saved_at(&self) -> DateTime<Utc> {
         *self.last_saved_at.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub(crate) fn take_tutor_attachment(&mut self) -> Option<TutorWorkspaceAttachment> {
+        let (history_store, history) = self.tutor_history.take()?;
+        Some(TutorWorkspaceAttachment {
+            workspace_id: self.summary.id,
+            root: self.files.root.clone(),
+            files: Arc::clone(&self.files),
+            last_saved_at: Arc::clone(&self.last_saved_at),
+            history_store,
+            history,
+        })
     }
 
     pub fn write_file(

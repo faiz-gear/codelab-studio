@@ -195,5 +195,6 @@ fn store_name(kind: StoreKind) -> &'static str {
         StoreKind::Workspace => "workspace",
         StoreKind::Progress => "progress",
         StoreKind::Metrics => "metrics",
+        StoreKind::TutorHistory => "tutorHistory",
     }
 }

@@ -1,6 +1,6 @@
 use tree_sitter::{Node, Parser};
 
-pub(super) fn is_high_risk(script: &str) -> bool {
+pub(crate) fn is_high_risk(script: &str) -> bool {
     let mut parser = Parser::new();
     if parser
         .set_language(&tree_sitter_bash::LANGUAGE.into())

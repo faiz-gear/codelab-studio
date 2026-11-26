@@ -26,6 +26,7 @@ fn cold_start_bootstrap_returns_default_settings_and_empty_collections() {
                     accent: AccentPreset::Neutral,
                     code_font_size: 13.5,
                     locale: Locale::ZhCn,
+                    tutor: Default::default(),
                 }
             );
             assert!(bootstrap.recents.is_empty());
@@ -51,6 +52,7 @@ fn updating_settings_emits_event_and_persists_across_restart() {
             accent: Some(AccentPreset::Violet),
             code_font_size: Some(15.0),
             locale: Some(Locale::EnUs),
+            ..Default::default()
         }))
         .expect("update settings");
 
@@ -59,6 +61,7 @@ fn updating_settings_emits_event_and_persists_across_restart() {
         accent: AccentPreset::Violet,
         code_font_size: 15.0,
         locale: Locale::EnUs,
+        tutor: Default::default(),
     };
     assert_eq!(updated, AppResponse::Settings(expected.clone()));
     assert_eq!(

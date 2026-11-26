@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::course::{CourseWatcher, LoadedCourse, OpenedCourse, Starter};
+use crate::tutor::TutorManager;
 use crate::workspace::{Workspace, WorkspaceSummary};
 
 use super::{ActiveCourseState, AppEvent, AppState, Subscribers, emit_to_subscribers};
@@ -10,13 +11,19 @@ use super::{ActiveCourseState, AppEvent, AppState, Subscribers, emit_to_subscrib
 pub(super) struct CourseWorkspaceActivation {
     data_dir: std::path::PathBuf,
     subscribers: Arc<Subscribers>,
+    tutor: Arc<TutorManager>,
 }
 
 impl CourseWorkspaceActivation {
-    pub(super) fn new(data_dir: &Path, subscribers: &Arc<Subscribers>) -> Self {
+    pub(super) fn new(
+        data_dir: &Path,
+        subscribers: &Arc<Subscribers>,
+        tutor: &Arc<TutorManager>,
+    ) -> Self {
         Self {
             data_dir: data_dir.to_path_buf(),
             subscribers: Arc::clone(subscribers),
+            tutor: Arc::clone(tutor),
         }
     }
 
@@ -78,12 +85,17 @@ impl CourseWorkspaceActivation {
     pub(super) fn activate_workspace(
         &self,
         state: &mut AppState,
-        workspace: Workspace,
+        mut workspace: Workspace,
     ) -> WorkspaceSummary {
         state.verification = None;
         state.execution.clear();
         state.next_workspace_id += 1;
         let summary = workspace.summary.clone();
+        if let Some(attachment) = workspace.take_tutor_attachment() {
+            self.tutor.attach_workspace(attachment);
+        } else {
+            self.tutor.detach_workspace();
+        }
         state.active_workspace = Some(workspace);
         summary
     }

@@ -9,8 +9,11 @@ import {
   type CommandBlock,
   type CourseSourceChangedEvent,
   type LoadedCourse,
+  type TutorSessionSnapshot,
+  type UpdateSettingsPatch,
 } from "../core/contracts";
 import { interpolate, type Messages } from "../i18n";
+import { TutorDrawer } from "../tutor/TutorDrawer";
 import { ChapterOutlineDrawer } from "./ChapterOutlineDrawer";
 import type { CoreClient } from "../core/client";
 import { CommandWorkbench, emptyWorkbench } from "../execution/CommandWorkbench";
@@ -63,6 +66,12 @@ export interface CourseWorkbenchProps {
   onCopyCommand: (commandText: string) => void;
   stage?: ReactNode;
   onReturnToDraft?: () => void;
+  tutorOpen?: boolean;
+  tutorSnapshot?: TutorSessionSnapshot | null;
+  onTutorSnapshotChange?: (snapshot: TutorSessionSnapshot | null) => void;
+  onUpdateSettings?: (patch: UpdateSettingsPatch) => void;
+  onOpenTutorSettings?: (trigger: HTMLElement) => void;
+  onCloseTutor?: () => void;
 }
 
 function getFileBasename(filePath: string): string {
@@ -92,6 +101,12 @@ export function CourseWorkbench({
   onCopyCommand,
   stage,
   onReturnToDraft,
+  tutorOpen = false,
+  tutorSnapshot = null,
+  onTutorSnapshotChange,
+  onUpdateSettings,
+  onOpenTutorSettings,
+  onCloseTutor,
 }: CourseWorkbenchProps) {
   const verification = useVerification(course.trusted ? client : undefined, session, onExecutionError);
   const [resultsOpen, setResultsOpen] = useState(false);
@@ -99,6 +114,16 @@ export function CourseWorkbench({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isTutorOverlay, setIsTutorOverlay] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 1280
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncLayout = () => setIsTutorOverlay(window.innerWidth < 1280);
+    syncLayout();
+    window.addEventListener("resize", syncLayout);
+    return () => window.removeEventListener("resize", syncLayout);
+  }, []);
   const [cwdDialog, setCwdDialog] = useState<{ workbench: CommandWorkbench; command: CommandBlock } | null>(null);
   const workbench = useMemo(() => client && session && course.trusted ? new CommandWorkbench(client, session) : null,
     [client, course.trusted, session]);
@@ -293,7 +318,7 @@ export function CourseWorkbench({
   return (
     <section
       ref={wbRef}
-      className={`wb${focusMode ? " is-focus" : ""}${isDragging ? " is-resizing" : ""}`}
+      className={`wb${focusMode ? " is-focus" : ""}${isDragging ? " is-resizing" : ""}${tutorOpen && !isTutorOverlay ? " has-tutor-docked" : ""}`}
       aria-label={t.ariaLabel}
       data-testid="course-workbench"
     >
@@ -726,6 +751,7 @@ export function CourseWorkbench({
               settings={settings}
               messages={messages}
               switching={switching}
+              tutorOpen={tutorOpen && !isTutorOverlay}
               onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
               workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
@@ -783,6 +809,25 @@ export function CourseWorkbench({
           </>
         ))}
       </section>
+      {tutorOpen && onCloseTutor && onTutorSnapshotChange && onUpdateSettings && onOpenTutorSettings && (
+        <TutorDrawer
+          open={tutorOpen}
+          overlay={isTutorOverlay}
+          client={client}
+          course={course}
+          session={session}
+          settings={settings}
+          messages={messages}
+          snapshot={tutorSnapshot}
+          onSnapshotChange={onTutorSnapshotChange}
+          onUpdateSettings={onUpdateSettings}
+          onOpenTutorSettings={onOpenTutorSettings}
+          onRequestTrust={onRequestTrust}
+          onChooseWorkspace={onChooseWorkspace}
+          onClose={onCloseTutor}
+          onError={onExecutionError}
+        />
+      )}
       {verification.confirmation && <CommandConfirmationDialog detail={verification.confirmation.detail} messages={messages}
         onCancel={verification.dismiss} onConfirm={()=>{ const pending=verification.confirmation!; void verification.run(pending.chapterId,pending.detail.token); }} />}
       {resetOpen && session && <WorkspaceDialog title={messages.verification.resetTitle} detail={messages.verification.resetDetail}

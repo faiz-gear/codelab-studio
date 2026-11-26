@@ -3,7 +3,7 @@ pub(crate) mod model;
 mod output;
 pub(crate) mod preparation;
 mod process;
-mod risk;
+pub(crate) mod risk;
 #[cfg(unix)]
 mod unix;
 pub(crate) mod verification;
