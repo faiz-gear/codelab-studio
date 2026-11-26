@@ -21,9 +21,17 @@ const path = require("node:path");
 const readline = require("node:readline");
 const { spawn } = require("node:child_process");
 
-const logPath = process.env.FAKE_ACP_LOG || "";
-const pidPath = process.env.FAKE_ACP_PIDS || "";
-const markerPath = process.env.FAKE_ACP_MARKER || "";
+function readFlag(prefix, envName) {
+  const arg = process.argv.slice(2).find((item) => item.startsWith(prefix));
+  if (arg) {
+    return arg.slice(prefix.length);
+  }
+  return process.env[envName] || "";
+}
+
+const logPath = readFlag("--log=", "FAKE_ACP_LOG");
+const pidPath = readFlag("--pids=", "FAKE_ACP_PIDS");
+const markerPath = readFlag("--marker=", "FAKE_ACP_MARKER");
 
 if (markerPath) {
   fs.appendFileSync(markerPath, `spawn:${process.pid}\n`);
@@ -389,9 +397,9 @@ fn untrusted_course_never_spawns_acp_process_and_blocks_handshake_and_session() 
 
     // Even with a valid command, an untrusted course blocks both handshake and prompt.
     let cmd = format!(
-        "env FAKE_ACP_MARKER=\"{}\" node \"{}\"",
-        path_str(&marker),
-        path_str(&script)
+        "{} \"--marker={}\"",
+        node_command(&script),
+        path_str(&marker)
     );
     let handshake_err = app
         .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
@@ -420,10 +428,10 @@ fn lazy_start_handshake_workspace_reuse_style_switch_clear_and_atomic_history() 
     let marker = temp.path().join("lazy-marker.txt");
     let log_file = temp.path().join("acp.log");
     let agent_cmd = format!(
-        "env FAKE_ACP_MARKER=\"{}\" FAKE_ACP_LOG=\"{}\" {}",
+        "{} \"--marker={}\" \"--log={}\"",
+        node_command(&script),
         path_str(&marker),
-        path_str(&log_file),
-        node_command(&script)
+        path_str(&log_file)
     );
 
     let app = App::open(AppConfig {
@@ -660,9 +668,11 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
     );
 
     // 2. Sensitive files (.env, *secret*, *key*, symlink to .env) -> BlockedSensitive automatically.
-    let mut sensitive_targets = vec![".env", "api_secret.json", "private.key"];
-    #[cfg(unix)]
-    sensitive_targets.push("alias.txt");
+    let sensitive_targets: &[&str] = if cfg!(unix) {
+        &[".env", "api_secret.json", "private.key", "alias.txt"]
+    } else {
+        &[".env", "api_secret.json", "private.key"]
+    };
     for (idx, target) in sensitive_targets.iter().enumerate() {
         let expected_len = 2 + (idx + 1) * 2;
         app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
@@ -899,9 +909,9 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
     let script = write_fake_agent(temp.path());
     let pid_file = temp.path().join("pids.json");
     let agent_cmd = format!(
-        "env FAKE_ACP_PIDS=\"{}\" {}",
-        path_str(&pid_file),
-        node_command(&script)
+        "{} \"--pids={}\"",
+        node_command(&script),
+        path_str(&pid_file)
     );
 
     let app = App::open(AppConfig {
@@ -994,8 +1004,8 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
     // 3. Process-tree cleanup on switching workspace.
     let pids: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&pid_file).unwrap()).unwrap();
-    let agent_pid = pids["pid"].as_i64().unwrap() as i32;
-    let grandchild_pid = pids["childPid"].as_i64().unwrap() as i32;
+    assert!(pids["pid"].as_i64().unwrap() > 0);
+    assert!(pids["childPid"].as_i64().unwrap() > 0);
 
     let ws2_root = temp.path().join("work-2");
     fs::create_dir_all(&ws2_root).unwrap();
@@ -1006,6 +1016,8 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
 
     #[cfg(unix)]
     {
+        let agent_pid = pids["pid"].as_i64().unwrap() as i32;
+        let grandchild_pid = pids["childPid"].as_i64().unwrap() as i32;
         wait_process_dead(agent_pid);
         wait_process_dead(grandchild_pid);
     }
@@ -1031,12 +1043,14 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
     });
     let pids2: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&pid_file).unwrap()).unwrap();
-    let agent_pid2 = pids2["pid"].as_i64().unwrap() as i32;
-    let grandchild_pid2 = pids2["childPid"].as_i64().unwrap() as i32;
+    assert!(pids2["pid"].as_i64().unwrap() > 0);
+    assert!(pids2["childPid"].as_i64().unwrap() > 0);
     app.shutdown().unwrap();
 
     #[cfg(unix)]
     {
+        let agent_pid2 = pids2["pid"].as_i64().unwrap() as i32;
+        let grandchild_pid2 = pids2["childPid"].as_i64().unwrap() as i32;
         wait_process_dead(agent_pid2);
         wait_process_dead(grandchild_pid2);
     }

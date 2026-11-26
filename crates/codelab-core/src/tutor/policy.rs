@@ -141,7 +141,7 @@ fn inspect_target_path(
 
     let mut inside_workspace = false;
     let mut workspace_relative_path = None;
-    if let Ok(rel) = resolved.strip_prefix(canonical_root) {
+    if let Ok(rel) = simplify_path(&resolved).strip_prefix(simplify_path(canonical_root)) {
         if is_sensitive_path(rel) {
             sensitive = true;
         } else if !has_parent_dir(rel) && workspace_files.validate(rel).is_ok() {
@@ -158,7 +158,19 @@ fn inspect_target_path(
     }
 }
 
+#[cfg(windows)]
+fn simplify_path(path: &Path) -> &Path {
+    dunce::simplified(path)
+}
+
+#[cfg(not(windows))]
+fn simplify_path(path: &Path) -> &Path {
+    path
+}
+
 fn path_suffix_after_common_prefix(target: &Path, root: &Path) -> Option<PathBuf> {
+    let target = simplify_path(target);
+    let root = simplify_path(root);
     if !target.is_absolute() {
         return Some(target.to_path_buf());
     }

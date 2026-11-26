@@ -5,7 +5,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -1177,6 +1177,7 @@ impl IsolatedChild {
         self.terminated = true;
         #[cfg(unix)]
         {
+            use std::time::Instant;
             // SAFETY: pgid is the child's own session/process-group id created via setsid().
             unsafe {
                 libc::kill(-self.pgid, libc::SIGTERM);
@@ -1224,9 +1225,14 @@ fn spawn_isolated(
     ),
     DomainError,
 > {
+    #[cfg(windows)]
+    let launch_cwd = dunce::simplified(cwd);
+    #[cfg(not(windows))]
+    let launch_cwd = cwd;
+
     let mut cmd = Command::new(program);
     cmd.args(args)
-        .current_dir(cwd)
+        .current_dir(launch_cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
