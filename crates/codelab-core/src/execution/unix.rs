@@ -1,5 +1,5 @@
 #[cfg(target_os = "macos")]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io;
 #[cfg(target_os = "linux")]
@@ -12,12 +12,18 @@ use std::time::{Duration, Instant};
 
 use super::{Ports, Spawn};
 
+#[cfg(target_os = "linux")]
+const LSP_PROCESS_OWNER: &str = "CODELAB_LSP_PROCESS_OWNER";
+
 pub(crate) struct Process {
     child: Child,
     master: Option<File>,
     session: libc::pid_t,
     reaped: bool,
-    piped: bool,
+    #[cfg(target_os = "macos")]
+    lsp_identity: Option<u64>,
+    #[cfg(target_os = "linux")]
+    lsp_owner: Option<String>,
 }
 
 impl Process {
@@ -77,7 +83,10 @@ impl Process {
                 master: Some(master),
                 session,
                 reaped: false,
-                piped: false,
+                #[cfg(target_os = "macos")]
+                lsp_identity: None,
+                #[cfg(target_os = "linux")]
+                lsp_owner: None,
             },
             ports,
         ))
@@ -102,8 +111,26 @@ impl Process {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        #[cfg(target_os = "linux")]
+        let owner = {
+            use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+            use std::io::Read;
+
+            let mut bytes = [0; 16];
+            File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+            let owner = URL_SAFE_NO_PAD.encode(bytes);
+            command.env(LSP_PROCESS_OWNER, &owner);
+            owner
+        };
         let mut process = Self::spawn_stdio(command, spec.directory)?;
-        process.piped = true;
+        #[cfg(target_os = "macos")]
+        {
+            process.lsp_identity = process_identity(process.session).map(|identity| identity.id);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            process.lsp_owner = Some(owner);
+        }
         let writer = process.child.stdin.take().expect("piped stdin");
         let reader = process.child.stdout.take().expect("piped stdout");
         Ok((process, (Box::new(reader), Box::new(writer))))
@@ -127,7 +154,10 @@ impl Process {
             master: None,
             session,
             reaped: false,
-            piped: false,
+            #[cfg(target_os = "macos")]
+            lsp_identity: None,
+            #[cfg(target_os = "linux")]
+            lsp_owner: None,
         })
     }
 
@@ -192,7 +222,7 @@ impl Process {
     }
 
     fn signal_session(&self, signal: libc::c_int) {
-        signal_jobs(self.session, signal, self.piped);
+        signal_jobs(self, signal);
         // The leader remains waitable here, so this group ID cannot be reused.
         unsafe { libc::kill(-self.session, signal) };
     }
@@ -216,7 +246,8 @@ fn winsize(cols: u16, rows: u16) -> libc::winsize {
 }
 
 #[cfg(target_os = "macos")]
-fn signal_jobs(session: libc::pid_t, signal: libc::c_int, track_descendants: bool) {
+fn signal_jobs(process: &Process, signal: libc::c_int) {
+    let session = process.session;
     // SAFETY: the first call measures the buffer and the second fills it.
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
     let mut pids = vec![0; count.max(0) as usize + 128];
@@ -228,30 +259,8 @@ fn signal_jobs(session: libc::pid_t, signal: libc::c_int, track_descendants: boo
     };
     pids.truncate(count.max(0) as usize);
 
-    // Some helpers create their own session. Collect them before signaling any
-    // ancestor, so reparenting cannot hide a still-live descendant during cleanup.
-    if track_descendants {
-        let detached: Vec<_> = pids
-            .iter()
-            .copied()
-            .filter(|&pid| pid > 1 && unsafe { libc::getsid(pid) != session })
-            .filter_map(|pid| {
-                let info = process_info(pid)?;
-                let mut parent = info.pbi_ppid as libc::pid_t;
-                while parent > 1 && parent != session {
-                    let ancestor = process_info(parent)?;
-                    parent = ancestor.pbi_ppid as libc::pid_t;
-                }
-                (parent == session).then_some((pid, info.pbi_start_tvsec, info.pbi_start_tvusec))
-            })
-            .collect();
-        for (pid, seconds, micros) in detached {
-            if process_info(pid).is_some_and(|info| {
-                info.pbi_start_tvsec == seconds && info.pbi_start_tvusec == micros
-            }) {
-                unsafe { libc::kill(pid, signal) };
-            }
-        }
+    if let Some(identity) = process.lsp_identity {
+        signal_descendants(identity, &pids, signal);
     }
 
     let mut groups = BTreeSet::new();
@@ -274,14 +283,31 @@ fn signal_jobs(session: libc::pid_t, signal: libc::c_int, track_descendants: boo
 }
 
 #[cfg(target_os = "macos")]
-fn process_info(pid: libc::pid_t) -> Option<libc::proc_bsdinfo> {
-    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
-    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+#[repr(C)]
+struct ProcessIdentity {
+    executable_uuid: [u8; 16],
+    id: u64,
+    original_parent_id: u64,
+    pid_version: i32,
+    original_parent_version: i32,
+    reserved: [u64; 2],
+}
+
+#[cfg(target_os = "macos")]
+const _: () = assert!(std::mem::size_of::<ProcessIdentity>() == 56);
+
+#[cfg(target_os = "macos")]
+fn process_identity(pid: libc::pid_t) -> Option<ProcessIdentity> {
+    // XNU's proc_uniqidentifierinfo ABI. Query the server while it is still
+    // waitable and follow original parent IDs, which survive reparenting.
+    const PROC_PIDUNIQIDENTIFIERINFO: libc::c_int = 17;
+    let mut info = std::mem::MaybeUninit::<ProcessIdentity>::uninit();
+    let size = std::mem::size_of::<ProcessIdentity>() as libc::c_int;
     let returned = unsafe {
         libc::proc_pidinfo(
             pid,
-            libc::PROC_PIDTBSDINFO,
-            0,
+            PROC_PIDUNIQIDENTIFIERINFO,
+            1,
             info.as_mut_ptr().cast(),
             size,
         )
@@ -289,8 +315,64 @@ fn process_info(pid: libc::pid_t) -> Option<libc::proc_bsdinfo> {
     (returned == size).then(|| unsafe { info.assume_init() })
 }
 
+#[cfg(target_os = "macos")]
+fn signal_descendants(root: u64, pids: &[libc::pid_t], signal: libc::c_int) {
+    let identities: BTreeMap<_, _> = pids
+        .iter()
+        .copied()
+        .filter(|&pid| pid > 1)
+        .filter_map(|pid| process_identity(pid).map(|identity| (identity.id, (pid, identity))))
+        .collect();
+    for (pid, identity) in identities.values() {
+        let mut parent = identity.original_parent_id;
+        while parent != root {
+            let Some((_, ancestor)) = identities.get(&parent) else {
+                break;
+            };
+            if ancestor.original_parent_id >= parent {
+                break;
+            }
+            parent = ancestor.original_parent_id;
+        }
+        if parent == root {
+            signal_process_identity(*pid, identity, signal);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn signal_process_identity(pid: libc::pid_t, identity: &ProcessIdentity, signal: libc::c_int) {
+    type SignalWithAuditToken = unsafe extern "C" fn(*const [u32; 8], libc::c_int) -> libc::c_int;
+    static SIGNAL: std::sync::OnceLock<Option<SignalWithAuditToken>> = std::sync::OnceLock::new();
+    let signal_with_audit_token = SIGNAL.get_or_init(|| {
+        // Load at runtime for macOS releases that predate this libproc symbol.
+        let symbol =
+            unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"proc_signal_with_audittoken".as_ptr()) };
+        if symbol.is_null() {
+            None
+        } else {
+            // SAFETY: this symbol has the signature defined by libproc.
+            Some(unsafe { std::mem::transmute::<*mut libc::c_void, SignalWithAuditToken>(symbol) })
+        }
+    });
+    if let Some(send_signal) = signal_with_audit_token {
+        // The kernel checks the PID version before delivering the signal.
+        let mut token = [0; 8];
+        token[5] = pid as u32;
+        token[7] = identity.pid_version as u32;
+        unsafe { send_signal(&token, signal) };
+    } else if process_identity(pid).is_some_and(|current| current.id == identity.id) {
+        unsafe { libc::kill(pid, signal) };
+    }
+}
+
 #[cfg(target_os = "linux")]
-fn signal_jobs(session: libc::pid_t, signal: libc::c_int, _track_descendants: bool) {
+fn signal_jobs(process: &Process, signal: libc::c_int) {
+    let session = process.session;
+    let owner = process
+        .lsp_owner
+        .as_ref()
+        .map(|owner| format!("{LSP_PROCESS_OWNER}={owner}"));
     let pids = std::fs::read_dir("/proc")
         .into_iter()
         .flatten()
@@ -301,8 +383,12 @@ fn signal_jobs(session: libc::pid_t, signal: libc::c_int, _track_descendants: bo
         .filter(|&pid| pid != session)
         .filter_map(|pid| {
             let handle = open_pid(pid)?;
-            (unsafe { libc::getsid(pid) } == session || child_of_session(pid, &handle, session))
-                .then_some(handle)
+            (unsafe { libc::getsid(pid) } == session
+                || child_of_session(pid, &handle, session)
+                || owner
+                    .as_ref()
+                    .is_some_and(|owner| has_lsp_owner(pid, owner)))
+            .then_some(handle)
         })
         .collect();
     for handle in jobs {
@@ -317,6 +403,20 @@ fn signal_jobs(session: libc::pid_t, signal: libc::c_int, _track_descendants: bo
             )
         };
     }
+}
+
+#[cfg(target_os = "linux")]
+fn has_lsp_owner(pid: libc::pid_t, owner: &str) -> bool {
+    use std::io::{BufRead, BufReader, Read};
+    const MAX_ENVIRONMENT_BYTES: u64 = 8 * 1024 * 1024;
+    let Ok(environment) = File::open(format!("/proc/{pid}/environ")) else {
+        return false;
+    };
+    // Inspect only the exact inherited ownership entry. Never surface the
+    // contents of the environment or signal through a recycled numeric PID.
+    BufReader::new(environment.take(MAX_ENVIRONMENT_BYTES))
+        .split(0)
+        .any(|entry| entry.is_ok_and(|entry| entry == owner.as_bytes()))
 }
 
 #[cfg(target_os = "linux")]
@@ -359,4 +459,4 @@ fn child_of_session(pid: libc::pid_t, handle: &OwnedFd, session: libc::pid_t) ->
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn signal_jobs(_session: libc::pid_t, _signal: libc::c_int, _track_descendants: bool) {}
+fn signal_jobs(_process: &Process, _signal: libc::c_int) {}

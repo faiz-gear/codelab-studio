@@ -115,7 +115,8 @@ import json, os, subprocess, sys
 from pathlib import Path
 
 mode = '__BEHAVIOR__'
-child = subprocess.Popen(['/bin/sleep', '120'], start_new_session=mode != 'crash')
+duration = '6' if mode == 'detached-crash' else '120'
+child = subprocess.Popen(['/bin/sleep', duration], start_new_session=mode != 'crash')
 Path('server-pids').write_text(f'{os.getpid()} {child.pid}')
 def diagnostic(text):
     return {'message': text, 'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 1}}}
@@ -141,7 +142,7 @@ while header := sys.stdin.buffer.readline():
             'uri': doc['uri'], 'version': doc['version'], 'diagnostics': [diagnostic(Path.cwd().name)]
         }})
     if method == 'textDocument/didChange':
-        if mode == 'crash':
+        if mode in ('crash', 'detached-crash'):
             os._exit(1)
         doc = params['textDocument']
         text = params['contentChanges'][0]['text']
@@ -382,4 +383,36 @@ fn startup_timeout_and_crash_each_degrade_and_reap_descendants() {
         assert_stopped(&pids(&module));
         assert!(feature(&app, id, version, codelab_core::LanguageFeature::Hover).is_none());
     }
+}
+
+#[test]
+fn workspace_switch_and_shutdown_reap_detached_helpers_after_a_server_crashes() {
+    let tmp = TempDir::new().unwrap();
+    let first = tmp.path().join("first");
+    let second = tmp.path().join("second");
+    let first_module = make_module(&first, "demo");
+    let second_module = make_module(&second, "demo");
+    let app = open(&tmp, Some(fake_server(&tmp, "detached-crash")));
+    let events = app.subscribe();
+    builtin(&app);
+
+    let crash_server = |workspace_id, module| {
+        activate(&app, workspace_id, "demo/pkg/code.go", 1);
+        wait_status(&events, 1, LanguageStatus::Ready);
+        let processes = pids(module);
+        activate(&app, workspace_id, "demo/pkg/code.go", 2);
+        wait_status(&events, 2, LanguageStatus::Degraded);
+        processes
+    };
+    let first_processes = crash_server(bind(&app, &first), &first_module);
+    let started = std::time::Instant::now();
+    let second_id = bind(&app, &second);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_stopped(&first_processes);
+
+    let second_processes = crash_server(second_id, &second_module);
+    let started = std::time::Instant::now();
+    app.shutdown().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_stopped(&second_processes);
 }
