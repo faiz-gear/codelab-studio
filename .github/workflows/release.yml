@@ -1,0 +1,188 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/release-notes/preview.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    name: Package (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-universal
+            runner: macos-15
+            target: universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundle: dmg
+            extension: dmg
+          - platform: windows-x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            rust-targets: x86_64-pc-windows-msvc
+            bundle: nsis
+            extension: exe
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            rust-targets: x86_64-unknown-linux-gnu
+            bundle: appimage
+            extension: AppImage
+
+    steps:
+      - name: Preserve LF line endings on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release-${{ matrix.target }}
+
+      - name: Validate release version
+        id: version
+        run: |
+          version=$(jq -br .version src-tauri/tauri.conf.json)
+          npm_version=$(jq -br .version package.json)
+          cargo_version=$(cargo metadata --locked --no-deps --format-version 1 \
+            | jq -br '.packages[] | select(.name == "codelab-studio") | .version')
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ \
+            || "$version" != "$npm_version" || "$version" != "$cargo_version" ]]; then
+            echo "Expected matching X.Y.Z versions. Tauri=$version npm=$npm_version Cargo=$cargo_version" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Expected tag v$version, got $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          printf 'number=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and collect installer
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_TARGET: ${{ matrix.target }}
+          BUNDLE: ${{ matrix.bundle }}
+          EXTENSION: ${{ matrix.extension }}
+          VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          pnpm exec tauri build --ci --target "$BUILD_TARGET" --bundles "$BUNDLE" -- --locked
+
+          build_dir="target/$BUILD_TARGET/release"
+          if [[ "$BUNDLE" == dmg ]]; then
+            lipo -verify_arch arm64 x86_64 "$build_dir/bundle/macos/CodeLab Studio.app/Contents/MacOS/codelab-studio"
+          fi
+          shopt -s nullglob
+          installers=("$build_dir/bundle/$BUNDLE/"*."$EXTENSION")
+          if [[ ${#installers[@]} -ne 1 || ! -s "${installers[0]:-}" ]]; then
+            echo "Expected one nonempty .$EXTENSION installer in $build_dir/bundle/$BUNDLE" >&2
+            exit 1
+          fi
+          mkdir -p release-assets
+          cp "${installers[0]}" "release-assets/CodeLab-Studio-$VERSION-$PLATFORM.$EXTENSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: release-assets/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+          overwrite: true
+
+  draft:
+    name: Assemble Release draft
+    if: github.event_name == 'push'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Attach installers and checksums to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          installers=(
+            "CodeLab-Studio-$version-macos-universal.dmg"
+            "CodeLab-Studio-$version-windows-x64.exe"
+            "CodeLab-Studio-$version-linux-x64.AppImage"
+          )
+          cd release-assets
+          sha256sum "${installers[@]}" > SHA256SUMS.txt
+          assets=("${installers[@]}" SHA256SUMS.txt)
+
+          draft_state=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq -r --arg tag "$tag" '.[] | select(.tag_name == $tag) | .draft')
+          case "$draft_state" in
+            false)
+              echo "Release $tag is already published."
+              ;;
+            true)
+              gh release upload "$tag" "${assets[@]}" --clobber
+              ;;
+            '')
+              gh release create "$tag" "${assets[@]}" --verify-tag --draft --prerelease --latest=false \
+                --title "CodeLab Studio $tag Public Preview" --notes-file ../.github/release-notes/preview.md
+              ;;
+            *)
+              echo "Unexpected release state for $tag: $draft_state" >&2
+              exit 1
+              ;;
+          esac

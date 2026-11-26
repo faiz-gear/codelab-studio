@@ -91,3 +91,13 @@ _Avoid_: Prompt Context, Memory, Attachment
 **Permission Policy**:
 约束本地 ACP 编码 Agent 访问能力的授权策略；默认放行工作区内非敏感只读，对文件写入、越界读取及命令执行强制弹窗审批。
 _Avoid_: Sandbox Policy, Security Mode
+
+### 桌面分发
+
+**Desktop Release**:
+CodeLab Studio 桌面应用的一个版本，包含相同版本号的各平台安装包，经维护者验收发布后向用户提供下载。
+_Avoid_: Build
+
+**Public Preview**:
+面向早期用户公开下载的 Desktop Release，发布说明会注明适用平台和当前的安装限制。
+_Avoid_: Release Draft
