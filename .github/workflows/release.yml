@@ -83,10 +83,11 @@ jobs:
       - name: Validate release version
         id: version
         run: |
-          version=$(jq -br .version src-tauri/tauri.conf.json)
-          npm_version=$(jq -br .version package.json)
+          # Native Windows jq may emit CRLF. Ubuntu 22.04's jq lacks --binary.
+          version=$(jq -r .version src-tauri/tauri.conf.json | tr -d '\r')
+          npm_version=$(jq -r .version package.json | tr -d '\r')
           cargo_version=$(cargo metadata --locked --no-deps --format-version 1 \
-            | jq -br '.packages[] | select(.name == "codelab-studio") | .version')
+            | jq -r '.packages[] | select(.name == "codelab-studio") | .version' | tr -d '\r')
           if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ \
             || "$version" != "$npm_version" || "$version" != "$cargo_version" ]]; then
             echo "Expected matching X.Y.Z versions. Tauri=$version npm=$npm_version Cargo=$cargo_version" >&2
