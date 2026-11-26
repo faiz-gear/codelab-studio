@@ -26,6 +26,7 @@ fn cold_start_bootstrap_returns_default_settings_and_empty_collections() {
                     accent: AccentPreset::Neutral,
                     code_font_size: 13.5,
                     locale: Locale::ZhCn,
+                    preferred_ide: Default::default(),
                     tutor: Default::default(),
                 }
             );
@@ -61,6 +62,7 @@ fn updating_settings_emits_event_and_persists_across_restart() {
         accent: AccentPreset::Violet,
         code_font_size: 15.0,
         locale: Locale::EnUs,
+        preferred_ide: Default::default(),
         tutor: Default::default(),
     };
     assert_eq!(updated, AppResponse::Settings(expected.clone()));

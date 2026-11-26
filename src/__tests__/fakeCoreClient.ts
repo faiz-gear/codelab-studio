@@ -17,7 +17,11 @@ import {
   type DomainError,
   type GlobalSettings,
   type LoadedCourse,
+  type LocalMetricEvent,
+  type LocalMetricRecord,
   type LocalPathPickKind,
+  type MetricEventDetail,
+  type MetricEventName,
   type OpenCourseRequest,
   type PreflightReport,
   type RecentWorkspace,
@@ -30,6 +34,7 @@ import {
   type TutorSessionSnapshot,
   type WorkspaceEntry,
   type WorkspaceFile,
+  type WorkspaceMetrics,
   type WorkspaceSummary,
   type TerminalSummary,
 } from "../core/contracts";
@@ -479,6 +484,7 @@ export class FakeCoreClient implements CoreClient {
       }
     }
     this.pickedPaths = { ...options.pickedPaths };
+    this.pendingMetrics.push(this.makeMetricRecord({ detailKind: "appLaunched" }));
   }
 
   private workspace: WorkspaceSummary | null = null;
@@ -489,6 +495,75 @@ export class FakeCoreClient implements CoreClient {
   private cwdOverrides = new Map<string, Record<string, string>>();
   private terminalErrors: string[] = [];
   private terminalOutput = new Map<number, string>();
+  private workspaceMetrics = new Map<string, WorkspaceMetrics>();
+  private pendingMetrics: LocalMetricRecord[] = [];
+
+  private metricEventName(detail: MetricEventDetail): MetricEventName {
+    switch (detail.detailKind) {
+      case "appLaunched": return "app_launched";
+      case "courseOpened": return "course_opened";
+      case "preflightExecuted": return "preflight_executed";
+      case "runtimeInstalled": return "runtime_installed";
+      case "cmdBlockClicked": return "cmd_block_clicked";
+      case "cmdRiskModalAction": return "cmd_risk_modal_action";
+      case "cmdFinished": return "cmd_finished";
+      case "fileTreeOpen": return "file_tree_open";
+      case "selectionAiClicked": return "selection_ai_clicked";
+      case "aiModeSwitched": return "ai_mode_switched";
+      case "acpPermissionDecision": return "acp_permission_decision";
+      case "verifyChapterClicked": return "verify_chapter_clicked";
+      case "chapterMarkedDone": return "chapter_marked_done";
+    }
+  }
+
+  private makeMetricRecord(detail: MetricEventDetail): LocalMetricRecord {
+    return {
+      event: this.metricEventName(detail),
+      recordedAt: new Date().toISOString(),
+      ...detail,
+    };
+  }
+
+  private metricsForRoot(root: string): WorkspaceMetrics {
+    const existing = this.workspaceMetrics.get(root);
+    if (existing) return existing;
+    const initial: WorkspaceMetrics = { courseOpened: 0, counts: {}, events: [] };
+    this.workspaceMetrics.set(root, initial);
+    return initial;
+  }
+
+  private pushMetricRecord(root: string, record: LocalMetricRecord) {
+    const metrics = this.metricsForRoot(root);
+    const nextCount = (metrics.counts[record.event] ?? 0) + 1;
+    metrics.counts[record.event] = nextCount;
+    if (record.event === "course_opened") {
+      metrics.courseOpened = nextCount;
+    }
+    metrics.events.push(record);
+    if (metrics.events.length > 500) {
+      metrics.events.splice(0, metrics.events.length - 500);
+    }
+  }
+
+  private recordMetric(detail: MetricEventDetail) {
+    const record = this.makeMetricRecord(detail);
+    if (this.workspace) {
+      this.pushMetricRecord(this.workspace.root, record);
+    } else {
+      this.pendingMetrics.push(record);
+    }
+  }
+
+  private localEventToDetail(event: LocalMetricEvent): MetricEventDetail {
+    switch (event.kind) {
+      case "fileTreeOpen":
+        return { detailKind: "fileTreeOpen" };
+      case "selectionAiClicked":
+        return { detailKind: "selectionAiClicked", zone: event.zone, action: event.action };
+      case "cmdRiskModalCancelled":
+        return { detailKind: "cmdRiskModalAction", source: event.source, decision: "cancel" };
+    }
+  }
 
   writeTerminalOutput(text: string) {
     const id = this.terminals.at(-1)?.id;
@@ -642,6 +717,17 @@ export class FakeCoreClient implements CoreClient {
     if (!active) throw new CoreCommandError({ code: "NO_ACTIVE_COURSE" });
     if (!this.withTrust(active).trusted) throw new CoreCommandError({ code: "COURSE_UNTRUSTED" });
     this.workspace = { id: this.nextWorkspaceId++, root, recoveryNotices: [] };
+    for (const pending of this.pendingMetrics.splice(0)) {
+      this.pushMetricRecord(root, pending);
+    }
+    this.pushMetricRecord(
+      root,
+      this.makeMetricRecord({
+        detailKind: "courseOpened",
+        courseKind: active.source.kind,
+        language: active.language,
+      })
+    );
     this.recents = [{
       workspacePath: root,
       courseSource: active.source,
@@ -1042,6 +1128,7 @@ export class FakeCoreClient implements CoreClient {
                 : {}),
             }
           : this.settings.tutor;
+        const previousTeachingStyle = this.settings.tutor.teachingStyle;
         const agentChanged =
           nextTutor.preset !== this.settings.tutor.preset ||
           nextTutor.command !== this.settings.tutor.command;
@@ -1053,8 +1140,18 @@ export class FakeCoreClient implements CoreClient {
             ? { codeFontSize: patch.codeFontSize }
             : {}),
           ...(patch.locale !== undefined ? { locale: patch.locale } : {}),
+          ...(patch.preferredIde !== undefined
+            ? { preferredIde: patch.preferredIde }
+            : {}),
           tutor: nextTutor,
         };
+        if (nextTutor.teachingStyle !== previousTeachingStyle) {
+          this.recordMetric({
+            detailKind: "aiModeSwitched",
+            from: previousTeachingStyle,
+            to: nextTutor.teachingStyle,
+          });
+        }
         if (this.workspace && this.tutorSessions.has(this.workspace.id)) {
           this.updateTutorSession(this.workspace.id, (session) => ({
             ...session,
@@ -1298,6 +1395,18 @@ export class FakeCoreClient implements CoreClient {
           return { type: "commandConfirmationRequired", payload: { token, cwd, command: block.command } };
         }
         this.pendingConfirmation = null;
+        if (confirmation) {
+          this.recordMetric({
+            detailKind: "cmdRiskModalAction",
+            source: "commandBlock",
+            decision: "confirm",
+          });
+        }
+        this.recordMetric({
+          detailKind: "cmdBlockClicked",
+          mode: block.mode,
+          isRestart: Boolean(command.payload.restartTerminalId),
+        });
         for (const draft of drafts) {
           const file = this.files(root).get(draft.path) ?? { kind: "missing" as const, path: draft.path, revision: null, sizeBytes: 0 };
           if (file.revision !== draft.expectedRevision) return { type: "commandSaveConflict", payload: { file, saved: [] } };
@@ -1322,25 +1431,75 @@ export class FakeCoreClient implements CoreClient {
       case "closeTerminal":
         this.terminals = this.terminals.filter((item) => item.id !== command.payload.terminalId);
         return { type: "terminalUpdated" };
-      case "stopTerminal":
+      case "stopTerminal": {
+        const target = this.terminals.find((item) => item.id === command.payload.terminalId);
         this.terminals = this.terminals.map((item) => item.id === command.payload.terminalId
           ? { ...item, running: false, exitCode: 130 }
           : item);
+        if (target?.running) {
+          this.recordMetric({
+            detailKind: "cmdFinished",
+            mode: target.mode,
+            exitCode: 130,
+            stopped: true,
+            durationMs: 0,
+          });
+        }
         return { type: "terminalUpdated" };
+      }
       case "resizeTerminal":
       case "writeTerminal":
         return { type: "terminalUpdated" };
-      case "getProgress":
-      case "resetProgress":
+      case "getProgress": {
+        const progress = this.progress ?? {
+          workspaceId: command.payload.workspaceId,
+          completedExercises: 0,
+          totalExercises: this.activeCourse()?.totalExercises ?? 10,
+          runningChapterId: null,
+          chapters: {},
+        };
+        this.progress = progress;
+        return { type: "progress", payload: progress };
+      }
+      case "resetProgress": {
+        const root = this.workspaceRoot(command.payload.workspaceId);
+        const totalExercises = this.activeCourse()?.totalExercises ?? this.progress?.totalExercises ?? 10;
+        const reset: import("../core/contracts").LearningProgress = {
+          workspaceId: command.payload.workspaceId,
+          completedExercises: 0,
+          totalExercises,
+          runningChapterId: null,
+          chapters: {},
+        };
+        this.progress = reset;
+        this.recents = this.recents.map((item) =>
+          item.workspacePath === root ? { ...item, completedExercises: 0 } : item
+        );
+        this.emitEvent({ type: "progressUpdated", payload: reset });
+        this.emitEvent({ type: "recentsUpdated", payload: [...this.recents] });
+        return { type: "progress", payload: reset };
+      }
       case "setSelfCheck":
       case "completeExercise": {
-        const progress = this.progress ?? { workspaceId: command.payload.workspaceId, completedExercises: 0, totalExercises: 10, runningChapterId: null, chapters: {} };
+        const progress = this.progress ?? {
+          workspaceId: command.payload.workspaceId,
+          completedExercises: 0,
+          totalExercises: this.activeCourse()?.totalExercises ?? 10,
+          runningChapterId: null,
+          chapters: {},
+        };
         this.progress = progress;
         return { type: "progress", payload: progress };
       }
       case "runChecks": {
         const { workspaceId, chapterId, drafts } = command.payload;
         const root = this.workspaceRoot(workspaceId);
+        const chapter = this.activeCourse()?.chapters.find((c) => c.chapterId === chapterId);
+        this.recordMetric({
+          detailKind: "verifyChapterClicked",
+          checkCount: chapter?.threeStep?.step3Checks.length ?? 0,
+          requiresDaemon: Boolean(chapter?.threeStep?.requiresDaemon),
+        });
         for (const draft of drafts) {
           const file = this.fileSnapshot(root, draft.path);
           if (file.revision !== draft.expectedRevision) return { type: "commandSaveConflict", payload: { file, saved: [] } };
@@ -1352,10 +1511,25 @@ export class FakeCoreClient implements CoreClient {
       }
       case "exportLearningRecord": return { type: "learningRecord", payload: { progress: this.progress } };
       case "getPreflight":
-      case "refreshPreflight":
         return { type: "preflight", payload: this.preflight };
+      case "refreshPreflight": {
+        const readyCount = this.preflight.languages.filter((row) => row.status === "ok").length;
+        this.recordMetric({
+          detailKind: "preflightExecuted",
+          readyCount,
+          totalLanguages: this.preflight.languages.length,
+        });
+        return { type: "preflight", payload: this.preflight };
+      }
       case "setRuntimePreference":
       case "installManagedRuntime": {
+        if (command.type === "installManagedRuntime") {
+          this.recordMetric({
+            detailKind: "runtimeInstalled",
+            language: command.payload.language,
+            succeeded: true,
+          });
+        }
         const languages = this.preflight.languages.map((row) => {
           if (row.language !== command.payload.language) return row;
           if (command.type === "setRuntimePreference") {
@@ -1555,6 +1729,34 @@ export class FakeCoreClient implements CoreClient {
           messages: [],
         }));
         return { type: "tutorSession", payload: next };
+      }
+      case "getWorkspaceMetrics": {
+        const root = this.workspaceRoot(command.payload.workspaceId);
+        const metrics = this.metricsForRoot(root);
+        return {
+          type: "workspaceMetrics",
+          payload: {
+            courseOpened: metrics.courseOpened,
+            counts: { ...metrics.counts },
+            events: [...metrics.events],
+          },
+        };
+      }
+      case "recordLocalMetric": {
+        const root = this.workspaceRoot(command.payload.workspaceId);
+        this.pushMetricRecord(
+          root,
+          this.makeMetricRecord(this.localEventToDetail(command.payload.event))
+        );
+        const metrics = this.metricsForRoot(root);
+        return {
+          type: "workspaceMetrics",
+          payload: {
+            courseOpened: metrics.courseOpened,
+            counts: { ...metrics.counts },
+            events: [...metrics.events],
+          },
+        };
       }
       case "createCourseDraft":
       case "openCourseDraft":

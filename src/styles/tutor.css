@@ -16,7 +16,7 @@
 
 .btn--danger {
   background: var(--danger);
-  color: var(--neutral-0);
+  color: var(--danger-glyph);
   box-shadow: var(--shadow-resting);
 }
 
@@ -40,13 +40,7 @@
   color: color-mix(in oklab, var(--danger) var(--badge-ink), var(--foreground));
 }
 
-/* ---------- Settings Dialog Tabs & ACP Tutor Tab ---------- */
-.runtime-settings-tabs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+/* ---------- ACP Tutor Tab ---------- */
 .tutor-settings {
   display: flex;
   flex-direction: column;
@@ -850,6 +844,10 @@
   background: var(--surface);
   border-color: var(--border-strong);
   box-shadow: var(--shadow-resting);
+}
+
+.tutor-composer:has(textarea:focus-visible) {
+  box-shadow: var(--focus-outline);
 }
 
 .tutor-composer textarea {

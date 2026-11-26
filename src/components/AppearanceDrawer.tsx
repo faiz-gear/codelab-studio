@@ -2,25 +2,15 @@ import { useEffect, useRef } from "react";
 import {
   ACCENT_PRESETS,
   CODE_FONT_SIZE_PRESETS,
-  type AccentPreset,
   type GlobalSettings,
   type Locale,
   type ThemeMode,
   type UpdateSettingsPatch,
 } from "../core/contracts";
 import type { Messages } from "../i18n";
+import { ACCENT_SWATCH_COLOR } from "../theme/applyTheme";
 import { CheckIcon, CloseIcon, CopyIcon } from "./Icons";
-
-const ACCENT_SWATCH_COLOR: Record<AccentPreset, string> = {
-  neutral: "#525252",
-  violet: "#6836f5",
-  blue: "#0562ef",
-  green: "#077e53",
-  amber: "#9c5b00",
-  orange: "#b84900",
-  coral: "#c5342b",
-  rose: "#bc2470",
-};
+import { trapFocusOnTab } from "./focusTrap";
 
 interface SegmentedOption<T extends string | number> {
   value: T;
@@ -86,6 +76,7 @@ export function AppearanceDrawer({
   onUpdateSettings,
   onCopyThemeConfig,
 }: AppearanceDrawerProps) {
+  const drawerRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -96,6 +87,8 @@ export function AppearanceDrawer({
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
+      } else if (event.key === "Tab") {
+        trapFocusOnTab(drawerRef.current, event);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -132,7 +125,7 @@ export function AppearanceDrawer({
         }
       }}
     >
-      <div className="appearance-drawer">
+      <div ref={drawerRef} className="appearance-drawer">
         <div className="drawer-head">
           <h2>{messages.appearance.title}</h2>
           <button

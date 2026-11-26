@@ -11,8 +11,6 @@ export interface ToastStackProps {
 }
 
 export function ToastStack({ toasts }: ToastStackProps) {
-  if (toasts.length === 0) return null;
-
   return (
     <div className="toasts" role="status" aria-live="polite" aria-atomic="true">
       {toasts.map((toast) => (

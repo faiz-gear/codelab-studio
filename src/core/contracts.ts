@@ -154,11 +154,24 @@ export interface TutorSettingsPatch {
   teachingStyle?: TeachingStyle;
 }
 
+export type ExternalIde = "vsCode" | "cursor" | "goLand" | "intelliJIdea";
+
+export const EXTERNAL_IDES: readonly {
+  id: ExternalIde;
+  label: string;
+}[] = [
+  { id: "vsCode", label: "VS Code" },
+  { id: "cursor", label: "Cursor" },
+  { id: "goLand", label: "GoLand" },
+  { id: "intelliJIdea", label: "IntelliJ IDEA" },
+] as const;
+
 export interface GlobalSettings {
   theme: ThemeMode;
   accent: AccentPreset;
   codeFontSize: number;
   locale: Locale;
+  preferredIde: ExternalIde;
   tutor: TutorSettings;
 }
 
@@ -167,6 +180,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   accent: "neutral",
   codeFontSize: 13.5,
   locale: "zh-CN",
+  preferredIde: "vsCode",
   tutor: DEFAULT_TUTOR_SETTINGS,
 };
 
@@ -175,6 +189,7 @@ export interface UpdateSettingsPatch {
   accent?: AccentPreset;
   codeFontSize?: number;
   locale?: Locale;
+  preferredIde?: ExternalIde;
   tutor?: TutorSettingsPatch;
 }
 
@@ -512,7 +527,96 @@ export interface WorkspaceFilesChanged {
   paths: string[];
 }
 
-export type ExternalIde = "vsCode" | "cursor" | "goLand" | "intelliJIdea";
+export const METRIC_EVENT_NAMES = [
+  "app_launched",
+  "course_opened",
+  "preflight_executed",
+  "runtime_installed",
+  "cmd_block_clicked",
+  "cmd_risk_modal_action",
+  "cmd_finished",
+  "file_tree_open",
+  "selection_ai_clicked",
+  "ai_mode_switched",
+  "acp_permission_decision",
+  "verify_chapter_clicked",
+  "chapter_marked_done",
+] as const;
+
+export type MetricEventName = (typeof METRIC_EVENT_NAMES)[number];
+
+export type MetricCourseKind = "builtin" | "localMarkdown" | "localPack" | "gitPack";
+export type MetricRiskSource = "commandBlock" | "verification";
+export type MetricRiskDecision = "confirm" | "cancel";
+export type MetricSelectionZone =
+  | "manual"
+  | "editor"
+  | "terminal"
+  | "checkFailure"
+  | "verificationPanel"
+  | "reflection"
+  | "portConflict";
+export type MetricSelectionAction =
+  | "explainConcept"
+  | "explainCode"
+  | "checkIssues"
+  | "diagnoseError"
+  | "ask";
+export type MetricPermissionDecision =
+  | "approved"
+  | "denied"
+  | "autoAllowed"
+  | "blockedSensitive";
+export type MetricCompletionTrigger = "verification" | "selfCheck" | "manual";
+
+export type MetricEventDetail =
+  | { detailKind: "appLaunched" }
+  | { detailKind: "courseOpened"; courseKind: MetricCourseKind; language: CourseLanguage | null }
+  | { detailKind: "preflightExecuted"; readyCount: number; totalLanguages: number }
+  | { detailKind: "runtimeInstalled"; language: CourseLanguage; succeeded: boolean; errorCode?: ErrorCode | null }
+  | { detailKind: "cmdBlockClicked"; mode: CommandMode; isRestart: boolean }
+  | { detailKind: "cmdRiskModalAction"; source: MetricRiskSource; decision: MetricRiskDecision }
+  | { detailKind: "cmdFinished"; mode: CommandMode | null; exitCode: number; stopped: boolean; durationMs: number }
+  | { detailKind: "fileTreeOpen" }
+  | { detailKind: "selectionAiClicked"; zone: MetricSelectionZone; action: MetricSelectionAction }
+  | { detailKind: "aiModeSwitched"; from: TeachingStyle; to: TeachingStyle }
+  | {
+      detailKind: "acpPermissionDecision";
+      kind: TutorPermissionKind;
+      decision: MetricPermissionDecision;
+      policy: PermissionPolicy;
+      outsideWorkspace: boolean;
+      highRisk: boolean;
+      sensitive: boolean;
+    }
+  | { detailKind: "verifyChapterClicked"; checkCount: number; requiresDaemon: boolean }
+  | {
+      detailKind: "chapterMarkedDone";
+      trigger: MetricCompletionTrigger;
+      completedExercises: number;
+      totalExercises: number;
+    };
+
+export type LocalMetricEvent =
+  | { kind: "fileTreeOpen" }
+  | { kind: "selectionAiClicked"; zone: MetricSelectionZone; action: MetricSelectionAction }
+  | { kind: "cmdRiskModalCancelled"; source: MetricRiskSource };
+
+export interface RecordLocalMetric {
+  workspaceId: number;
+  event: LocalMetricEvent;
+}
+
+export type LocalMetricRecord = {
+  event: MetricEventName;
+  recordedAt: string;
+} & MetricEventDetail;
+
+export interface WorkspaceMetrics {
+  courseOpened: number;
+  counts: Partial<Record<MetricEventName, number>>;
+  events: LocalMetricRecord[];
+}
 
 
 export interface WorkspaceTerminalRequest {
@@ -846,6 +950,8 @@ export type AppCommand =
   | { type: "retryTutorTurn"; payload: WorkspaceTutorRequest }
   | { type: "respondTutorPermission"; payload: RespondTutorPermission }
   | { type: "clearTutorSession"; payload: WorkspaceTutorRequest }
+  | { type: "getWorkspaceMetrics"; payload: WorkspaceTerminalRequest }
+  | { type: "recordLocalMetric"; payload: RecordLocalMetric }
   | { type: "shutdown" };
 
 export type PreflightCommand = Extract<
@@ -891,6 +997,7 @@ export type AppResponse =
   | { type: "tutorHandshake"; payload: TutorHandshakeResult }
   | { type: "tutorContext"; payload: ContextSnapshot }
   | { type: "tutorSession"; payload: TutorSessionSnapshot }
+  | { type: "workspaceMetrics"; payload: WorkspaceMetrics }
   | { type: "shutdown"; payload: ShutdownReport };
 
 export type AppEvent =

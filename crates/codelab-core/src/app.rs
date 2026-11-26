@@ -3,7 +3,7 @@ mod verification;
 use crate::execution::verification::{VerificationTask, model::*};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak, mpsc};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -40,9 +40,11 @@ use crate::tutor::{
     context as tutor_context,
 };
 use crate::workspace::{
-    Workspace, WorkspaceComparison, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename,
-    WorkspaceFileWrite, WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspacePath,
-    WorkspaceSummary,
+    LocalMetricEvent, LocalMetricRecord, MetricCompletionTrigger, MetricEventDetail,
+    MetricEventName, MetricRiskDecision, MetricRiskSource, RecordLocalMetric, Workspace,
+    WorkspaceComparison, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename, WorkspaceFileWrite,
+    WorkspaceFilesChanged, WorkspaceIdeRequest, WorkspaceMetrics, WorkspacePath, WorkspaceSummary,
+    metrics::MAX_PENDING_METRICS,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -151,6 +153,8 @@ pub enum AppCommand {
     RetryTutorTurn(WorkspaceTutorRequest),
     RespondTutorPermission(RespondTutorPermission),
     ClearTutorSession(WorkspaceTutorRequest),
+    GetWorkspaceMetrics(WorkspaceTerminalRequest),
+    RecordLocalMetric(RecordLocalMetric),
     Shutdown,
 }
 
@@ -194,6 +198,7 @@ pub enum AppResponse {
     TutorHandshake(TutorHandshakeResult),
     TutorContext(ContextSnapshot),
     TutorSession(TutorSessionSnapshot),
+    WorkspaceMetrics(WorkspaceMetrics),
     Shutdown(ShutdownReport),
 }
 
@@ -262,6 +267,7 @@ struct AppState {
     execution: Execution,
     language_servers: LanguageServers,
     verification: Option<VerificationTask>,
+    pending_metrics: Vec<LocalMetricRecord>,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
 }
@@ -317,6 +323,14 @@ impl App {
         Self::open_with_adapters(config, RuntimeAdapters::default(), Arc::new(GitCli), tutor)
     }
 
+    pub fn open_with_test_adapters(
+        config: AppConfig,
+        adapters: RuntimeAdapters,
+        tutor: Arc<dyn TutorBackend>,
+    ) -> Result<Self, DomainError> {
+        Self::open_with_adapters(config, adapters, Arc::new(GitCli), tutor)
+    }
+
     fn open_with_adapters(
         config: AppConfig,
         adapters: RuntimeAdapters,
@@ -355,13 +369,26 @@ impl App {
 
         let builtin_courses = course::list_builtin_courses()?;
         let subscribers = Arc::new(Subscribers::default());
+        let metric_state: Arc<OnceLock<Weak<Mutex<AppState>>>> = Arc::new(OnceLock::new());
         let runtime_subscribers = Arc::downgrade(&subscribers);
-        let (runtime, runtime_recovery) =
-            RuntimeManager::open(&config.data_dir, adapters, move |report| {
+        let runtime_metrics = Arc::clone(&metric_state);
+        let (runtime, runtime_recovery) = RuntimeManager::open(
+            &config.data_dir,
+            adapters,
+            move |report| {
                 if let Some(subscribers) = runtime_subscribers.upgrade() {
                     emit_to_subscribers(&subscribers, AppEvent::PreflightUpdated(report));
                 }
-            })?;
+            },
+            move |detail| {
+                if let Some(state_lock) = runtime_metrics.get().and_then(Weak::upgrade) {
+                    let mut state = state_lock
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner());
+                    state.record_metric(detail);
+                }
+            },
+        )?;
 
         let recovery_notices = [
             settings_loaded.recovery,
@@ -375,6 +402,7 @@ impl App {
 
         let tutor_subscribers = Arc::downgrade(&subscribers);
         let tutor_fs_subscribers = Arc::downgrade(&subscribers);
+        let tutor_metrics = Arc::clone(&metric_state);
         let tutor = Arc::new(TutorManager::new(
             tutor_backend,
             settings_loaded.value.tutor.clone(),
@@ -388,34 +416,51 @@ impl App {
                     emit_to_subscribers(&subscribers, AppEvent::WorkspaceFilesChanged(changed));
                 }
             },
+            move |workspace_id, detail| {
+                if let Some(state_lock) = tutor_metrics.get().and_then(Weak::upgrade) {
+                    let mut state = state_lock
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner());
+                    if state
+                        .active_workspace
+                        .as_ref()
+                        .is_some_and(|ws| ws.summary.id == workspace_id)
+                    {
+                        state.record_metric(detail);
+                    }
+                }
+            },
         ));
 
         let activation =
             activation::CourseWorkspaceActivation::new(&data_dir, &subscribers, &tutor);
+        let state = Arc::new(Mutex::new(AppState {
+            settings: settings_loaded.value,
+            recents: recents_loaded.value,
+            trust_entries: trust_loaded.value,
+            recovery_notices,
+            builtin_courses,
+            active_course: None,
+            course_load_generation: 0,
+            active_workspace: None,
+            trial_workspace: None,
+            draft: None,
+            next_draft_id: 1,
+            next_workspace_id: 1,
+            execution: Execution::default(),
+            language_servers: LanguageServers::default(),
+            verification: None,
+            pending_metrics: vec![LocalMetricRecord::now(MetricEventDetail::AppLaunched)],
+            shut_down: false,
+            cleanup_hooks: Vec::new(),
+        }));
+        let _ = metric_state.set(Arc::downgrade(&state));
         Ok(Self {
             data_dir,
             settings_store,
             recents_store,
             trust_store,
-            state: Arc::new(Mutex::new(AppState {
-                settings: settings_loaded.value,
-                recents: recents_loaded.value,
-                trust_entries: trust_loaded.value,
-                recovery_notices,
-                builtin_courses,
-                active_course: None,
-                course_load_generation: 0,
-                active_workspace: None,
-                trial_workspace: None,
-                draft: None,
-                next_draft_id: 1,
-                next_workspace_id: 1,
-                execution: Execution::default(),
-                language_servers: LanguageServers::default(),
-                verification: None,
-                shut_down: false,
-                cleanup_hooks: Vec::new(),
-            })),
+            state,
             subscribers,
             runtime,
             tutor,
@@ -604,7 +649,9 @@ impl App {
             AppCommand::ReadTerminals(request) => {
                 let mut state = self.lock_state();
                 state.workspace(request.workspace_id)?;
-                Ok(AppResponse::Terminals(state.execution.read(request)))
+                let updates = state.execution.read(request);
+                state.drain_finished_command_metrics();
+                Ok(AppResponse::Terminals(updates))
             }
             AppCommand::WriteTerminal(request) => self
                 .update_terminal(request.target.workspace_id, |execution| {
@@ -649,6 +696,12 @@ impl App {
             AppCommand::ClearTutorSession(request) => {
                 self.clear_tutor_session(request.workspace_id)
             }
+            AppCommand::GetWorkspaceMetrics(request) => {
+                let state = self.lock_state();
+                let workspace = state.workspace(request.workspace_id)?;
+                Ok(AppResponse::WorkspaceMetrics(workspace.metrics_snapshot()))
+            }
+            AppCommand::RecordLocalMetric(request) => self.record_local_metric(request),
             AppCommand::Shutdown => self.shutdown().map(AppResponse::Shutdown),
         }
     }
@@ -690,6 +743,12 @@ impl App {
                 .command_cwds
                 .resolve(&workspace.files, course, block, None)?
         };
+        let had_confirmation = request.confirmation.is_some();
+        if !had_confirmation {
+            let mode = launch.block.mode;
+            let is_restart = request.restart_terminal_id.is_some();
+            state.record_metric(MetricEventDetail::CmdBlockClicked { mode, is_restart });
+        }
         let AppState {
             execution,
             active_workspace,
@@ -704,14 +763,27 @@ impl App {
             CommandPreparation::Ready {
                 target: ConfirmationTarget::Block(launch),
                 saved,
-            } => match execution.start(Some(*launch), dir, &self.runtime.snapshot(), language) {
-                Ok(terminal) => Ok(AppResponse::CommandStarted(CommandStarted {
-                    terminal,
-                    saved,
-                })),
-                Err(error) if saved.is_empty() => Err(error),
-                Err(error) => Ok(AppResponse::CommandFailed(CommandFailed { error, saved })),
-            },
+            } => {
+                if had_confirmation {
+                    state.record_metric(MetricEventDetail::CmdRiskModalAction {
+                        source: MetricRiskSource::CommandBlock,
+                        decision: MetricRiskDecision::Confirm,
+                    });
+                }
+                let result =
+                    state
+                        .execution
+                        .start(Some(*launch), dir, &self.runtime.snapshot(), language);
+                state.drain_finished_command_metrics();
+                match result {
+                    Ok(terminal) => Ok(AppResponse::CommandStarted(CommandStarted {
+                        terminal,
+                        saved,
+                    })),
+                    Err(error) if saved.is_empty() => Err(error),
+                    Err(error) => Ok(AppResponse::CommandFailed(CommandFailed { error, saved })),
+                }
+            }
             CommandPreparation::Ready {
                 target: ConfirmationTarget::Checks { .. },
                 ..
@@ -720,6 +792,12 @@ impl App {
                 Ok(AppResponse::CommandConfirmationRequired(prompt))
             }
             CommandPreparation::SaveConflict(conflict) => {
+                if had_confirmation {
+                    state.record_metric(MetricEventDetail::CmdRiskModalAction {
+                        source: MetricRiskSource::CommandBlock,
+                        decision: MetricRiskDecision::Confirm,
+                    });
+                }
                 Ok(AppResponse::CommandSaveConflict(conflict))
             }
             CommandPreparation::Failed(failed) if failed.saved.is_empty() => Err(failed.error),
@@ -756,7 +834,23 @@ impl App {
         let mut state = self.lock_state();
         state.workspace(id)?;
         update(&mut state.execution)?;
+        state.drain_finished_command_metrics();
         Ok(AppResponse::TerminalUpdated)
+    }
+
+    fn record_local_metric(&self, request: RecordLocalMetric) -> Result<AppResponse, DomainError> {
+        let mut state = self.lock_state();
+        state.workspace(request.workspace_id)?;
+        if matches!(
+            request.event,
+            LocalMetricEvent::CmdRiskModalCancelled { .. }
+        ) {
+            state.execution.invalidate_confirmation();
+        }
+        let detail = request.event.into_detail();
+        let workspace = state.active_workspace.as_mut().unwrap();
+        workspace.record_metric(detail)?;
+        Ok(AppResponse::WorkspaceMetrics(workspace.metrics_snapshot()))
     }
 
     pub fn subscribe(&self) -> EventSubscription {
@@ -855,6 +949,10 @@ impl App {
             if let Some(locale) = patch.locale {
                 next.locale = locale;
             }
+            if let Some(preferred_ide) = patch.preferred_ide {
+                next.preferred_ide = preferred_ide;
+            }
+            let prev_style = state.settings.tutor.teaching_style;
             if let Some(tutor_patch) = patch.tutor {
                 if let Some(preset) = tutor_patch.preset {
                     next.tutor.preset = preset;
@@ -877,6 +975,12 @@ impl App {
             }
             self.settings_store.save_atomic(&next)?;
             state.settings = next.clone();
+            if next.tutor.teaching_style != prev_style {
+                state.record_metric(MetricEventDetail::AiModeSwitched {
+                    from: prev_style,
+                    to: next.tutor.teaching_style,
+                });
+            }
             next
         };
 
@@ -1345,15 +1449,18 @@ impl App {
             return Err(DomainError::new(ErrorCode::InvalidWorkspacePath));
         }
         state.protect_draft_path(path)?;
+        let course = active.course.clone();
         let workspace = self.activation.prepare_workspace(
             state.next_workspace_id,
             path,
-            &active.course,
+            &course,
             active.starter.as_ref(),
         )?;
-        let recent = workspace_recent(&workspace, &active.course);
+        let recent = workspace_recent(&workspace, &course);
         self.store_recent(&mut state, recent)?;
-        let summary = self.activation.activate_workspace(&mut state, workspace);
+        let summary = self
+            .activation
+            .activate_workspace(&mut state, workspace, &course)?;
         Ok(AppResponse::WorkspaceBound(summary))
     }
 
@@ -1382,7 +1489,10 @@ impl App {
                 opened.starter.as_ref(),
             )?;
             self.store_recent(&mut state, workspace_recent(&workspace, &opened.course))?;
-            Some(self.activation.activate_workspace(&mut state, workspace))
+            Some(
+                self.activation
+                    .activate_workspace(&mut state, workspace, &opened.course)?,
+            )
         } else {
             state.deactivate_workspace();
             self.tutor.detach_workspace();
@@ -1446,7 +1556,9 @@ impl App {
             &opened.course,
             opened.starter.as_ref(),
         )?;
-        let workspace = self.activation.activate_workspace(&mut state, workspace);
+        let workspace =
+            self.activation
+                .activate_workspace(&mut state, workspace, &opened.course)?;
         state.course_load_generation += 1;
         state.trial_workspace = Some(trial);
         let course = self.activation.activate_course(&mut state, opened)?;
@@ -1483,6 +1595,36 @@ impl App {
 }
 
 impl AppState {
+    fn record_metric(&mut self, detail: MetricEventDetail) {
+        let trusted_active = self
+            .active_course
+            .as_ref()
+            .is_some_and(|active| active.course.trusted);
+        if trusted_active && let Some(workspace) = self.active_workspace.as_mut() {
+            let _ = workspace.record_metric(detail);
+            return;
+        }
+        if detail.event_name() == MetricEventName::CourseOpened {
+            self.pending_metrics
+                .retain(|record| record.event != MetricEventName::CourseOpened);
+        }
+        self.pending_metrics.push(LocalMetricRecord::now(detail));
+        if self.pending_metrics.len() > MAX_PENDING_METRICS {
+            let overflow = self.pending_metrics.len() - MAX_PENDING_METRICS;
+            self.pending_metrics.drain(..overflow);
+        }
+    }
+
+    fn drain_finished_command_metrics(&mut self) {
+        let finished = self.execution.take_finished_metrics();
+        if finished.is_empty() {
+            return;
+        }
+        for detail in finished {
+            self.record_metric(detail);
+        }
+    }
+
     fn stop_workspace_activity(&mut self) {
         self.verification = None;
         self.execution.clear();

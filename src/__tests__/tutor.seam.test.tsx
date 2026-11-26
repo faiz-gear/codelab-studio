@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { LearningProgress } from "../core/contracts";
 import { createBuiltinGoCourseFixture, FakeCoreClient } from "./fakeCoreClient";
@@ -11,20 +11,6 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: 1440,
-  });
-  Object.defineProperties(HTMLDialogElement.prototype, {
-    showModal: {
-      configurable: true,
-      value(this: HTMLDialogElement) {
-        this.setAttribute("open", "");
-      },
-    },
-    close: {
-      configurable: true,
-      value(this: HTMLDialogElement) {
-        this.removeAttribute("open");
-      },
-    },
   });
 });
 
@@ -379,13 +365,6 @@ describe("Pure ACP Tutor Session frontend seam (CoreClient)", () => {
     const manualPane = screen.getByTestId("manual-pane");
     const step2 = within(manualPane).getByTestId("step-2-section");
     const manualProseText = within(step2).getByText("GET /healthz").firstChild as Text;
-    selectDomText(manualProseText, 0, 1);
-    fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(screen.queryByTestId("selection-ask-pill")).toBeNull();
-
-    const t0 = performance.now();
-    selectDomText(manualProseText, 0, manualProseText.length);
     const origGetRect = Range.prototype.getBoundingClientRect;
     Range.prototype.getBoundingClientRect = () =>
       ({
@@ -400,9 +379,22 @@ describe("Pure ACP Tutor Session frontend seam (CoreClient)", () => {
         toJSON: () => ({}),
       }) as DOMRect;
     try {
+      // Use fake timers to verify the <150ms pill debounce budget deterministically across CI runners.
+      vi.useFakeTimers();
+      selectDomText(manualProseText, 0, 1);
       fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
-      const manualPill = await screen.findByTestId("selection-ask-pill");
-      expect(performance.now() - t0).toBeLessThan(150);
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      expect(screen.queryByTestId("selection-ask-pill")).toBeNull();
+
+      selectDomText(manualProseText, 0, manualProseText.length);
+      fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
+      act(() => {
+        vi.advanceTimersByTime(140);
+      });
+      const manualPill = screen.getByTestId("selection-ask-pill");
+      vi.useRealTimers();
       expect(manualPill).toHaveAttribute("data-zone", "manual");
       expect(manualPill).toHaveAttribute("data-placement", "above");
       expect(Number.parseInt(manualPill.style.top, 10) + 34).toBeLessThanOrEqual(220);
@@ -428,6 +420,7 @@ describe("Pure ACP Tutor Session frontend seam (CoreClient)", () => {
       });
       expect(Number.parseInt(screen.getByTestId("selection-ask-pill").style.top, 10)).toBeGreaterThanOrEqual(64);
     } finally {
+      vi.useRealTimers();
       Range.prototype.getBoundingClientRect = origGetRect;
     }
 

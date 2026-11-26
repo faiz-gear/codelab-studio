@@ -12,7 +12,7 @@ use crate::execution::verification::{PreparedCheck, model::CheckResult};
 use crate::execution::{CommandLaunch, Directory};
 use crate::model::StoreKind;
 use crate::storage::JsonStore;
-use crate::workspace::{self, Workspace};
+use crate::workspace::{self, MetricCompletionTrigger, MetricEventDetail, Workspace};
 use crate::{CheckKind, CheckStatus, DomainError, ErrorCode};
 
 use super::super::{AppEvent, AppState, Subscribers, emit_to_subscribers};
@@ -83,6 +83,14 @@ impl VerificationPlan {
 
     pub(super) fn check_ids(&self) -> impl Iterator<Item = &str> {
         self.checks.iter().map(|(check_id, _)| check_id.as_str())
+    }
+
+    pub(super) fn check_count(&self) -> u16 {
+        self.checks.len().min(u16::MAX as usize) as u16
+    }
+
+    pub(super) fn has_daemon(&self) -> bool {
+        self.daemon.is_some()
     }
 
     pub(super) fn confirmation_target(&self, workspace_root: PathBuf) -> ConfirmationTarget {
@@ -274,17 +282,31 @@ impl VerificationRun {
             }
 
             with_state(&shared, &cancelled, |state| {
+                let total_exercises = state
+                    .active_course
+                    .as_ref()
+                    .map_or(0, |active| active.course.total_exercises);
                 let workspace = state.active_workspace.as_mut().unwrap();
-                if let Err(error) = workspace.finish_checks(&chapter) {
-                    workspace.record_unsaved_check_result(
-                        &chapter.chapter_id,
-                        "persistence",
-                        CheckResult {
-                            error: Some(error),
-                            status: CheckStatus::Failed,
-                            ..CheckResult::running("persistence")
-                        },
-                    );
+                match workspace.finish_checks(&chapter) {
+                    Ok(true) => {
+                        let _ = workspace.record_metric(MetricEventDetail::ChapterMarkedDone {
+                            trigger: MetricCompletionTrigger::Verification,
+                            completed_exercises: workspace.completed_exercises(),
+                            total_exercises,
+                        });
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        workspace.record_unsaved_check_result(
+                            &chapter.chapter_id,
+                            "persistence",
+                            CheckResult {
+                                error: Some(error),
+                                status: CheckStatus::Failed,
+                                ..CheckResult::running("persistence")
+                            },
+                        );
+                    }
                 }
                 if let Some(task) = &mut state.verification {
                     task.chapter_id = None;

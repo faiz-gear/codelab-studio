@@ -1,6 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { CloseIcon, FolderIcon } from "../components/Icons";
-import type { ExternalIde, GlobalSettings } from "../core/contracts";
+import {
+  EXTERNAL_IDES,
+  type ExternalIde,
+  type GlobalSettings,
+  type UpdateSettingsPatch,
+} from "../core/contracts";
 import { formatDomainError, interpolate, type Messages } from "../i18n";
 import {
   MIN_SELECTION_CHARS,
@@ -16,13 +21,6 @@ import { WorkspaceTree } from "./WorkspaceTree";
 const MonacoText = lazy(() => import("./MonacoSurface").then((module) => ({ default: module.MonacoTextSurface })));
 const MonacoDiff = lazy(() => import("./MonacoSurface").then((module) => ({ default: module.MonacoDiffSurface })));
 
-const IDES: Record<ExternalIde, string> = {
-  vsCode: "VS Code",
-  cursor: "Cursor",
-  goLand: "GoLand",
-  intelliJIdea: "IntelliJ IDEA",
-};
-
 export function WorkspaceEditor({
   session,
   settings,
@@ -30,6 +28,8 @@ export function WorkspaceEditor({
   onChangeWorkspace,
   onRevokeTrust,
   onOpenRuntimeSettings,
+  onUpdateSettings,
+  onFileTreeOpen,
   switching,
   workspaceActionLabel,
   workspaceLabel,
@@ -45,6 +45,8 @@ export function WorkspaceEditor({
   workspaceLabel?: string;
   onRevokeTrust?: () => void;
   onOpenRuntimeSettings?: (trigger: HTMLElement) => void;
+  onUpdateSettings?: (patch: UpdateSettingsPatch) => void;
+  onFileTreeOpen?: () => void;
   switching: boolean;
   tutorOpen?: boolean;
   onSelectionChange?: (selection: ActiveSelection | null) => void;
@@ -71,7 +73,38 @@ export function WorkspaceEditor({
       setTreeOpen(false);
     }
   }
-  const [ide, setIde] = useState<ExternalIde>("vsCode");
+  useEffect(() => {
+    if (!tutorOpen || typeof window === "undefined") return;
+    const handleResize = () => {
+      if (window.innerWidth >= 1280 && window.innerWidth <= 1360) {
+        setTreeOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [tutorOpen]);
+
+  const [ide, setIde] = useState<ExternalIde>(settings.preferredIde);
+  const [syncedPreferredIde, setSyncedPreferredIde] = useState<ExternalIde>(settings.preferredIde);
+  if (syncedPreferredIde !== settings.preferredIde) {
+    setSyncedPreferredIde(settings.preferredIde);
+    setIde(settings.preferredIde);
+  }
+
+  function openFileTree() {
+    if (!treeOpen) {
+      setTreeOpen(true);
+      onFileTreeOpen?.();
+    }
+  }
+
+  function toggleFileTree() {
+    if (treeOpen) {
+      setTreeOpen(false);
+    } else {
+      openFileTree();
+    }
+  }
   const [fileForm, setFileForm] = useState<{ rename: string | null; value: string } | null>(null);
   const [closingFile, setClosingFile] = useState<string | null>(null);
   const [comparison, setComparison] = useState<{ left: string; right: string | null } | null>(null);
@@ -127,7 +160,7 @@ export function WorkspaceEditor({
     const handleSave = (event: globalThis.KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
-      if (!switching && !closingFile && !document.querySelector("dialog[open]")) {
+      if (!switching && !closingFile && !document.querySelector("dialog[open], .modal-scrim")) {
         void session.save();
       }
     };
@@ -179,7 +212,7 @@ export function WorkspaceEditor({
         {onRevokeTrust && <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={onRevokeTrust}>{t.revokeTrust}</button>}
       </div>
       <div className="workspace-controls">
-        <button type="button" className="btn btn--ghost btn--xs" aria-expanded={treeOpen} onClick={() => setTreeOpen(!treeOpen)}>
+        <button type="button" className="btn btn--ghost btn--xs" aria-expanded={treeOpen} onClick={toggleFileTree}>
           <FolderIcon />{t.files}
         </button>
         <button type="button" className="btn btn--ghost btn--xs" disabled={busy} onClick={() => setFileForm({ rename: null, value: "" })}>{t.newFile}</button>
@@ -191,15 +224,23 @@ export function WorkspaceEditor({
             if (pickingComparison || comparing) setComparison(null);
             else if (path) {
               setComparison({ left: path, right: null });
-              setTreeOpen(true);
+              openFileTree();
             }
           }}>{pickingComparison || comparing ? t.endCompare : t.compare}</button>
         <WorkspaceComparisonTrigger session={session} settings={settings} messages={messages}
           activePath={path} disabled={busy} />
         <div className="workspace-controls-spacer" />
         <div className="workspace-ide">
-          <select aria-label={t.chooseIde} value={ide} onChange={(event) => setIde(event.target.value as ExternalIde)}>
-            {Object.entries(IDES).map(([value, name]) => <option key={value} value={value}>{name}</option>)}
+          <select
+            aria-label={t.chooseIde}
+            value={ide}
+            onChange={(event) => {
+              const nextIde = event.target.value as ExternalIde;
+              setIde(nextIde);
+              onUpdateSettings?.({ preferredIde: nextIde });
+            }}
+          >
+            {EXTERNAL_IDES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
           <button type="button" className="btn btn--ghost btn--xs" disabled={busy || active?.file.kind === "missing" || !!active?.unavailable}
             onClick={() => void session.openIde(path ?? "", ide)}>{t.openIde}</button>
@@ -310,7 +351,7 @@ export function WorkspaceEditor({
                   {active.file.kind !== "missing" && <span className="mono">{interpolate(t.bytes, { size: active.file.sizeBytes })}</span>}
                 </>
               ) : (
-                <button type="button" className="btn btn--secondary btn--sm" onClick={() => setTreeOpen(true)}>{t.openFile}</button>
+                <button type="button" className="btn btn--secondary btn--sm" onClick={openFileTree}>{t.openFile}</button>
               )}
             </div>
           )}

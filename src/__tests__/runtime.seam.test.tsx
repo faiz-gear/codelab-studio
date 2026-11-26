@@ -50,21 +50,6 @@ const initialReport: PreflightReport = {
 
 beforeEach(() => {
   window.localStorage.clear();
-  // JSDOM omits the native modal dialog methods.
-  Object.defineProperties(HTMLDialogElement.prototype, {
-    showModal: {
-      configurable: true,
-      value(this: HTMLDialogElement) {
-        this.setAttribute("open", "");
-      },
-    },
-    close: {
-      configurable: true,
-      value(this: HTMLDialogElement) {
-        this.removeAttribute("open");
-      },
-    },
-  });
 });
 
 it("shows the same global install progress in Settings and Preflight after switching Courses", async () => {

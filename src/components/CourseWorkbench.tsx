@@ -10,6 +10,8 @@ import {
   type CommandBlock,
   type CourseSourceChangedEvent,
   type LoadedCourse,
+  type LocalMetricEvent,
+  type MetricSelectionAction,
   type TutorSessionSnapshot,
   type UpdateSettingsPatch,
 } from "../core/contracts";
@@ -132,6 +134,7 @@ export function CourseWorkbench({
   const [resultsOpen, setResultsOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const handleCloseOutline = useCallback(() => setOutlineOpen(false), []);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isTutorOverlay, setIsTutorOverlay] = useState(
@@ -218,8 +221,30 @@ export function CourseWorkbench({
     };
   }, [handleManualSelection]);
 
+  const recordLocalMetric = useCallback(
+    (event: LocalMetricEvent) => {
+      if (!client || !session || !course.trusted) return;
+      void client
+        .dispatch({
+          type: "recordLocalMetric",
+          payload: { workspaceId: session.workspace.id, event },
+        })
+        .catch(() => {});
+    },
+    [client, course.trusted, session]
+  );
+
   const triggerAskAI = useCallback(
-    (quote: ContextQuote, initialPrompt: string) => {
+    (
+      quote: ContextQuote,
+      initialPrompt: string,
+      metricAction: MetricSelectionAction = "ask"
+    ) => {
+      recordLocalMetric({
+        kind: "selectionAiClicked",
+        zone: quote.source,
+        action: metricAction,
+      });
       handleSelectionChange(null);
       setPendingAskRequest({
         id: ++askSeqRef.current,
@@ -228,7 +253,7 @@ export function CourseWorkbench({
       });
       onOpenTutor?.();
     },
-    [handleSelectionChange, onOpenTutor]
+    [handleSelectionChange, onOpenTutor, recordLocalMetric]
   );
 
   const handleConsumeAskRequest = useCallback((consumedId: number) => {
@@ -246,7 +271,8 @@ export function CourseWorkbench({
           label: null,
           text: selection.text,
         },
-        quickPromptForSelectionAction(action, messages)
+        quickPromptForSelectionAction(action, messages),
+        action
       );
     },
     [messages, triggerAskAI]
@@ -545,7 +571,7 @@ export function CourseWorkbench({
           activeChapterId={activeChapter?.chapterId ?? ""}
           messages={messages}
           onSelectChapter={onSelectChapter}
-          onClose={() => setOutlineOpen(false)}
+          onClose={handleCloseOutline}
         />
 
         {course.source.kind === "gitPack" && (
@@ -771,7 +797,8 @@ export function CourseWorkbench({
                                       label: check.title,
                                       text: formatCheckFailureQuote(check, result, messages, settings.locale),
                                     },
-                                    messages.tutor.quickPrompts.checkFailure
+                                    messages.tutor.quickPrompts.checkFailure,
+                                    "diagnoseError"
                                   )
                                 }
                               >
@@ -948,21 +975,25 @@ export function CourseWorkbench({
               workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
               onOpenRuntimeSettings={onOpenRuntimeSettings}
+              onUpdateSettings={onUpdateSettings}
+              onFileTreeOpen={() => recordLocalMetric({ kind: "fileTreeOpen" })}
               onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
               onSelectionChange={handleSelectionChange}
               onCursorContextChange={setEditorCursor}
             />
-            <div className="verification-tabs" role="tablist" aria-label={messages.verification.results} onKeyDown={event=>{
-              if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key) || (event.target as HTMLElement).getAttribute("role") !== "tab") return;
-              event.preventDefault(); const next = event.key === "Home" ? false : event.key === "End" ? true : !resultsOpen;
-              setResultsOpen(next); document.getElementById(next ? "verification-results-tab" : "execution-terminal-tab")?.focus();
-            }}>
-              <button type="button" role="tab" id="execution-terminal-tab" aria-selected={!resultsOpen} tabIndex={resultsOpen ? -1 : 0} aria-controls="execution-terminal-panel" onClick={()=>setResultsOpen(false)}>{messages.execution.terminal}</button>
-              <button type="button" role="tab" id="verification-results-tab" aria-selected={resultsOpen} tabIndex={resultsOpen ? 0 : -1} aria-controls="verification-results-panel" onClick={()=>setResultsOpen(true)}>{messages.verification.results} <span className="mono">{checkResults.filter(r=>r.status==="passed").length}/{checkResults.length}</span></button>
-            </div>
-            <div className="verification-record-actions">
-              <button className="btn btn--ghost btn--xs" type="button" onClick={()=>void verification.exportRecord()}>{messages.verification.export}</button>
-              <button className="btn btn--ghost btn--xs" type="button" onClick={()=>setResetOpen(true)}>{messages.verification.reset}</button>
+            <div className="verification-strip">
+              <div className="verification-tabs" role="tablist" aria-label={messages.verification.results} onKeyDown={event=>{
+                if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key) || (event.target as HTMLElement).getAttribute("role") !== "tab") return;
+                event.preventDefault(); const next = event.key === "Home" ? false : event.key === "End" ? true : !resultsOpen;
+                setResultsOpen(next); document.getElementById(next ? "verification-results-tab" : "execution-terminal-tab")?.focus();
+              }}>
+                <button type="button" role="tab" id="execution-terminal-tab" aria-selected={!resultsOpen} tabIndex={resultsOpen ? -1 : 0} aria-controls="execution-terminal-panel" onClick={()=>setResultsOpen(false)}>{messages.execution.terminal}</button>
+                <button type="button" role="tab" id="verification-results-tab" aria-selected={resultsOpen} tabIndex={resultsOpen ? 0 : -1} aria-controls="verification-results-panel" onClick={()=>setResultsOpen(true)}>{messages.verification.results} <span className="mono">{checkResults.filter(r=>r.status==="passed").length}/{checkResults.length}</span></button>
+              </div>
+              <div className="verification-record-actions">
+                <button className="btn btn--ghost btn--xs" type="button" onClick={()=>void verification.exportRecord()}>{messages.verification.export}</button>
+                <button className="btn btn--ghost btn--xs" type="button" onClick={()=>setResetOpen(true)}>{messages.verification.reset}</button>
+              </div>
             </div>
             <div role="tabpanel" id="verification-results-panel" aria-labelledby="verification-results-tab" hidden={!resultsOpen} className="verification-panel">
               <CheckResults
@@ -977,7 +1008,8 @@ export function CourseWorkbench({
                       label: check?.title ?? result.checkId,
                       text: formatCheckFailureQuote(check, result, messages, settings.locale),
                     },
-                    messages.tutor.quickPrompts.checkFailure
+                    messages.tutor.quickPrompts.checkFailure,
+                    "diagnoseError"
                   )
                 }
                 onAskAll={() => {
@@ -1002,7 +1034,8 @@ export function CourseWorkbench({
                       label: messages.verification.results,
                       text: summaryText,
                     },
-                    messages.tutor.quickPrompts.verificationPanel
+                    messages.tutor.quickPrompts.verificationPanel,
+                    "diagnoseError"
                   );
                 }}
               />
@@ -1027,7 +1060,8 @@ export function CourseWorkbench({
                         : messages.execution.portConflict,
                     text,
                   },
-                  messages.tutor.quickPrompts.portConflict
+                  messages.tutor.quickPrompts.portConflict,
+                  "diagnoseError"
                 )
               }
             />
@@ -1100,14 +1134,21 @@ export function CourseWorkbench({
         onDismiss={() => handleSelectionChange(null)}
       />
       {verification.confirmation && <CommandConfirmationDialog detail={verification.confirmation.detail} messages={messages}
-        onCancel={verification.dismiss} onConfirm={()=>{ const pending=verification.confirmation!; void verification.run(pending.chapterId,pending.detail.token); }} />}
+        onCancel={() => {
+          recordLocalMetric({ kind: "cmdRiskModalCancelled", source: "verification" });
+          verification.dismiss();
+        }}
+        onConfirm={()=>{ const pending=verification.confirmation!; void verification.run(pending.chapterId,pending.detail.token); }} />}
       {resetOpen && session && <WorkspaceDialog title={messages.verification.resetTitle} detail={messages.verification.resetDetail}
         cancel={messages.workspace.cancel} onCancel={()=>setResetOpen(false)}>
         <button className="btn btn--danger btn--sm" type="button" onClick={()=>{setResetOpen(false); void verification.update({type:"resetProgress",payload:{workspaceId:session.workspace.id}});}}>{messages.verification.reset}</button>
       </WorkspaceDialog>}
       {workbench && pendingConfirmation && (
         <CommandConfirmationDialog detail={pendingConfirmation.detail} messages={messages}
-          onCancel={() => workbench.dismissConfirmation()}
+          onCancel={() => {
+            recordLocalMetric({ kind: "cmdRiskModalCancelled", source: "commandBlock" });
+            workbench.dismissConfirmation();
+          }}
           onConfirm={() => {
             const { request, detail } = pendingConfirmation;
             void workbench.run({ ...request, confirmation: detail.token }).catch(onExecutionError);

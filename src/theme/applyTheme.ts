@@ -1,7 +1,9 @@
 import {
   ACCENT_PRESETS,
   DEFAULT_SETTINGS,
+  EXTERNAL_IDES,
   type AccentPreset,
+  type ExternalIde,
   type GlobalSettings,
   type Locale,
   type ThemeMode,
@@ -9,9 +11,21 @@ import {
 
 export const APPEARANCE_CACHE_KEY = "codelab.appearance.v1";
 
+export const ACCENT_SWATCH_COLOR: Record<AccentPreset, string> = {
+  neutral: "#525252",
+  violet: "#6836f5",
+  blue: "#0562ef",
+  green: "#077e53",
+  amber: "#9c5b00",
+  orange: "#b84900",
+  coral: "#c5342b",
+  rose: "#bc2470",
+};
+
 const VALID_THEMES = new Set<ThemeMode>(["light", "dark"]);
 const VALID_ACCENTS = new Set<AccentPreset>(ACCENT_PRESETS);
 const VALID_LOCALES = new Set<Locale>(["zh-CN", "en-US"]);
+const VALID_IDES = new Set<ExternalIde>(EXTERNAL_IDES.map((ide) => ide.id));
 
 export function computeCodeLineHeight(size: number): number {
   return Math.round(size + 8.5);
@@ -44,12 +58,17 @@ export function readCachedSettings(): GlobalSettings {
       parsed.locale && VALID_LOCALES.has(parsed.locale)
         ? parsed.locale
         : DEFAULT_SETTINGS.locale;
+    const preferredIde =
+      parsed.preferredIde && VALID_IDES.has(parsed.preferredIde)
+        ? parsed.preferredIde
+        : DEFAULT_SETTINGS.preferredIde;
 
     return {
       theme,
       accent,
       codeFontSize,
       locale,
+      preferredIde,
       tutor: { ...DEFAULT_SETTINGS.tutor },
     };
   } catch {
@@ -93,6 +112,7 @@ export function applySettingsToDocument(
         accent: settings.accent,
         codeFontSize: settings.codeFontSize,
         locale: settings.locale,
+        preferredIde: settings.preferredIde,
       })
     );
   } catch {

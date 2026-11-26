@@ -5,6 +5,7 @@ import {
   type LoadedCourse,
 } from "../core/contracts";
 import type { Messages } from "../i18n";
+import { moveVerticalListFocus } from "./focusTrap";
 import { PreflightPopover } from "./PreflightPopover";
 import type { RuntimePanelProps } from "./RuntimePanel";
 import {
@@ -32,7 +33,7 @@ export interface TopBarProps {
   appearanceTriggerRef: RefObject<HTMLButtonElement | null>;
   onGoHome: () => void;
   onSelectCourse: (course: CourseSummary) => void;
-  onOpenImportModal: () => void;
+  onOpenImportModal: (trigger?: HTMLElement | null) => void;
   onToggleFocusMode: () => void;
   onToggleTutor?: () => void;
   onOpenAppearance: () => void;
@@ -64,9 +65,16 @@ export function TopBar({
 }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const courseTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
+    queueMicrotask(() => {
+      const activeItem = menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"].is-active');
+      const firstItem = menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]');
+      (activeItem ?? firstItem)?.focus();
+    });
     const handlePointerDown = (event: MouseEvent) => {
       if (
         dropdownRef.current &&
@@ -77,7 +85,9 @@ export function TopBar({
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setMenuOpen(false);
+        queueMicrotask(() => courseTriggerRef.current?.focus());
       }
     };
     document.addEventListener("mousedown", handlePointerDown);
@@ -110,6 +120,7 @@ export function TopBar({
 
       <div ref={dropdownRef} className="course-dd">
         <button
+          ref={courseTriggerRef}
           type="button"
           className="course-trigger"
           aria-haspopup="menu"
@@ -128,9 +139,11 @@ export function TopBar({
 
         {menuOpen ? (
           <div
+            ref={menuRef}
             className="dd-menu"
             role="menu"
             aria-label={messages.topbar.courseMenuLabel}
+            onKeyDown={(event) => moveVerticalListFocus(menuRef.current, '[role="menuitem"]', event)}
           >
             {builtinCourses.length > 0 ? (
               <div className="dd-group">
@@ -209,7 +222,7 @@ export function TopBar({
               className="dd-item"
               onClick={() => {
                 setMenuOpen(false);
-                onOpenImportModal();
+                onOpenImportModal(courseTriggerRef.current);
               }}
             >
               <FolderDownIcon size={14} />

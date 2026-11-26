@@ -5,6 +5,7 @@ use cap_std::fs::Dir;
 use serde::{Deserialize, Serialize};
 
 use super::command_cwd::{CommandCwds, valid_cwds};
+use super::metrics::WorkspaceMetrics;
 use super::paths::{METADATA_DIR, WorkspacePaths};
 use super::progress::{Progress, ProgressCourse};
 use crate::course::{CourseSource, LoadedCourse, Starter, git_pack};
@@ -21,18 +22,14 @@ struct Binding {
     git_starter_snapshot: Option<String>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Metrics {
-    course_opened: u64,
-}
-
 pub(super) struct WorkspaceMetadata {
     pub recovery_notices: Vec<StorageRecoveryNotice>,
     pub completed_exercises: u32,
     pub progress: Progress,
     pub progress_course: ProgressCourse,
     pub progress_store: JsonStore<Progress>,
+    pub metrics: WorkspaceMetrics,
+    pub metrics_store: JsonStore<WorkspaceMetrics>,
     pub tutor_history: TutorHistory,
     pub tutor_history_store: JsonStore<TutorHistory>,
     pub command_cwds: CommandCwds,
@@ -117,7 +114,9 @@ impl WorkspaceMetadata {
             progress_store.save_atomic(&progress.value)?;
         }
         let command_cwds = command_cwd_store.load_or_recover(valid_cwds)?;
-        let mut metrics = metrics_store.load_or_recover(|_: &Metrics| true)?;
+        let mut metrics =
+            metrics_store.load_or_recover(|metrics: &WorkspaceMetrics| metrics.is_valid())?;
+        metrics.value.normalize_legacy();
         let mut tutor_history =
             tutor_history_store.load_or_recover(|history: &TutorHistory| history.is_valid())?;
         if tutor_history.value.recover_interrupted() {
@@ -138,8 +137,12 @@ impl WorkspaceMetadata {
         {
             progress_store.save_atomic(&progress.value)?;
         }
-        metrics.value.course_opened = metrics.value.course_opened.saturating_add(1);
-        metrics_store.save_atomic(&metrics.value)?;
+        if !dir
+            .try_exists("metrics.json")
+            .map_err(|err| metadata_error(ErrorCode::StorageReadFailed, err))?
+        {
+            metrics_store.save_atomic(&metrics.value)?;
+        }
 
         let progress_course = ProgressCourse::from_course(course);
         let completed_exercises = progress.value.completed_for(&progress_course);
@@ -158,6 +161,8 @@ impl WorkspaceMetadata {
             progress: progress.value,
             progress_course,
             progress_store,
+            metrics: metrics.value,
+            metrics_store,
             tutor_history: tutor_history.value,
             tutor_history_store,
             git_starter_snapshot: bound.git_starter_snapshot,

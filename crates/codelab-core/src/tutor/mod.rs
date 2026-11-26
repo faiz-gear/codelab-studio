@@ -15,7 +15,8 @@ use chrono::{DateTime, Utc};
 use crate::error::{DomainError, ErrorCode};
 use crate::storage::JsonStore;
 use crate::workspace::{
-    MAX_WORKSPACE_TEXT_BYTES, WorkspaceFileContents, WorkspaceFilesChanged, WorkspacePaths,
+    MAX_WORKSPACE_TEXT_BYTES, MetricEventDetail, MetricPermissionDecision, WorkspaceFileContents,
+    WorkspaceFilesChanged, WorkspacePaths,
 };
 
 pub use self::acp::AcpStdioBackend;
@@ -77,6 +78,7 @@ pub(crate) struct TutorManager {
     backend: Arc<dyn TutorBackend>,
     on_session_updated: Arc<dyn Fn(TutorSessionSnapshot) + Send + Sync>,
     on_workspace_files_changed: Arc<dyn Fn(WorkspaceFilesChanged) + Send + Sync>,
+    on_metric: Arc<dyn Fn(u64, MetricEventDetail) + Send + Sync>,
     state: Arc<Mutex<TutorRuntimeState>>,
 }
 
@@ -86,11 +88,13 @@ impl TutorManager {
         initial_settings: TutorSettings,
         on_session_updated: impl Fn(TutorSessionSnapshot) + Send + Sync + 'static,
         on_workspace_files_changed: impl Fn(WorkspaceFilesChanged) + Send + Sync + 'static,
+        on_metric: impl Fn(u64, MetricEventDetail) + Send + Sync + 'static,
     ) -> Self {
         Self {
             backend,
             on_session_updated: Arc::new(on_session_updated),
             on_workspace_files_changed: Arc::new(on_workspace_files_changed),
+            on_metric: Arc::new(on_metric),
             state: Arc::new(Mutex::new(TutorRuntimeState {
                 settings: initial_settings,
                 workspace: None,
@@ -507,6 +511,7 @@ impl TutorManager {
             fs_read_result,
             fs_write_result,
             changed_paths,
+            metric,
         ) = {
             let mut state = self.lock();
             state.require_workspace(request.workspace_id)?;
@@ -516,12 +521,13 @@ impl TutorManager {
             let Some(session) = state.session.clone() else {
                 return Err(DomainError::new(ErrorCode::AcpProcessExited));
             };
-            let (ws_files, ws_saved_at, workspace_id) = {
+            let (ws_files, ws_saved_at, workspace_id, policy) = {
                 let ws = state.workspace.as_ref().expect("checked workspace");
                 (
                     Arc::clone(&ws.files),
                     Arc::clone(&ws.last_saved_at),
                     ws.workspace_id,
+                    state.settings.permission_policy,
                 )
             };
 
@@ -591,6 +597,16 @@ impl TutorManager {
                 };
             }
             let snapshot = state.snapshot_opt().expect("attached workspace");
+            let metric = permission_decision_metric(
+                ctx.prompt.kind,
+                if request.allow {
+                    MetricPermissionDecision::Approved
+                } else {
+                    MetricPermissionDecision::Denied
+                },
+                policy,
+                &ctx.eval,
+            );
             (
                 session,
                 ctx,
@@ -601,6 +617,7 @@ impl TutorManager {
                 fs_read_result,
                 fs_write_result,
                 changed_paths,
+                metric,
             )
         };
 
@@ -611,6 +628,7 @@ impl TutorManager {
                 paths: changed_paths,
             });
         }
+        (self.on_metric)(workspace_id, metric);
         (self.on_session_updated)(updated_snapshot.clone());
         session.respond_permission(
             &ctx.prompt.request_id,
@@ -650,7 +668,15 @@ impl TutorManager {
     pub(crate) fn shutdown(&self) {
         self.detach_workspace();
     }
+}
 
+impl Drop for TutorManager {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+impl TutorManager {
     fn handle_backend_event(&self, generation: u64, event: BackendEvent) {
         match event {
             BackendEvent::Chunk { turn_id, delta } => {
@@ -804,7 +830,7 @@ impl TutorManager {
             WaitForUser,
         }
 
-        let (action, changed_event, snapshot) = {
+        let (action, changed_event, metric, snapshot) = {
             let mut state = self.lock();
             if state.session_generation != generation {
                 return;
@@ -844,8 +870,14 @@ impl TutorManager {
             let ws_saved_at = Arc::clone(&ws.last_saved_at);
             let workspace_id = ws.workspace_id;
 
-            let (action, changed_event) = match eval.decision {
+            let (action, changed_event, metric) = match eval.decision {
                 PolicyDecision::BlockSensitive => {
+                    let metric = permission_decision_metric(
+                        request.kind,
+                        MetricPermissionDecision::BlockedSensitive,
+                        policy,
+                        &eval,
+                    );
                     let record = build_permission_record(
                         &turn_id,
                         &request,
@@ -865,9 +897,16 @@ impl TutorManager {
                             fs_write: None,
                         },
                         None,
+                        Some((workspace_id, metric)),
                     )
                 }
                 PolicyDecision::AutoAllow => {
+                    let metric = permission_decision_metric(
+                        request.kind,
+                        MetricPermissionDecision::AutoAllowed,
+                        policy,
+                        &eval,
+                    );
                     let fs_read =
                         if request.is_fs_method && request.kind == TutorPermissionKind::Read {
                             Some(execute_approved_read(&ws_files, &eval))
@@ -893,6 +932,7 @@ impl TutorManager {
                             fs_write: None,
                         },
                         None,
+                        Some((workspace_id, metric)),
                     )
                 }
                 PolicyDecision::AskUser if has_prior_grant => {
@@ -934,6 +974,7 @@ impl TutorManager {
                             fs_write,
                         },
                         changed,
+                        None,
                     )
                 }
                 PolicyDecision::AskUser => {
@@ -957,15 +998,18 @@ impl TutorManager {
                         },
                     );
                     state.status = TutorSessionStatus::AwaitingPermission;
-                    (ImmediateAction::WaitForUser, None)
+                    (ImmediateAction::WaitForUser, None, None)
                 }
             };
 
-            (action, changed_event, state.snapshot_opt())
+            (action, changed_event, metric, state.snapshot_opt())
         };
 
         if let Some(event) = changed_event {
             (self.on_workspace_files_changed)(event);
+        }
+        if let Some((workspace_id, metric)) = metric {
+            (self.on_metric)(workspace_id, metric);
         }
         if let Some(snapshot) = snapshot {
             (self.on_session_updated)(snapshot);
@@ -1132,6 +1176,22 @@ impl TutorRuntimeState {
             can_retry,
             messages: ws.history.messages.clone(),
         })
+    }
+}
+
+fn permission_decision_metric(
+    kind: TutorPermissionKind,
+    decision: MetricPermissionDecision,
+    policy: PermissionPolicy,
+    eval: &policy::PermissionEvaluation,
+) -> MetricEventDetail {
+    MetricEventDetail::AcpPermissionDecision {
+        kind,
+        decision,
+        policy,
+        outside_workspace: eval.outside_workspace,
+        high_risk: eval.high_risk,
+        sensitive: eval.sensitive,
     }
 }
 

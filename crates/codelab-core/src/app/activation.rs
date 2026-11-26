@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use crate::course::{CourseWatcher, LoadedCourse, OpenedCourse, Starter};
 use crate::tutor::TutorManager;
-use crate::workspace::{Workspace, WorkspaceSummary};
+use crate::workspace::{
+    LocalMetricRecord, MetricEventDetail, MetricEventName, Workspace, WorkspaceSummary,
+};
 
 use super::{ActiveCourseState, AppEvent, AppState, Subscribers, emit_to_subscribers};
 
@@ -86,8 +88,20 @@ impl CourseWorkspaceActivation {
         &self,
         state: &mut AppState,
         mut workspace: Workspace,
-    ) -> WorkspaceSummary {
+        course: &LoadedCourse,
+    ) -> Result<WorkspaceSummary, crate::DomainError> {
         state.stop_workspace_activity();
+        let mut pending = std::mem::take(&mut state.pending_metrics);
+        if !pending
+            .iter()
+            .any(|record| record.event == MetricEventName::CourseOpened)
+        {
+            pending.push(LocalMetricRecord::now(MetricEventDetail::CourseOpened {
+                course_kind: (&course.source).into(),
+                language: course.language,
+            }));
+        }
+        workspace.record_metric_records(pending)?;
         state.next_workspace_id += 1;
         let summary = workspace.summary.clone();
         if let Some(attachment) = workspace.take_tutor_attachment() {
@@ -96,6 +110,6 @@ impl CourseWorkspaceActivation {
             self.tutor.detach_workspace();
         }
         state.active_workspace = Some(workspace);
-        summary
+        Ok(summary)
     }
 }

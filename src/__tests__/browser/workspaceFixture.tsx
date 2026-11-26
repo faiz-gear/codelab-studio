@@ -1,12 +1,8 @@
-import "../../styles/tokens.css";
-import "../../styles/app.css";
-import "../../styles/runtime.css";
-import "../../styles/workspace.css";
-import "../../styles/execution.css";
+import "../../styles/loadStyles";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../App";
-import { DEFAULT_SETTINGS, type AppCommand, type AppResponse, type LanguageFeatureResult, type LearningProgress } from "../../core/contracts";
+import { DEFAULT_SETTINGS, type AppCommand, type AppResponse, type LanguageFeatureResult, type LearningProgress, type Locale } from "../../core/contracts";
 import { FakeCoreClient } from "../fakeCoreClient";
 
 declare global {
@@ -17,6 +13,7 @@ declare global {
       writeTerminalOutput(text: string): void;
       terminalInput(): string;
       setCheckProgress(progress: LearningProgress): void;
+      setLocale(locale: Locale): Promise<void>;
     };
   }
 }
@@ -64,6 +61,9 @@ window.workspaceSmoke = {
   readMainFile() {
     const file = client.readDiskFile(root, "main.go");
     return file?.kind === "text" ? file.text : null;
+  },
+  async setLocale(locale: Locale) {
+    await client.dispatch({ type: "updateSettings", payload: { locale } });
   },
 };
 

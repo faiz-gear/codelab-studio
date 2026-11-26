@@ -144,10 +144,6 @@ it("shows a conflict for a background tab and keeps one tab when its path is cre
 });
 
 it("shows active language status, links to runtime settings, and keeps editing after degradation", async () => {
-  Object.defineProperties(HTMLDialogElement.prototype, {
-    showModal: { configurable: true, value(this: HTMLDialogElement) { this.setAttribute("open", ""); } },
-    close: { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute("open"); } },
-  });
   const { client, user } = await openWorkspace();
   const syncs = () => client.commandLog.filter((command) => command.type === "syncLanguageDocument");
   expect(syncs()).toEqual([{

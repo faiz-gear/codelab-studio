@@ -4,6 +4,7 @@ import {
 } from "../core/contracts";
 import type { Messages } from "../i18n";
 import { CloseIcon, FolderDownIcon, FolderIcon } from "./Icons";
+import { trapFocusOnTab } from "./focusTrap";
 
 export type ImportMode = "localMarkdown" | "localPack" | "gitPack" | "author";
 export type DraftOpenCommand = Extract<AppCommand, { type: "createCourseDraft" | "openCourseDraft" }>;
@@ -37,6 +38,7 @@ export function ImportCourseModal({
   const [referenceSolution, setReferenceSolution] = useState(false);
   const [pathValue, setPathValue] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputId = useId();
   const titleId = useId();
@@ -47,7 +49,9 @@ export function ImportCourseModal({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
   }, []);
 
   useEffect(() => {
@@ -55,6 +59,8 @@ export function ImportCourseModal({
       if (event.key === "Escape") {
         event.preventDefault();
         handleClose();
+      } else if (event.key === "Tab") {
+        trapFocusOnTab(cardRef.current, event);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -128,6 +134,7 @@ export function ImportCourseModal({
       }}
     >
       <div
+        ref={cardRef}
         className="modal-card"
         role="dialog"
         aria-modal="true"
