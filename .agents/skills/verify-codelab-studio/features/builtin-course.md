@@ -1,6 +1,6 @@
-# Open the built-in Go / GoFrame course
+# Open the built-in courses
 
-The welcome page opens the bundled Go / GoFrame manual in the workbench.
+The welcome page opens the bundled manuals in the workbench. Start with Go / GoFrame for the save and restart journey.
 
 ## Sub-features
 
@@ -16,6 +16,10 @@ On a fresh welcome page, use **开始内置 Go / GoFrame 实战** (**Start Built
 - Start from an empty data directory and a ready CodeLab Studio window. Capture `01-welcome.png` with the primary button visible.
 - Click **开始内置 Go / GoFrame 实战**. Confirm the Go / GoFrame manual appears beside **选择 Workspace** (**Choose Workspace**). Capture `02-course.png`.
 - To check the catalog and menu, use the top-bar **CodeLab Studio** button to return home before opening each entry. Confirm Exercise 0 and **选择 Workspace** for both.
+
+## Check the language filters
+
+After the Go save and restart journey, select **JS/TS**, **Python**, and **Java** from Home in turn. For each filter, capture the matching card and open it. Confirm Exercise 1 and **选择 Workspace**. Bind a separate scratch folder for each [Checks recipe](exercise-checks.md) before returning Home. The cards are **TypeScript 数据流水线实战**, **Python 数据清洗与订单统计**, and **Java 21 并发限流器实战**.
 
 ## Gotchas
 

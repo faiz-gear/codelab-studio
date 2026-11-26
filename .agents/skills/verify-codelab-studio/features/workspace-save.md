@@ -24,8 +24,8 @@ Open the [built-in course](builtin-course.md) from the welcome page, then choose
    printf 'folder=%s\nexpected=%s\n' "$VERIFY_WORKSPACE" "$VERIFY_LINE"
    ```
 
-2. Click **选择 Workspace** (**Choose Workspace**). In the native folder picker, navigate to the printed folder and select it. On macOS, press `⌘⇧G`, paste the absolute path, wait for the matching folder suggestion, then press Return. Capture `03-picker.png` when the picker shows the temporary folder and click **Open** if the picker stays open. Check that the workbench displays the same Workspace path after binding.
-3. Click **文件** (**Files**), expand **task-api** and click **main.go**. Confirm the status path reads `task-api/main.go` and Monaco line 1 reads `package main`. Capture `04-starter.png`. Establish the disk baseline before typing.
+2. Click **选择 Workspace** (**Choose Workspace**). On macOS, press `⌘⇧G`, paste the absolute path, wait for the matching folder suggestion, then press Return. Capture `03-picker.png` when the picker shows the temporary folder. Activate **Open** or press Return again to confirm the folder. Check that the workbench displays the same Workspace path after binding.
+3. Click **文件** (**Files**), expand **task-api** and click **main.go**. Confirm the status path reads `task-api/main.go` and Monaco line 1 reads `package main`. Capture `04-starter.png`. Require a PASS on the disk baseline before typing.
 
    ```sh
    if cmp -s builtin-courses/go-goframe-practice/starter/task-api/main.go "$VERIFY_FILE"; then
@@ -33,11 +33,11 @@ Open the [built-in course](builtin-course.md) from the welcome page, then choose
    else
      printf 'FAIL Starter missing or different before edit\n'
      false
-   fi > "$VERIFY_EVIDENCE/file-assertions.log" 2>&1
+   fi > "$VERIFY_EVIDENCE/file-assertions.log" 2>&1 &&
    cat "$VERIFY_EVIDENCE/file-assertions.log"
    ```
 
-4. In Monaco, place the caret at the end of line 1 (`⌘→` on macOS or End on Linux/Windows), then type the suffix of `VERIFY_LINE`, including the space before `//`. Confirm the editor shows **有未保存的修改** (**Unsaved changes**) and the new comment. Capture `05-edited.png`. Use **保存** (**Save**) or `⌘S` / `Ctrl+S`, wait for **所有修改已保存** (**All changes saved**), then capture `06-saved.png`. Run the disk assertion from the second shell and require a PASS.
+4. Focus Monaco's editable text area. Move the caret to the end of line 1 (`⌘↑`, then `⌘→` on macOS), then type the suffix of `VERIFY_LINE`, including the space before `//`. Confirm the editor shows **有未保存的修改** (**Unsaved changes**) and the new comment. Capture `05-edited.png`. Use **保存** (**Save**) or `⌘S` / `Ctrl+S`, wait for **所有修改已保存** (**All changes saved**), then capture `06-saved.png`. Run the disk assertion from the second shell and require a PASS.
 
    ```sh
    verify_saved_file() {
@@ -48,18 +48,18 @@ Open the [built-in course](builtin-course.md) from the welcome page, then choose
        return 1
      fi
    }
-   verify_saved_file after-save >> "$VERIFY_EVIDENCE/file-assertions.log" 2>&1
+   verify_saved_file after-save >> "$VERIFY_EVIDENCE/file-assertions.log" 2>&1 &&
    cat "$VERIFY_EVIDENCE/file-assertions.log"
    ```
 
 5. Quit the app and confirm the first app and listener have exited using [Cleanup](../SKILL.md#cleanup). Keep both scratch directories at this point. In the launch shell, run `launch_verify 2`, or repeat the launch command with the same `CODELAB_DATA_DIR` and `launch-2.log`. Run Doctor again and record the new PID. Follow [Resume a Workspace](recent-workspace.md) to reopen the file and capture the editor after restart. Assert the file on disk again.
 
    ```sh
-   verify_saved_file after-restart >> "$VERIFY_EVIDENCE/file-assertions.log" 2>&1
+   verify_saved_file after-restart >> "$VERIFY_EVIDENCE/file-assertions.log" 2>&1 &&
    cat "$VERIFY_EVIDENCE/file-assertions.log"
    ```
 
-6. Require both disk assertions and the marker visibly present in Monaco after restart. Record the result in `run.txt`. Complete [Cleanup](../SKILL.md#cleanup) and verify the evidence survives.
+6. Require both disk assertions and the marker visibly present in Monaco after restart. Record the result in `run.txt`. If an assertion fails, read `file-assertions.log` directly. For the full pass, leave the app and marker open and continue with [Reference Solution](reference-solution.md). For a save-only pass, complete [Cleanup](../SKILL.md#cleanup) and verify the evidence survives.
 
 ## Gotchas
 
