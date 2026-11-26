@@ -690,6 +690,35 @@ export interface WorkspaceTutorRequest {
   workspaceId: number;
 }
 
+export type LanguageDocument = { path: string; text: string };
+export type LanguageDocumentVersion = WorkspacePath & { version: number };
+export type LanguageStatus = "starting" | "ready" | "missing" | "degraded";
+export type LanguageStatusChanged = LanguageDocumentVersion & { language: CourseLanguage; status: LanguageStatus };
+export type LanguageDiagnostics = LanguageDocumentVersion & { diagnostics: LanguageDiagnostic[] };
+export type LanguageFeature = "completion" | "hover";
+
+export type LanguagePosition = { line: number; character: number };
+export type LanguageRange = { start: LanguagePosition; end: LanguagePosition };
+export type LanguageMarkup = string | { kind: string; value: string } | { language: string; value: string };
+export type LanguageDiagnostic = {
+  range: LanguageRange; message: string; severity?: number | null; source?: string | null; code?: string | number | null;
+};
+export type LanguageCompletionItem = {
+  label: string;
+  kind?: number | null;
+  detail?: string | null;
+  documentation?: LanguageMarkup | null;
+  filterText?: string | null;
+  sortText?: string | null;
+  insertText?: string | null;
+  insertTextFormat?: number | null;
+  textEdit?: { newText: string; range?: LanguageRange | null; insert?: LanguageRange | null; replace?: LanguageRange | null } | null;
+  additionalTextEdits?: { range: LanguageRange; newText: string }[];
+};
+export type LanguageFeatureResult =
+  | { kind: "completion"; value: { items: LanguageCompletionItem[]; isIncomplete?: boolean } }
+  | { kind: "hover"; value: { contents: LanguageMarkup[]; range?: LanguageRange | null } };
+
 export type AppCommand =
   | { type: "bootstrap" }
   | { type: "getSettings" }
@@ -716,6 +745,8 @@ export type AppCommand =
   | { type: "openRecentWorkspace"; payload: { path: string } }
   | { type: "listWorkspaceFiles"; payload: WorkspacePath }
   | { type: "readWorkspaceFile"; payload: WorkspacePath }
+  | { type: "syncLanguageDocument"; payload: { workspaceId: number; version: number; document: LanguageDocument | null } }
+  | { type: "requestLanguageFeature"; payload: { workspaceId: number; version: number; feature: LanguageFeature; line: number; character: number } }
   | { type: "writeWorkspaceFile"; payload: WorkspacePath & { text: string; expectedRevision: string | null } }
   | { type: "previewChapterSolution"; payload: { workspaceId: number; chapterId: string } }
   | { type: "listStarterFiles"; payload: { workspaceId: number } }
@@ -774,6 +805,8 @@ export type AppResponse =
   | { type: "recentWorkspaceOpened"; payload: { course: LoadedCourse; workspace: WorkspaceSummary | null } }
   | { type: "workspaceEntries"; payload: WorkspaceEntry[] }
   | { type: "workspaceFile"; payload: WorkspaceFile }
+  | { type: "languageDocumentSynced" }
+  | { type: "languageFeature"; payload: LanguageFeatureResult | null }
   | { type: "workspaceFileConflict"; payload: WorkspaceFile }
   | { type: "workspaceComparisons"; payload: WorkspaceComparison[] }
   | { type: "starterFiles"; payload: string[] }
@@ -803,6 +836,8 @@ export type AppEvent =
   | { type: "courseSourceChanged"; payload: CourseSourceChangedEvent }
   | { type: "courseTrustChanged"; payload: { source: CourseSource; trusted: boolean } }
   | { type: "workspaceFilesChanged"; payload: WorkspaceFilesChanged }
+  | { type: "languageStatusChanged"; payload: LanguageStatusChanged }
+  | { type: "languageDiagnostics"; payload: LanguageDiagnostics }
   | { type: "preflightUpdated"; payload: PreflightReport }
   | { type: "tutorSessionUpdated"; payload: TutorSessionSnapshot }
   | { type: "shutdownCompleted"; payload: ShutdownReport };

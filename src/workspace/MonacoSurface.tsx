@@ -11,6 +11,8 @@ import "monaco-editor/languages/definitions/typescript/register.js";
 import "monaco-editor/languages/definitions/yaml/register.js";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import type { GlobalSettings } from "../core/contracts";
+import type { LanguageSession } from "./languageSession";
+import { connectLanguage } from "./monacoLanguage";
 import { editorText, type EditorTab } from "./editorSession";
 
 globalThis.MonacoEnvironment = { getWorker: () => new EditorWorker() };
@@ -39,6 +41,7 @@ const editorOptions = {
 function language(path: string) {
   const basename = path.slice(path.lastIndexOf("/") + 1);
   const extension = basename.slice(basename.lastIndexOf("."));
+  if (extension === ".pyi") return "python";
   return monaco.languages.getLanguages().find(({ extensions, filenames }) =>
     filenames?.includes(basename) || extensions?.includes(extension)
   )?.id;
@@ -51,12 +54,13 @@ type EditorModel = {
   value: string;
 };
 
-export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdit }: {
+export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdit, languageSession }: {
   tabs: EditorTab[];
   path: string | null;
   label: string;
   settings: GlobalSettings;
   readOnly: boolean;
+  languageSession?: LanguageSession;
   onEdit: (path: string, text: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -65,6 +69,7 @@ export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdi
   const select = useRef<string | null>(null);
   const edit = useRef(onEdit);
   const syncing = useRef(false);
+  const languageBridge = useRef<ReturnType<typeof connectLanguage> | null>(null);
 
   useEffect(() => {
     edit.current = onEdit;
@@ -86,6 +91,20 @@ export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdi
       modelsByPath.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (!languageSession) return;
+    const bridge = connectLanguage(languageSession, () => {
+      const path = select.current;
+      const model = editor.current?.getModel();
+      return path !== null && model ? { path, model } : undefined;
+    });
+    languageBridge.current = bridge;
+    return () => {
+      bridge.dispose();
+      languageBridge.current = null;
+    };
+  }, [languageSession]);
 
   useEffect(() => {
     const instance = editor.current;
@@ -122,6 +141,7 @@ export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdi
       instance.setModel(next?.model ?? null);
       if (next?.view) instance.restoreViewState(next.view);
       select.current = path;
+      languageBridge.current?.refresh();
     }
     for (const [key, item] of items) {
       if (tabs.some((tab) => tab.file.path === key && editorText(tab) !== null)) continue;

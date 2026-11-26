@@ -22,6 +22,10 @@ use crate::course::{
 use crate::error::{DomainError, ErrorCode};
 use crate::execution::preparation::{CommandPreparation, ConfirmationTarget};
 use crate::execution::{Execution, model::*};
+use crate::lsp::{
+    LanguageDiagnostics, LanguageDocumentUpdate, LanguageFeatureRequest, LanguageFeatureResult,
+    LanguageServers, LanguageStatusChanged, REQUEST_TIMEOUT,
+};
 use crate::model::{
     AppBootstrap, GlobalSettings, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,
     RecordRecentWorkspaceInput, ShutdownReport, StorageRecoveryNotice, StoreKind, TrustEntry,
@@ -99,6 +103,8 @@ pub enum AppCommand {
     },
     ListWorkspaceFiles(WorkspacePath),
     ReadWorkspaceFile(WorkspacePath),
+    SyncLanguageDocument(LanguageDocumentUpdate),
+    RequestLanguageFeature(LanguageFeatureRequest),
     WriteWorkspaceFile(WorkspaceFileWrite),
     PreviewChapterSolution {
         #[serde(rename = "workspaceId")]
@@ -165,6 +171,8 @@ pub enum AppResponse {
     RecentWorkspaceOpened(RecentWorkspaceOpened),
     WorkspaceEntries(Vec<WorkspaceEntry>),
     WorkspaceFile(WorkspaceFile),
+    LanguageDocumentSynced,
+    LanguageFeature(Option<LanguageFeatureResult>),
     WorkspaceFileConflict(WorkspaceFile),
     WorkspaceComparisons(Vec<WorkspaceComparison>),
     StarterFiles(Vec<String>),
@@ -197,6 +205,8 @@ pub enum AppEvent {
     CourseSourceChanged(CourseSourceChangedEvent),
     CourseTrustChanged(CourseTrustChanged),
     WorkspaceFilesChanged(WorkspaceFilesChanged),
+    LanguageStatusChanged(LanguageStatusChanged),
+    LanguageDiagnostics(LanguageDiagnostics),
     PreflightUpdated(PreflightReport),
     TutorSessionUpdated(TutorSessionSnapshot),
     ShutdownCompleted(ShutdownReport),
@@ -247,6 +257,7 @@ struct AppState {
     next_draft_id: u64,
     next_workspace_id: u64,
     execution: Execution,
+    language_servers: LanguageServers,
     verification: Option<VerificationTask>,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
@@ -397,6 +408,7 @@ impl App {
                 next_draft_id: 1,
                 next_workspace_id: 1,
                 execution: Execution::default(),
+                language_servers: LanguageServers::default(),
                 verification: None,
                 shut_down: false,
                 cleanup_hooks: Vec::new(),
@@ -488,6 +500,29 @@ impl App {
                 .files
                 .read(&target.path)
                 .map(AppResponse::WorkspaceFile),
+            AppCommand::SyncLanguageDocument(update) => {
+                let mut state = self.lock_state();
+                let files = Arc::clone(&state.workspace(update.workspace_id)?.files);
+                let subscribers = Arc::downgrade(&self.subscribers);
+                let emit: crate::lsp::Emit = Arc::new(move |event| {
+                    if let Some(subscribers) = subscribers.upgrade() {
+                        emit_to_subscribers(&subscribers, event);
+                    }
+                });
+                state
+                    .language_servers
+                    .sync(&files, update, &self.runtime, &emit);
+                Ok(AppResponse::LanguageDocumentSynced)
+            }
+            AppCommand::RequestLanguageFeature(request) => {
+                let reply = {
+                    let state = self.lock_state();
+                    state.workspace(request.workspace_id)?;
+                    state.language_servers.request(request)
+                };
+                let result = reply.and_then(|reply| reply.recv_timeout(REQUEST_TIMEOUT).ok());
+                Ok(AppResponse::LanguageFeature(result))
+            }
             AppCommand::PreviewChapterSolution {
                 workspace_id,
                 chapter_id,
@@ -755,8 +790,7 @@ impl App {
                 });
             }
             state.shut_down = true;
-            state.verification = None;
-            state.execution.clear();
+            state.stop_workspace_activity();
             (
                 std::mem::take(&mut state.cleanup_hooks),
                 state.active_course.take(),
@@ -1107,8 +1141,7 @@ impl App {
                 workspace.set_trusted(changed.trusted);
             }
             if !changed.trusted {
-                state.verification = None;
-                state.execution.clear();
+                state.stop_workspace_activity();
                 self.tutor.stop_process();
             }
             self.emit(AppEvent::CourseTrustChanged(changed));
@@ -1367,9 +1400,14 @@ impl App {
 }
 
 impl AppState {
-    fn deactivate_workspace(&mut self) {
+    fn stop_workspace_activity(&mut self) {
         self.verification = None;
         self.execution.clear();
+        self.language_servers.suspend();
+    }
+
+    fn deactivate_workspace(&mut self) {
+        self.stop_workspace_activity();
         self.active_workspace = None;
     }
 

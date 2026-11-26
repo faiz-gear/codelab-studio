@@ -1060,6 +1060,10 @@ export class FakeCoreClient implements CoreClient {
         if (proposed === undefined) throw new CoreCommandError({ code: "WORKSPACE_FILE_NOT_FOUND", details: { path } });
         return { type: "workspaceComparisons", payload: [{ current: this.fileSnapshot(root, path), proposed }] };
       }
+      case "syncLanguageDocument":
+        return { type: "languageDocumentSynced" };
+      case "requestLanguageFeature":
+        return { type: "languageFeature", payload: null };
       case "readWorkspaceFile":
       case "writeWorkspaceFile":
       case "applyWorkspaceComparison": {

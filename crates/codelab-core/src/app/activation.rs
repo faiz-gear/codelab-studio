@@ -87,8 +87,7 @@ impl CourseWorkspaceActivation {
         state: &mut AppState,
         mut workspace: Workspace,
     ) -> WorkspaceSummary {
-        state.verification = None;
-        state.execution.clear();
+        state.stop_workspace_activity();
         state.next_workspace_id += 1;
         let summary = workspace.summary.clone();
         if let Some(attachment) = workspace.take_tutor_attachment() {

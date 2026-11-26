@@ -83,7 +83,7 @@ impl Drop for Attributes {
     }
 }
 
-pub(super) struct Process {
+pub(crate) struct Process {
     finished: bool,
     owns_console: bool,
     job: OwnedHandle,
@@ -92,7 +92,7 @@ pub(super) struct Process {
 }
 
 impl Process {
-    pub fn spawn(spec: Spawn) -> io::Result<(Self, Ports)> {
+    pub(super) fn spawn(spec: Spawn) -> io::Result<(Self, Ports)> {
         let cwd_guards = pin_cwd(&spec.directory)?;
         let cwd_path = dunce::simplified(&spec.directory.path);
         if spec
@@ -200,17 +200,39 @@ impl Process {
         ))
     }
 
-    pub fn spawn_headless(spec: Spawn, output: File) -> io::Result<Self> {
+    pub(super) fn spawn_headless(spec: Spawn, output: File) -> io::Result<Self> {
+        let input = File::open("NUL")?;
+        Self::spawn_with_stdio(spec, [&input, &output, &output], false)
+    }
+
+    pub(super) fn spawn_piped(spec: Spawn) -> io::Result<(Self, Ports)> {
+        let (input, writer) = pipe()?;
+        let (reader, output) = pipe()?;
+        let errors = File::options().write(true).open("NUL")?;
+        let process = Self::spawn_with_stdio(
+            spec,
+            [&File::from(input), &File::from(output), &errors],
+            true,
+        )?;
+        Ok((
+            process,
+            (Box::new(File::from(reader)), Box::new(File::from(writer))),
+        ))
+    }
+
+    fn spawn_with_stdio(mut spec: Spawn, stdio: [&File; 3], piped: bool) -> io::Result<Self> {
         use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
         use windows_sys::Win32::System::Threading::{
             CREATE_NEW_PROCESS_GROUP, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
         };
         let _console_guard = CONSOLE_CONTROL.lock().unwrap_or_else(|p| p.into_inner());
-        let owns_console = unsafe { windows_sys::Win32::System::Console::GetConsoleCP() } == 0;
+        let owns_console =
+            !piped && unsafe { windows_sys::Win32::System::Console::GetConsoleCP() } == 0;
         let guards = pin_cwd(&spec.directory)?;
-        let input = File::open("NUL")?;
-        let handles = [input.as_raw_handle(), output.as_raw_handle()];
-        for handle in handles {
+        let handles = stdio.map(AsRawHandle::as_raw_handle);
+        let mut inherited = handles.to_vec();
+        inherited.dedup();
+        for &handle in &inherited {
             check(unsafe {
                 SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)
             })?;
@@ -240,8 +262,8 @@ impl Process {
                 attributes.ptr(),
                 0,
                 PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
-                handles.as_ptr().cast_mut().cast(),
-                std::mem::size_of_val(&handles),
+                inherited.as_ptr().cast_mut().cast(),
+                std::mem::size_of_val(inherited.as_slice()),
                 null_mut(),
                 null(),
             )
@@ -251,18 +273,49 @@ impl Process {
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
         startup.StartupInfo.dwFlags |= windows_sys::Win32::System::Threading::STARTF_USESHOWWINDOW;
         startup.StartupInfo.wShowWindow = 0; // SW_HIDE: the dedicated console stays invisible.
-        startup.StartupInfo.hStdInput = input.as_raw_handle();
-        startup.StartupInfo.hStdOutput = output.as_raw_handle();
-        startup.StartupInfo.hStdError = output.as_raw_handle();
+        startup.StartupInfo.hStdInput = handles[0];
+        startup.StartupInfo.hStdOutput = handles[1];
+        startup.StartupInfo.hStdError = handles[2];
         startup.lpAttributeList = attributes.ptr();
-        let application = wide(spec.program.as_os_str());
         let mut command = Vec::new();
-        for argument in std::iter::once(spec.program.into_os_string()).chain(spec.args) {
-            if !command.is_empty() {
-                command.push(b' ' as u16);
+        if piped
+            && spec.program.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat")
+            })
+        {
+            if dunce::simplified(&spec.directory.path)
+                .as_os_str()
+                .as_encoded_bytes()
+                .starts_with(b"\\\\")
+            {
+                return Err(io::ErrorKind::InvalidInput.into());
             }
-            quote(&argument, &mut command);
+            // Pass paths as quoted environment expansions to avoid interpreting
+            // characters in the host executable path or the arguments as cmd syntax.
+            spec.env.insert(
+                "CODELAB_LSP_PROGRAM".into(),
+                dunce::simplified(&spec.program).as_os_str().into(),
+            );
+            spec.program = super::windows_command_shell();
+            let mut args = String::from(r#"cmd.exe /D /V:OFF /S /C ""%CODELAB_LSP_PROGRAM%""#);
+            for (index, argument) in spec.args.into_iter().enumerate() {
+                let name = format!("CODELAB_LSP_ARG_{index}");
+                args.push_str(&format!(r#" "%{name}%""#));
+                spec.env.insert(name.into(), argument);
+            }
+            args.push('"');
+            command.extend(args.encode_utf16());
+        } else {
+            for argument in std::iter::once(spec.program.as_os_str())
+                .chain(spec.args.iter().map(OsString::as_os_str))
+            {
+                if !command.is_empty() {
+                    command.push(b' ' as u16);
+                }
+                quote(argument, &mut command);
+            }
         }
+        let application = wide(dunce::simplified(&spec.program).as_os_str());
         command.push(0);
         let cwd = wide(dunce::simplified(&spec.directory.path).as_os_str());
         let env = environment(spec.env);
@@ -277,7 +330,9 @@ impl Process {
                 CREATE_SUSPENDED
                     | CREATE_UNICODE_ENVIRONMENT
                     | EXTENDED_STARTUPINFO_PRESENT
-                    | if owns_console {
+                    | if piped {
+                        windows_sys::Win32::System::Threading::CREATE_NO_WINDOW
+                    } else if owns_console {
                         windows_sys::Win32::System::Threading::CREATE_NEW_CONSOLE
                     } else {
                         CREATE_NEW_PROCESS_GROUP
@@ -319,7 +374,7 @@ impl Process {
         }
     }
 
-    fn exited(&self) -> bool {
+    pub(crate) fn exited(&self) -> bool {
         unsafe { WaitForSingleObject(self.child.as_raw_handle(), 0) == WAIT_OBJECT_0 }
     }
 

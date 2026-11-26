@@ -72,6 +72,7 @@ export interface CourseWorkbenchProps {
   tutorSnapshot?: TutorSessionSnapshot | null;
   onTutorSnapshotChange?: (snapshot: TutorSessionSnapshot | null) => void;
   onUpdateSettings?: (patch: UpdateSettingsPatch) => void;
+  onOpenRuntimeSettings?: (trigger: HTMLElement) => void;
   onOpenTutorSettings?: (trigger: HTMLElement) => void;
   onCloseTutor?: () => void;
 }
@@ -107,6 +108,7 @@ export function CourseWorkbench({
   tutorSnapshot = null,
   onTutorSnapshotChange,
   onUpdateSettings,
+  onOpenRuntimeSettings,
   onOpenTutorSettings,
   onCloseTutor,
 }: CourseWorkbenchProps) {
@@ -780,6 +782,7 @@ export function CourseWorkbench({
               onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
               workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
+              onOpenRuntimeSettings={onOpenRuntimeSettings}
               onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
             />
             <div className="verification-tabs" role="tablist" aria-label={messages.verification.results} onKeyDown={event=>{

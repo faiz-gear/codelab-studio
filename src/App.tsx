@@ -137,6 +137,7 @@ export function App({ client }: AppProps) {
     const isSameCourse = prevCourse && courseSourceKey(prevCourse.source) === courseSourceKey(loaded.source);
 
     if (!isSameCourse) {
+      workspaceRef.current?.setTrusted(false);
       workspaceRef.current = null;
       setWorkspace(null);
       setTutorSnapshot(null);
@@ -203,6 +204,8 @@ export function App({ client }: AppProps) {
             if (editor?.workspace.id === event.payload.workspaceId) {
               void editor.refresh(event.payload.paths);
             }
+          } else if (event.type === "languageStatusChanged" || event.type === "languageDiagnostics") {
+            workspaceRef.current?.language.handle(event);
           } else if (event.type === "tutorSessionUpdated") {
             if (workspaceRef.current?.workspace.id === event.payload.workspaceId) {
               setTutorSnapshot(event.payload);
@@ -356,6 +359,7 @@ export function App({ client }: AppProps) {
 
   function applyBoundWorkspace(bound: WorkspaceSummary | null) {
     const editor = bound ? new WorkspaceEditorSession(client, bound) : null;
+    workspaceRef.current?.setTrusted(false);
     workspaceRef.current = editor;
     setWorkspace(editor);
     setTutorSnapshot(null);
@@ -643,6 +647,7 @@ export function App({ client }: AppProps) {
             tutorSnapshot={tutorSnapshot}
             onTutorSnapshotChange={setTutorSnapshot}
             onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
+            onOpenRuntimeSettings={(trigger) => openSettingsDialog(trigger, "runtime")}
             onOpenTutorSettings={(trigger) => openSettingsDialog(trigger, "tutor")}
             onCloseTutor={handleCloseTutor}
           />

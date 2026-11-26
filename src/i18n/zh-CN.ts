@@ -7,6 +7,7 @@ import type {
   PermissionPolicy,
   StoreKind,
   HostTool,
+  LanguageStatus,
   OptionalLsp,
   ProbeProblem,
   ProbeStatus,
@@ -178,6 +179,7 @@ export interface Messages {
     copyErrors: string;
   };
   workspace: {
+    languageStatus: Record<LanguageStatus, string>;
     choose: string;
     change: string;
     resume: string;
@@ -556,6 +558,12 @@ export const zhCN: Messages = {
     copyErrors: "复制终端报错",
   },
   workspace: {
+    languageStatus: {
+      starting: "{language} LSP 启动中",
+      ready: "{language} LSP 就绪",
+      missing: "{language} LSP 缺失",
+      degraded: "{language} LSP 已降级",
+    },
     choose: "选择 Workspace",
     change: "切换 Workspace",
     resume: "继续使用 Workspace",
@@ -688,7 +696,7 @@ export const zhCN: Messages = {
       gopls: "gopls", jdtls: "jdtls", pyright: "pyright",
     },
     lspGuidance: {
-      typeScriptLanguageServer: "如需补全，请安装 typescript-language-server 和 typescript，并将服务加入 PATH。",
+      typeScriptLanguageServer: "如需补全，请安装 typescript-language-server 和 typescript@6，并将服务加入 PATH。",
       gopls: "如需补全，可运行 go install golang.org/x/tools/gopls@latest，并将 gopls 加入 PATH。",
       jdtls: "如需补全，请安装 Eclipse JDT LS，并将 jdtls 启动脚本加入 PATH。",
       pyright: "如需补全，请安装 Pyright，并将 pyright-langserver 加入 PATH。",

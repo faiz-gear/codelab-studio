@@ -6,7 +6,7 @@ import "../../styles/execution.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../App";
-import { DEFAULT_SETTINGS, type LearningProgress } from "../../core/contracts";
+import { DEFAULT_SETTINGS, type AppCommand, type AppResponse, type LanguageFeatureResult, type LearningProgress } from "../../core/contracts";
 import { FakeCoreClient } from "../fakeCoreClient";
 
 declare global {
@@ -22,7 +22,29 @@ declare global {
 }
 
 const root = "/work/monaco";
-const client = new FakeCoreClient({
+class BrowserCoreClient extends FakeCoreClient {
+  override async dispatch(command: AppCommand): Promise<AppResponse> {
+    const response = await super.dispatch(command);
+    if (!new URLSearchParams(location.search).has("language-server")) return response;
+    if (command.type === "syncLanguageDocument" && command.payload.document) {
+      const { workspaceId, version, document } = command.payload;
+      const target = { workspaceId, version, path: document.path };
+      this.emitEvent({ type: "languageStatusChanged", payload: { ...target, language: "Go", status: "ready" } });
+      this.emitEvent({ type: "languageDiagnostics", payload: { ...target, diagnostics: [{
+        message: "Fixture diagnostic", severity: 2,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 7 } },
+      }] } });
+    } else if (command.type === "requestLanguageFeature") {
+      const payload: LanguageFeatureResult = command.payload.feature === "completion"
+        ? { kind: "completion", value: { items: [{ label: "mainFixture", kind: 3 }] } }
+        : { kind: "hover", value: { contents: [{ kind: "markdown", value: "**Fixture documentation**" }] } };
+      return { type: "languageFeature", payload };
+    }
+    return response;
+  }
+}
+
+const client = new BrowserCoreClient({
   settings: { ...DEFAULT_SETTINGS, locale: "en-US" },
   pickedPaths: { workspaceDir: root },
   chapterSolutions: { "ex-0": { "main.go": "package main\n// reference implementation\n" } },

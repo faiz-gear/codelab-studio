@@ -25,9 +25,9 @@ use self::model::*;
 use self::output::Capture;
 use self::process::{ErrorLog, TerminalProcess, lock};
 #[cfg(unix)]
-use self::unix::Process;
+pub(crate) use self::unix::Process;
 #[cfg(windows)]
-use self::windows::Process;
+pub(crate) use self::windows::Process;
 
 type Ports = (Box<dyn Read + Send>, Box<dyn Write + Send>);
 
@@ -36,6 +36,19 @@ struct Spawn {
     args: Vec<OsString>,
     env: BTreeMap<OsString, OsString>,
     directory: Directory,
+}
+
+pub(crate) fn spawn_piped(
+    program: PathBuf,
+    args: Vec<OsString>,
+    directory: Directory,
+) -> io::Result<(Process, Ports)> {
+    Process::spawn_piped(Spawn {
+        program,
+        args,
+        env: BTreeMap::new(),
+        directory,
+    })
 }
 
 #[derive(PartialEq, Eq)]
@@ -281,14 +294,16 @@ fn shell(launch: Option<&CommandLaunch>) -> Result<(PathBuf, Vec<OsString>), Dom
         vec!["-i".into()],
     );
     #[cfg(windows)]
-    let (program, args) = (
-        std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
-            .join(r"System32\cmd.exe"),
-        vec!["/D".into(), "/Q".into()],
-    );
+    let (program, args) = (windows_command_shell(), vec!["/D".into(), "/Q".into()]);
     Ok((program, args))
+}
+
+#[cfg(windows)]
+fn windows_command_shell() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join(r"System32\cmd.exe")
 }
 
 fn shell_command(name: &str, script: &str) -> Result<(PathBuf, Vec<OsString>), DomainError> {

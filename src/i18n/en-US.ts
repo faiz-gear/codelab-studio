@@ -174,6 +174,12 @@ export const enUS: Messages = {
     copyErrors: "Copy terminal errors",
   },
   workspace: {
+    languageStatus: {
+      starting: "{language} LSP starting",
+      ready: "{language} LSP ready",
+      missing: "{language} LSP missing",
+      degraded: "{language} LSP degraded",
+    },
     choose: "Choose Workspace",
     change: "Change Workspace",
     resume: "Resume Workspace",
@@ -308,7 +314,7 @@ export const enUS: Messages = {
       gopls: "gopls", jdtls: "jdtls", pyright: "pyright",
     },
     lspGuidance: {
-      typeScriptLanguageServer: "For completion, install typescript-language-server and typescript, then add the server to PATH.",
+      typeScriptLanguageServer: "For completion, install typescript-language-server and typescript@6, then add the server to PATH.",
       gopls: "For completion, run go install golang.org/x/tools/gopls@latest and add gopls to PATH.",
       jdtls: "For completion, install Eclipse JDT LS and add the jdtls launcher to PATH.",
       pyright: "For completion, install Pyright and add pyright-langserver to PATH.",

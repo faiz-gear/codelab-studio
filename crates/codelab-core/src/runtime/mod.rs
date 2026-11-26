@@ -4,7 +4,7 @@ mod model;
 mod probe;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
@@ -111,6 +111,10 @@ impl RuntimeManager {
             on_update: Box::new(on_update),
         });
         Ok((manager, loaded.recovery))
+    }
+
+    pub(crate) fn locate_language_server(&self, tool: HostTool) -> Option<PathBuf> {
+        self.host.locate_language_server(tool)
     }
 
     pub(crate) fn snapshot(&self) -> PreflightReport {

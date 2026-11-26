@@ -3,6 +3,7 @@ mod course;
 mod error;
 mod execution;
 mod filesystem;
+mod lsp;
 mod model;
 mod runtime;
 mod storage;
@@ -26,6 +27,13 @@ pub use course::{
 pub use error::{DomainError, ErrorCode};
 pub use execution::model::*;
 pub use execution::verification::model::*;
+pub use lsp::{
+    CompletionTextEdit, DiagnosticCode, LanguageCompletion, LanguageCompletionItem,
+    LanguageDiagnostic, LanguageDiagnostics, LanguageDocument, LanguageDocumentUpdate,
+    LanguageDocumentVersion, LanguageFeature, LanguageFeatureRequest, LanguageFeatureResult,
+    LanguageHover, LanguageMarkup, LanguagePosition, LanguageRange, LanguageStatus,
+    LanguageStatusChanged, LanguageTextEdit,
+};
 pub use model::{
     AccentPreset, AppBootstrap, CourseLanguage, DEFAULT_CODE_FONT_SIZE, GLOBAL_DATA_SCHEMA_VERSION,
     GlobalSettings, Locale, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, RecentWorkspace,

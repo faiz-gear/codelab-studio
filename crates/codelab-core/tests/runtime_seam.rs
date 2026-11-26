@@ -708,16 +708,15 @@ fn isolated_install_stages_every_runner_and_retries_a_failed_download() {
 
 #[cfg(unix)]
 #[test]
-fn native_preflight_checks_version_and_times_out_a_stalled_executable() {
+fn native_preflight_checks_versions_and_lsp_installation_without_starting_a_server() {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
 
     if let Some(data_dir) = std::env::var_os("CODELAB_PREFLIGHT_TEST_DATA") {
-        let app = App::open(AppConfig {
-            data_dir: data_dir.into(),
-        })
-        .unwrap();
+        let data_dir = std::path::PathBuf::from(data_dir);
+        let marker = data_dir.join("gopls-started");
+        let app = App::open(AppConfig { data_dir }).unwrap();
         let events = app.subscribe();
         report(&app, AppCommand::RefreshPreflight);
         let checked = wait_for_report(&events, |report| report.checked);
@@ -727,8 +726,10 @@ fn native_preflight_checks_version_and_times_out_a_stalled_executable() {
         let go = language(&checked, CourseLanguage::Go);
         assert_eq!(go.status, ProbeStatus::Ok);
         let lsp = go.lsp.as_ref().unwrap();
-        assert_eq!(lsp.status, ProbeStatus::Warn);
-        assert_eq!(lsp.problem, Some(ProbeProblem::Failed));
+        assert_eq!(lsp.status, ProbeStatus::Ok);
+        assert!(lsp.executable.is_some());
+        assert_eq!(lsp.problem, None);
+        assert!(!marker.exists());
         assert_eq!(checked.tools[1].problem, Some(ProbeProblem::TimedOut));
         return;
     }
@@ -741,7 +742,10 @@ fn native_preflight_checks_version_and_times_out_a_stalled_executable() {
     fs::create_dir_all(&java_bin).unwrap();
     for (path, script) in [
         (bin.join("go"), "printf 'go version go1.22.0\n'"),
-        (bin.join("gopls"), "exit 1"),
+        (
+            bin.join("gopls"),
+            r#"/usr/bin/touch "$CODELAB_PREFLIGHT_TEST_DATA/gopls-started"; exit 1"#,
+        ),
         (bin.join("curl"), "exec /bin/sleep 15"),
         (bin.join("java"), "exit 0"),
         (bin.join("javac"), "printf 'javac 17.0.1\n' >&2"),
@@ -755,7 +759,7 @@ fn native_preflight_checks_version_and_times_out_a_stalled_executable() {
     let child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "native_preflight_checks_version_and_times_out_a_stalled_executable",
+            "native_preflight_checks_versions_and_lsp_installation_without_starting_a_server",
         ])
         .env("CODELAB_PREFLIGHT_TEST_DATA", dir.path().join("data"))
         .env("PATH", bin)

@@ -26,6 +26,10 @@ pub enum HostProbeResult {
 pub trait HostToolchainProbe: Send + Sync {
     fn probe(&self, tool: HostTool, timeout: Duration) -> HostProbeResult;
 
+    fn locate_language_server(&self, _tool: HostTool) -> Option<PathBuf> {
+        None
+    }
+
     fn probe_go_proxy(&self, _managed_go: Option<&Path>, timeout: Duration) -> HostProbeResult {
         self.probe(HostTool::GoProxy, timeout)
     }
@@ -45,17 +49,15 @@ impl HostToolchainProbe for SystemToolchainProbe {
         let Some(executable) = find_on_path(tool).next() else {
             return HostProbeResult::Missing;
         };
+        // Preflight reports optional server installation without running the server.
+        if tool.is_lsp() {
+            return HostProbeResult::Found {
+                output: String::new(),
+                executable: Some(executable),
+            };
+        }
         let args: &[&str] = match tool {
             HostTool::Go => &["version"],
-            HostTool::Gopls => &["version"],
-            HostTool::Jdtls => &["--help"],
-            HostTool::Pyright => {
-                let Some(cli) = find_on_path_command("pyright").next() else {
-                    // Some distributions ship only pyright-langserver.
-                    return run_probe(&executable, &["--stdio"], deadline);
-                };
-                return run_probe(&cli, &["--version"], deadline);
-            }
             HostTool::UvPython => &[
                 "--no-config",
                 "python",
@@ -79,6 +81,10 @@ impl HostToolchainProbe for SystemToolchainProbe {
             };
         }
         result
+    }
+
+    fn locate_language_server(&self, tool: HostTool) -> Option<PathBuf> {
+        find_on_path(tool).next()
     }
 
     fn probe_go_proxy(&self, managed_go: Option<&Path>, timeout: Duration) -> HostProbeResult {
