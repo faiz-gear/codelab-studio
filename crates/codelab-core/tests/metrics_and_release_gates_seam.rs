@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -663,6 +663,7 @@ fn performance_budgets_hold_for_cold_start_1000_line_markdown_and_workspace_watc
 #[test]
 fn cross_module_workspace_switch_and_shutdown_leave_zero_leaked_child_processes() {
     use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
 
     fn pid_alive(pid: i32) -> bool {
         if pid <= 1 {
