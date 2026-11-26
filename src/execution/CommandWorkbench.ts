@@ -14,10 +14,11 @@ interface WorkbenchState {
   active: number | null;
   confirmation: { request: CommandRequest; detail: CommandConfirmation } | null;
   busy: boolean;
+  outputVersion: number;
 }
 
 export const emptyWorkbench: WorkbenchState = {
-  cwd: {}, terminals: [], active: null, confirmation: null, busy: false,
+  cwd: {}, terminals: [], active: null, confirmation: null, busy: false, outputVersion: 0,
 };
 
 export class CommandWorkbench {
@@ -115,8 +116,15 @@ export class CommandWorkbench {
       type: "readTerminals", payload: { workspaceId: this.workspaceId, terminalId, cursor, includeRecentErrors },
     });
     const updates = expectResponse(response, "terminals").payload;
-    if (version === this.listVersion && JSON.stringify(updates.terminals) !== JSON.stringify(this.state.terminals)) {
-      this.update({ terminals: updates.terminals });
+    const terminalsChanged =
+      version === this.listVersion &&
+      JSON.stringify(updates.terminals) !== JSON.stringify(this.state.terminals);
+    const hasNewOutput = Boolean(updates.output?.data) || Boolean(updates.output?.reset);
+    if (terminalsChanged || hasNewOutput) {
+      this.update({
+        ...(terminalsChanged ? { terminals: updates.terminals } : {}),
+        outputVersion: this.state.outputVersion + 1,
+      });
     }
     return updates;
   }

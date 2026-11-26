@@ -1,25 +1,54 @@
-import { lazy, Suspense, useEffect, useId, useState, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { CloseIcon, TerminalIcon } from "../components/Icons";
 import type { GlobalSettings, TerminalSummary } from "../core/contracts";
 import { interpolate, type Messages } from "../i18n";
+import {
+  extractDomSelectionWithin,
+  extractPortConflictExcerpt,
+  type ActiveSelection,
+} from "../tutor/contextRequest";
 import { WorkspaceDialog } from "../workspace/WorkspaceDialog";
 import type { CommandWorkbench } from "./CommandWorkbench";
 
 const TerminalViewport = lazy(() => import("./TerminalViewport"));
 
-export function TerminalPanel({ workbench, state, messages, settings, disabled, onError }: {
+function decodeBase64Utf8(base64: string): string {
+  if (!base64) return "";
+  try {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+export function TerminalPanel({
+  workbench,
+  state,
+  messages,
+  settings,
+  disabled,
+  onError,
+  onSelectionChange,
+  onAskAI,
+}: {
   workbench: CommandWorkbench;
   state: ReturnType<CommandWorkbench["snapshot"]>;
   messages: Messages;
   settings: GlobalSettings;
   disabled: boolean;
   onError: (error: unknown) => void;
+  onSelectionChange?: (selection: ActiveSelection | null) => void;
+  onAskAI?: (payload: { port: number | null; text: string }) => void;
 }) {
   const t = messages.execution;
   const [maximized, setMaximized] = useState(false);
   const [clearCount, setClearCount] = useState(0);
   const [errorContext, setErrorContext] = useState<string | null>(null);
+  const [fallbackOutputs, setFallbackOutputs] = useState<Record<number, string>>({});
+  const fallbackCursors = useRef(new Map<number, number>());
+  const fallbackPreRef = useRef<HTMLPreElement | null>(null);
   const panelId = useId();
   const active = state.terminals.find(({ id }) => id === state.active);
   const conflicted = active?.portConflict ? active : state.terminals.find(({ portConflict }) => portConflict);
@@ -44,7 +73,17 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
     let cancelled = false;
     async function readStatus() {
       try {
-        await workbench.read();
+        const cursor = fallbackCursors.current.get(activeId!) ?? workbench.startCursor(activeId!);
+        const updates = await workbench.read(activeId, cursor);
+        if (cancelled || !updates.output) return;
+        fallbackCursors.current.set(activeId!, updates.output.cursor);
+        const chunk = decodeBase64Utf8(updates.output.data);
+        if (updates.output.reset || chunk) {
+          setFallbackOutputs((prev) => ({
+            ...prev,
+            [activeId!]: updates.output!.reset ? chunk : (prev[activeId!] ?? "") + chunk,
+          }));
+        }
       } catch (error) {
         if (!cancelled) onError(error);
       }
@@ -56,6 +95,10 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
       clearInterval(timer);
     };
   }, [activeId, canRender, onError, workbench]);
+
+  function handleFallbackSelection() {
+    onSelectionChange?.(extractDomSelectionWithin(fallbackPreRef.current, "terminal"));
+  }
 
   function handleTabKey(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const count = state.terminals.length;
@@ -75,7 +118,14 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
   async function askAI() {
     try {
       const { recentErrors } = await workbench.read(undefined, undefined, true);
-      setErrorContext(recentErrors.join("\n"));
+      if (onAskAI) {
+        onAskAI({
+          port: conflicted?.port ?? null,
+          text: extractPortConflictExcerpt(recentErrors, t.portConflict),
+        });
+        return;
+      }
+      setErrorContext(recentErrors.join("\n").trim());
     } catch (error) {
       onError(error);
     }
@@ -103,7 +153,12 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
           <span aria-hidden="true">+</span> {t.newTerminal}
         </button>
         {active && <>
-          <button className="btn btn--ghost btn--xs" type="button" onClick={() => setClearCount((count) => count + 1)}>{t.clear}</button>
+          <button className="btn btn--ghost btn--xs" type="button" onClick={() => {
+            setClearCount((count) => count + 1);
+            if (!canRender) {
+              setFallbackOutputs((prev) => ({ ...prev, [active.id]: "" }));
+            }
+          }}>{t.clear}</button>
           <button className="btn btn--ghost btn--xs" type="button" aria-pressed={maximized}
             onClick={() => setMaximized((value) => !value)}>{maximized ? t.restore : t.maximize}</button>
           <button className="btn btn--ghost btn--xs" type="button" disabled={busy} aria-label={t.close} title={t.close}
@@ -134,10 +189,26 @@ export function TerminalPanel({ workbench, state, messages, settings, disabled, 
               <button className="btn btn--ghost btn--xs" type="button" onClick={() => void askAI()}>{t.askAI}</button>
             </div>
           )}
-          {canRender && <Suspense fallback={null}>
-            <TerminalViewport key={active.id} workbench={workbench} id={active.id}
-              settings={settings} clearCount={clearCount} label={terminalName(active)} onError={onError} />
-          </Suspense>}
+          {canRender ? (
+            <Suspense fallback={null}>
+              <TerminalViewport key={active.id} workbench={workbench} id={active.id}
+                settings={settings} clearCount={clearCount} label={terminalName(active)}
+                onError={onError} onSelectionChange={onSelectionChange} />
+            </Suspense>
+          ) : (
+            <pre
+              ref={fallbackPreRef}
+              className="terminal-fallback mono"
+              role="region"
+              aria-label={terminalName(active)}
+              data-testid="terminal-fallback-output"
+              onMouseUp={handleFallbackSelection}
+              onKeyUp={handleFallbackSelection}
+              onScroll={() => onSelectionChange?.(null)}
+            >
+              {fallbackOutputs[active.id] ?? ""}
+            </pre>
+          )}
           {active.exitCode !== null && <div className="terminal-exit mono">{interpolate(t.exited, { code: active.exitCode })}</div>}
         </div>
       )}

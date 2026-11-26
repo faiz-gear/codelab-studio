@@ -107,5 +107,8 @@ it("updates a Command Block directory and opens its port-conflict recovery actio
   const recovery = await screen.findByRole("region", { name: "A local port is already in use." });
   expect(within(recovery).queryByRole("button", { name: "Switch to service terminal" })).not.toBeInTheDocument();
   await user.click(within(recovery).getByRole("button", { name: "Ask AI" }));
-  expect(within(await screen.findByRole("dialog", { name: "Ask AI" })).getByText("ERROR: address already in use")).toBeInTheDocument();
+  const tutorDrawer = await screen.findByTestId("tutor-drawer");
+  expect(within(tutorDrawer).getByTestId("tutor-quote-card")).toHaveTextContent(
+    "ERROR: address already in use"
+  );
 });

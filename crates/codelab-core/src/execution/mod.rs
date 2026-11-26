@@ -122,6 +122,10 @@ impl Execution {
         self.confirmation = None;
     }
 
+    pub fn recent_errors(&self) -> Vec<String> {
+        lock(&self.errors).iter().cloned().collect()
+    }
+
     pub fn start(
         &mut self,
         launch: Option<CommandLaunch>,

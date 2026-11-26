@@ -528,9 +528,308 @@
 /* ---------- AI Composer ---------- */
 .tutor-composer-wrap {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface);
+}
+
+/* ---------- Pinned Quote Card & Message Quote ---------- */
+.tutor-quote-card,
+.tutor-msg-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--ai) var(--badge-tint), var(--surface));
+  border: 1px solid color-mix(in oklab, var(--ai) 24%, var(--border));
+  font-size: 12px;
+}
+
+.tutor-quote-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.tutor-quote-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tutor-quote-loc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.tutor-quote-text {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--foreground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 76px;
+  overflow-y: auto;
+}
+
+/* ---------- 4D Context Snapshot Chips & Preview ---------- */
+.tutor-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  max-width: 100%;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--ai) var(--badge-tint), var(--surface));
+  border: 1px solid color-mix(in oklab, var(--ai) 20%, transparent);
+  color: color-mix(in oklab, var(--ai) var(--badge-ink), var(--foreground));
+  font-size: 11.5px;
+  font-weight: 500;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.ctx-chip.is-previewing {
+  border-color: color-mix(in oklab, var(--ai) 48%, var(--border));
+  background: color-mix(in oklab, var(--ai) 16%, var(--surface));
+}
+
+.ctx-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  max-width: 196px;
+  padding: 0 4px 0 9px;
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ctx-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-chip-label .mono,
+.tutor-chip-preview-title .mono {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-chip-meta {
+  opacity: 0.78;
+}
+
+.tutor-chip-preview-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ctx-chip-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 7px 0 4px;
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  color: inherit;
+  opacity: 0.72;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ctx-chip-rm:hover {
+  opacity: 1;
+}
+
+.ctx-chip-btn:focus-visible,
+.ctx-chip-rm:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
+}
+
+.ctx-restore-btn {
+  font-size: 11px;
+  height: 22px;
+  padding: 0 7px;
+}
+
+.tutor-ctx-flag {
+  height: 22px;
+  font-size: 11px;
+}
+
+.tutor-chip-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.tutor-chip-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tutor-chip-preview-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tutor-chip-preview-tok {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.tutor-chip-preview-note {
+  margin: 0;
+  font-size: 11px;
+  color: color-mix(in oklab, var(--warning) var(--badge-ink), var(--foreground));
+}
+
+.tutor-chip-preview-body {
+  margin: 0;
+  max-height: 140px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tutor-composer-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tutor-token-est {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- Floating 3-Region Selection Ask-AI Pill ---------- */
+.selection-ask-pill {
+  position: fixed;
+  z-index: 95;
+  height: var(--float-bar-h);
+  padding: 0 5px 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-floating);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  animation: sel-pill-pop var(--duration-fast) var(--ease-enter);
+}
+
+@keyframes sel-pill-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.selection-ask-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  color: color-mix(in oklab, var(--ai) var(--badge-ink), var(--foreground));
+  padding-inline-end: 2px;
+}
+
+.selection-ask-pill-btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.selection-ask-pill-btn:hover {
+  background: var(--surface-muted);
+  color: var(--accent-strong);
+}
+
+.selection-ask-pill-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
+}
+
+.selection-ask-pill-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 1px;
+}
+
+.reflect-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+
+.check-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .tutor-composer {

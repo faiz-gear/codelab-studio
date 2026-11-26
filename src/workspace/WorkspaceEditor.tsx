@@ -2,6 +2,12 @@ import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type
 import { CloseIcon, FolderIcon } from "../components/Icons";
 import type { ExternalIde, GlobalSettings } from "../core/contracts";
 import { formatDomainError, interpolate, type Messages } from "../i18n";
+import {
+  MIN_SELECTION_CHARS,
+  normalizeSelectionRect,
+  type ActiveSelection,
+  type EditorCursorContext,
+} from "../tutor/contextRequest";
 import { editorText, type EditorTab, type WorkspaceEditorSession } from "./editorSession";
 import { WorkspaceComparisonTrigger } from "./WorkspaceComparison";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -18,7 +24,18 @@ const IDES: Record<ExternalIde, string> = {
 };
 
 export function WorkspaceEditor({
-  session, settings, messages, onChangeWorkspace, onRevokeTrust, onOpenRuntimeSettings, switching, workspaceActionLabel, workspaceLabel, tutorOpen = false,
+  session,
+  settings,
+  messages,
+  onChangeWorkspace,
+  onRevokeTrust,
+  onOpenRuntimeSettings,
+  switching,
+  workspaceActionLabel,
+  workspaceLabel,
+  tutorOpen = false,
+  onSelectionChange,
+  onCursorContextChange,
 }: {
   session: WorkspaceEditorSession;
   settings: GlobalSettings;
@@ -30,6 +47,8 @@ export function WorkspaceEditor({
   onOpenRuntimeSettings?: (trigger: HTMLElement) => void;
   switching: boolean;
   tutorOpen?: boolean;
+  onSelectionChange?: (selection: ActiveSelection | null) => void;
+  onCursorContextChange?: (context: EditorCursorContext) => void;
 }) {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
   const { status: languageStatus } = useSyncExternalStore(session.language.subscribe, session.language.snapshot);
@@ -71,6 +90,38 @@ export function WorkspaceEditor({
   const pickingComparison = Boolean(leftTab && !comparison?.right);
   const label = interpolate(t.editFile, { path: path ?? "" });
   const useMonaco = typeof ResizeObserver !== "undefined";
+
+  useEffect(() => {
+    onCursorContextChange?.({ filePath: path, startLine: null, endLine: null });
+    onSelectionChange?.(null);
+  }, [onCursorContextChange, onSelectionChange, path]);
+
+  function syncFallbackSelection(el: HTMLTextAreaElement) {
+    if (!path) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const lineOf = (offset: number) => el.value.slice(0, offset).split("\n").length;
+    const startLine = lineOf(Math.min(start, end));
+    const endLine = lineOf(Math.max(start, end));
+    onCursorContextChange?.({ filePath: path, startLine, endLine });
+    if (end <= start) {
+      onSelectionChange?.(null);
+      return;
+    }
+    const selected = el.value.slice(start, end).trim();
+    if (selected.length < MIN_SELECTION_CHARS) {
+      onSelectionChange?.(null);
+      return;
+    }
+    onSelectionChange?.({
+      zone: "editor",
+      text: selected,
+      rect: normalizeSelectionRect(el.getBoundingClientRect(), el),
+      filePath: path,
+      startLine,
+      endLine,
+    });
+  }
 
   useEffect(() => {
     const handleSave = (event: globalThis.KeyboardEvent) => {
@@ -230,11 +281,23 @@ export function WorkspaceEditor({
               {useMonaco ? (
                 <Suspense fallback={<p className="workspace-empty" role="status">{t.loading}</p>}>
                   <MonacoText tabs={state.tabs} path={path} label={label} settings={settings} readOnly={switching} languageSession={session.language}
-                    onEdit={(filePath, value) => session.change(filePath, value)} />
+                    onEdit={(filePath, value) => session.change(filePath, value)}
+                    onSelectionChange={onSelectionChange}
+                    onCursorLinesChange={(range) =>
+                      onCursorContextChange?.({
+                        filePath: path,
+                        startLine: range?.startLine ?? null,
+                        endLine: range?.endLine ?? null,
+                      })
+                    } />
                 </Suspense>
               ) : (
                 <textarea aria-label={label} className="workspace-fallback mono" value={text} spellCheck={false} readOnly={switching}
-                  onChange={(event) => session.change(path, event.target.value)} />
+                  onChange={(event) => session.change(path, event.target.value)}
+                  onSelect={(event) => syncFallbackSelection(event.currentTarget)}
+                  onMouseUp={(event) => syncFallbackSelection(event.currentTarget)}
+                  onKeyUp={(event) => syncFallbackSelection(event.currentTarget)}
+                  onScroll={() => onSelectionChange?.(null)} />
               )}
             </div>
           )}

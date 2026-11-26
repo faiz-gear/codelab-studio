@@ -34,9 +34,10 @@ use crate::model::{
 use crate::runtime::{PreflightReport, RuntimeAdapters, RuntimeManager, RuntimePreference};
 use crate::storage::JsonStore;
 use crate::tutor::{
-    AcpAgentPreset, AcpStdioBackend, RespondTutorPermission, SendTutorPrompt, TutorBackend,
-    TutorHandshakeRequest, TutorHandshakeResult, TutorManager, TutorSessionSnapshot,
-    WorkspaceTutorRequest,
+    AcpAgentPreset, AcpStdioBackend, ContextSnapshot, ContextSnapshotInput, ResolvedTurnContext,
+    RespondTutorPermission, SendTutorPrompt, TutorBackend, TutorHandshakeRequest,
+    TutorHandshakeResult, TutorManager, TutorSessionSnapshot, WorkspaceTutorRequest,
+    context as tutor_context,
 };
 use crate::workspace::{
     Workspace, WorkspaceComparison, WorkspaceEntry, WorkspaceFile, WorkspaceFileRename,
@@ -144,6 +145,7 @@ pub enum AppCommand {
     },
     TestTutorHandshake(TutorHandshakeRequest),
     GetTutorSession(WorkspaceTutorRequest),
+    BuildTutorContext(ContextSnapshotInput),
     SendTutorPrompt(SendTutorPrompt),
     StopTutorTurn(WorkspaceTutorRequest),
     RetryTutorTurn(WorkspaceTutorRequest),
@@ -190,6 +192,7 @@ pub enum AppResponse {
     LearningRecord(Value),
     Preflight(PreflightReport),
     TutorHandshake(TutorHandshakeResult),
+    TutorContext(ContextSnapshot),
     TutorSession(TutorSessionSnapshot),
     Shutdown(ShutdownReport),
 }
@@ -638,6 +641,7 @@ impl App {
             }
             AppCommand::TestTutorHandshake(request) => self.test_tutor_handshake(request),
             AppCommand::GetTutorSession(request) => self.get_tutor_session(request.workspace_id),
+            AppCommand::BuildTutorContext(request) => self.build_tutor_context(request),
             AppCommand::SendTutorPrompt(request) => self.send_tutor_prompt(request),
             AppCommand::StopTutorTurn(request) => self.stop_tutor_turn(request.workspace_id),
             AppCommand::RetryTutorTurn(request) => self.retry_tutor_turn(request.workspace_id),
@@ -918,13 +922,80 @@ impl App {
             .map(AppResponse::TutorSession)
     }
 
-    fn send_tutor_prompt(&self, request: SendTutorPrompt) -> Result<AppResponse, DomainError> {
-        {
+    fn build_snapshot_locked(
+        state: &AppState,
+        request: &ContextSnapshotInput,
+    ) -> Result<ContextSnapshot, DomainError> {
+        let workspace = state.workspace(request.workspace_id)?;
+        let course = &state.trusted_course()?.course;
+        let recent_errors = state.execution.recent_errors();
+        let default_style = state.settings.tutor.teaching_style;
+        Ok(tutor_context::build_context_snapshot(
+            course,
+            workspace,
+            &recent_errors,
+            request,
+            default_style,
+        ))
+    }
+
+    fn resolve_turn_context_locked(
+        state: &AppState,
+        mut input: ContextSnapshotInput,
+        workspace_id: u64,
+        prompt: &str,
+        teaching_style: Option<crate::TeachingStyle>,
+        fallback_preamble: Option<String>,
+    ) -> Result<(ContextSnapshotInput, ResolvedTurnContext), DomainError> {
+        input.workspace_id = workspace_id;
+        input.prompt = Some(prompt.to_owned());
+        input.teaching_style = Some(teaching_style.unwrap_or(state.settings.tutor.teaching_style));
+        let snapshot = Self::build_snapshot_locked(state, &input)?;
+        let preamble = if snapshot.rendered_preamble.trim().is_empty() {
+            fallback_preamble
+        } else {
+            Some(snapshot.rendered_preamble)
+        };
+        let dimensions = snapshot.chips.iter().map(|c| c.dimension).collect();
+        Ok((
+            input,
+            ResolvedTurnContext {
+                preamble,
+                quote: snapshot.quote,
+                dimensions,
+            },
+        ))
+    }
+
+    fn build_tutor_context(
+        &self,
+        request: ContextSnapshotInput,
+    ) -> Result<AppResponse, DomainError> {
+        let state = self.lock_state();
+        Self::build_snapshot_locked(&state, &request).map(AppResponse::TutorContext)
+    }
+
+    fn send_tutor_prompt(&self, mut request: SendTutorPrompt) -> Result<AppResponse, DomainError> {
+        let resolved_context = {
             let state = self.lock_state();
             state.workspace(request.workspace_id)?;
-        }
+            if let Some(ctx_input) = request.context.take() {
+                let (normalized, resolved) = Self::resolve_turn_context_locked(
+                    &state,
+                    ctx_input,
+                    request.workspace_id,
+                    &request.prompt,
+                    request.teaching_style,
+                    request.context_preamble.clone(),
+                )?;
+                request.context = Some(normalized);
+                Some(resolved)
+            } else {
+                None
+            }
+        };
         self.tutor
-            .send_prompt(request)
+            .send_prompt(request, resolved_context)
             .map(AppResponse::TutorSession)
     }
 
@@ -939,12 +1010,24 @@ impl App {
     }
 
     fn retry_tutor_turn(&self, workspace_id: u64) -> Result<AppResponse, DomainError> {
-        {
+        let (prompt, style, seed_context) = self.tutor.retry_turn_seed(workspace_id)?;
+        let refreshed_context = {
             let state = self.lock_state();
             state.workspace(workspace_id)?;
-        }
+            match seed_context {
+                Some(ctx_input) => Some(Self::resolve_turn_context_locked(
+                    &state,
+                    ctx_input,
+                    workspace_id,
+                    &prompt,
+                    Some(style),
+                    None,
+                )?),
+                None => None,
+            }
+        };
         self.tutor
-            .retry_turn(workspace_id)
+            .retry_turn(workspace_id, refreshed_context)
             .map(AppResponse::TutorSession)
     }
 

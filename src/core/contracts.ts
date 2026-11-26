@@ -623,6 +623,67 @@ export interface TutorFileChange {
   createdAt: string;
 }
 
+export const MAX_CONTEXT_INPUT_TOKENS = 6_000;
+
+export type ContextDimension =
+  | "chapter"
+  | "activeFile"
+  | "terminalErrors"
+  | "verification";
+
+export type ContextQuoteSource =
+  | "manual"
+  | "editor"
+  | "terminal"
+  | "checkFailure"
+  | "verificationPanel"
+  | "reflection"
+  | "portConflict";
+
+export interface ContextQuote {
+  source: ContextQuoteSource;
+  filePath?: string | null;
+  startLine?: number | null;
+  endLine?: number | null;
+  label?: string | null;
+  text: string;
+}
+
+export interface ContextSnapshotInput {
+  workspaceId: number;
+  chapterId?: string | null;
+  activeFilePath?: string | null;
+  activeFileText?: string | null;
+  activeFileStartLine?: number | null;
+  activeFileEndLine?: number | null;
+  quote?: ContextQuote | null;
+  excludedDimensions?: ContextDimension[];
+  prompt?: string | null;
+  teachingStyle?: TeachingStyle | null;
+}
+
+export interface ContextChip {
+  dimension: ContextDimension;
+  label: string;
+  detail?: string | null;
+  preview: string;
+  estimatedTokens: number;
+  truncated: boolean;
+}
+
+export interface ContextSnapshot {
+  workspaceId: number;
+  chapterId: string | null;
+  quote: ContextQuote | null;
+  chips: ContextChip[];
+  excludedDimensions: ContextDimension[];
+  estimatedTokens: number;
+  maxTokens: number;
+  truncated: boolean;
+  sensitiveFiltered: boolean;
+  renderedPreamble: string;
+}
+
 export interface TutorMessage {
   id: string;
   turnId: string;
@@ -631,6 +692,8 @@ export interface TutorMessage {
   teachingStyle: TeachingStyle;
   status: TutorMessageStatus;
   error: DomainError | null;
+  quote?: ContextQuote | null;
+  contextDimensions?: ContextDimension[];
   permissions: TutorPermissionRequest[];
   fileChanges: TutorFileChange[];
   createdAt: string;
@@ -678,6 +741,7 @@ export interface SendTutorPrompt {
   prompt: string;
   teachingStyle?: TeachingStyle;
   contextPreamble?: string;
+  context?: ContextSnapshotInput;
 }
 
 export interface RespondTutorPermission {
@@ -776,6 +840,7 @@ export type AppCommand =
   | { type: "installManagedRuntime"; payload: { language: CourseLanguage } }
   | { type: "testTutorHandshake"; payload: TutorHandshakeRequest }
   | { type: "getTutorSession"; payload: WorkspaceTutorRequest }
+  | { type: "buildTutorContext"; payload: ContextSnapshotInput }
   | { type: "sendTutorPrompt"; payload: SendTutorPrompt }
   | { type: "stopTutorTurn"; payload: WorkspaceTutorRequest }
   | { type: "retryTutorTurn"; payload: WorkspaceTutorRequest }
@@ -824,6 +889,7 @@ export type AppResponse =
   | { type: "learningRecord"; payload: Record<string, unknown> }
   | { type: "preflight"; payload: PreflightReport }
   | { type: "tutorHandshake"; payload: TutorHandshakeResult }
+  | { type: "tutorContext"; payload: ContextSnapshot }
   | { type: "tutorSession"; payload: TutorSessionSnapshot }
   | { type: "shutdown"; payload: ShutdownReport };
 

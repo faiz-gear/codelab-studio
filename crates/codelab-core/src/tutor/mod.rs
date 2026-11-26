@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod backend;
+pub(crate) mod context;
 pub mod model;
 pub mod policy;
 
@@ -23,12 +24,20 @@ pub use self::backend::{
     TutorLaunchSpec, TutorTurnInput,
 };
 pub use self::model::{
-    AcpAgentPreset, PermissionPolicy, RespondTutorPermission, SendTutorPrompt, TeachingStyle,
-    TutorFileChange, TutorHandshakeRequest, TutorHandshakeResult, TutorHistory, TutorMessage,
-    TutorMessageStatus, TutorPermissionKind, TutorPermissionRequest, TutorPermissionStatus,
-    TutorRole, TutorSessionSnapshot, TutorSessionStatus, TutorSettings, TutorSettingsPatch,
-    WorkspaceTutorRequest,
+    AcpAgentPreset, ContextChip, ContextDimension, ContextQuote, ContextQuoteSource,
+    ContextSnapshot, ContextSnapshotInput, MAX_CONTEXT_INPUT_TOKENS, PermissionPolicy,
+    RespondTutorPermission, SendTutorPrompt, TeachingStyle, TutorFileChange, TutorHandshakeRequest,
+    TutorHandshakeResult, TutorHistory, TutorMessage, TutorMessageStatus, TutorPermissionKind,
+    TutorPermissionRequest, TutorPermissionStatus, TutorRole, TutorSessionSnapshot,
+    TutorSessionStatus, TutorSettings, TutorSettingsPatch, WorkspaceTutorRequest,
 };
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ResolvedTurnContext {
+    pub preamble: Option<String>,
+    pub quote: Option<ContextQuote>,
+    pub dimensions: Vec<ContextDimension>,
+}
 use self::policy::{PermissionEvaluation, PolicyDecision, evaluate_permission};
 
 pub(crate) struct TutorWorkspaceAttachment {
@@ -59,7 +68,8 @@ struct TutorRuntimeState {
     pending_permissions: HashMap<String, PendingPermissionContext>,
     approved_grants: HashSet<(TutorPermissionKind, String)>,
     watched_writes: Vec<(String, Option<String>)>,
-    last_prompt_context: Option<String>,
+    last_turn_context: Option<ResolvedTurnContext>,
+    last_context_input: Option<ContextSnapshotInput>,
     next_seq: u64,
 }
 
@@ -94,7 +104,8 @@ impl TutorManager {
                 pending_permissions: HashMap::new(),
                 approved_grants: HashSet::new(),
                 watched_writes: Vec::new(),
-                last_prompt_context: None,
+                last_turn_context: None,
+                last_context_input: None,
                 next_seq: 1,
             })),
         }
@@ -130,7 +141,8 @@ impl TutorManager {
             state.status = TutorSessionStatus::Idle;
             state.active_turn_id = None;
             state.last_error = None;
-            state.last_prompt_context = None;
+            state.last_turn_context = None;
+            state.last_context_input = None;
             let snapshot = state.snapshot_opt();
             (old, snapshot)
         };
@@ -151,7 +163,8 @@ impl TutorManager {
             state.status = TutorSessionStatus::Idle;
             state.active_turn_id = None;
             state.last_error = None;
-            state.last_prompt_context = None;
+            state.last_turn_context = None;
+            state.last_context_input = None;
             old
         };
         if let Some(session) = old_session {
@@ -211,11 +224,17 @@ impl TutorManager {
     pub(crate) fn send_prompt(
         self: &Arc<Self>,
         request: SendTutorPrompt,
+        resolved_context: Option<ResolvedTurnContext>,
     ) -> Result<TutorSessionSnapshot, DomainError> {
         let prompt_text = request.prompt.trim().to_owned();
         if prompt_text.is_empty() {
             return Err(DomainError::new(ErrorCode::TutorPromptEmpty));
         }
+        let turn_context = resolved_context.unwrap_or(ResolvedTurnContext {
+            preamble: request.context_preamble.clone(),
+            quote: None,
+            dimensions: Vec::new(),
+        });
 
         let (needs_spawn, launch_spec, existing_session, turn_input, generation, initial_snapshot) = {
             let mut state = self.lock();
@@ -247,6 +266,8 @@ impl TutorManager {
                     teaching_style: style,
                     status: TutorMessageStatus::Completed,
                     error: None,
+                    quote: turn_context.quote.clone(),
+                    context_dimensions: turn_context.dimensions.clone(),
                     permissions: Vec::new(),
                     file_changes: Vec::new(),
                     created_at: now.clone(),
@@ -259,6 +280,8 @@ impl TutorManager {
                     teaching_style: style,
                     status: TutorMessageStatus::Streaming,
                     error: None,
+                    quote: None,
+                    context_dimensions: Vec::new(),
                     permissions: Vec::new(),
                     file_changes: Vec::new(),
                     created_at: now,
@@ -271,7 +294,8 @@ impl TutorManager {
             state.last_error = None;
             state.approved_grants.clear();
             state.watched_writes.clear();
-            state.last_prompt_context = request.context_preamble.clone();
+            state.last_turn_context = Some(turn_context.clone());
+            state.last_context_input = request.context.clone();
 
             let existing = state.session.clone();
             let needs_spawn = existing.is_none();
@@ -289,7 +313,7 @@ impl TutorManager {
                 turn_id,
                 prompt: prompt_text,
                 teaching_style: style,
-                context_preamble: request.context_preamble,
+                context_preamble: turn_context.preamble,
             };
             let generation = state.session_generation;
             let snapshot = state.snapshot_opt().expect("attached workspace");
@@ -395,11 +419,43 @@ impl TutorManager {
         Ok(snapshot)
     }
 
+    pub(crate) fn retry_turn_seed(
+        &self,
+        workspace_id: u64,
+    ) -> Result<(String, TeachingStyle, Option<ContextSnapshotInput>), DomainError> {
+        let state = self.lock();
+        state.require_workspace(workspace_id)?;
+        if state.active_turn_id.is_some() {
+            return Err(DomainError::new(ErrorCode::TutorBusy));
+        }
+        let ws = state.workspace.as_ref().expect("checked workspace");
+        let last_user = ws
+            .history
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == TutorRole::User)
+            .ok_or_else(|| DomainError::new(ErrorCode::TutorPromptEmpty))?;
+        let context_input = state.last_context_input.clone().or_else(|| {
+            last_user.quote.as_ref().map(|quote| ContextSnapshotInput {
+                workspace_id,
+                quote: Some(quote.clone()),
+                ..Default::default()
+            })
+        });
+        Ok((
+            last_user.content.clone(),
+            state.settings.teaching_style,
+            context_input,
+        ))
+    }
+
     pub(crate) fn retry_turn(
         self: &Arc<Self>,
         workspace_id: u64,
+        refreshed_context: Option<(ContextSnapshotInput, ResolvedTurnContext)>,
     ) -> Result<TutorSessionSnapshot, DomainError> {
-        let (prompt, context_preamble, teaching_style) = {
+        let (prompt, teaching_style, fallback_context) = {
             let state = self.lock();
             state.require_workspace(workspace_id)?;
             if state.active_turn_id.is_some() {
@@ -415,17 +471,26 @@ impl TutorManager {
                 .ok_or_else(|| DomainError::new(ErrorCode::TutorPromptEmpty))?;
             (
                 last_user.content.clone(),
-                state.last_prompt_context.clone(),
-                Some(state.settings.teaching_style),
+                state.settings.teaching_style,
+                state.last_turn_context.clone().unwrap_or_default(),
             )
         };
 
-        self.send_prompt(SendTutorPrompt {
-            workspace_id,
-            prompt,
-            teaching_style,
-            context_preamble,
-        })
+        let (context_input, resolved_context) = match refreshed_context {
+            Some((input, resolved)) => (Some(input), resolved),
+            None => (None, fallback_context),
+        };
+
+        self.send_prompt(
+            SendTutorPrompt {
+                workspace_id,
+                prompt,
+                teaching_style: Some(teaching_style),
+                context_preamble: resolved_context.preamble.clone(),
+                context: context_input,
+            },
+            Some(resolved_context),
+        )
     }
 
     pub(crate) fn respond_permission(
@@ -570,7 +635,8 @@ impl TutorManager {
             state.status = TutorSessionStatus::Idle;
             state.active_turn_id = None;
             state.last_error = None;
-            state.last_prompt_context = None;
+            state.last_turn_context = None;
+            state.last_context_input = None;
             let snapshot = state.snapshot_opt().expect("attached workspace");
             (old, snapshot)
         };

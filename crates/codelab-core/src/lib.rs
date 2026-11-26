@@ -47,11 +47,13 @@ pub use runtime::{
 };
 pub use tutor::{
     AcpAgentPreset, AcpStdioBackend, BackendEvent, BackendEventSink, BackendPermissionPrompt,
-    PermissionPolicy, RespondTutorPermission, SendTutorPrompt, TeachingStyle, TutorBackend,
-    TutorBackendSession, TutorFileChange, TutorHandshakeRequest, TutorHandshakeResult,
-    TutorHistory, TutorLaunchSpec, TutorMessage, TutorMessageStatus, TutorPermissionKind,
-    TutorPermissionRequest, TutorPermissionStatus, TutorRole, TutorSessionSnapshot,
-    TutorSessionStatus, TutorSettings, TutorSettingsPatch, TutorTurnInput, WorkspaceTutorRequest,
+    ContextChip, ContextDimension, ContextQuote, ContextQuoteSource, ContextSnapshot,
+    ContextSnapshotInput, MAX_CONTEXT_INPUT_TOKENS, PermissionPolicy, RespondTutorPermission,
+    SendTutorPrompt, TeachingStyle, TutorBackend, TutorBackendSession, TutorFileChange,
+    TutorHandshakeRequest, TutorHandshakeResult, TutorHistory, TutorLaunchSpec, TutorMessage,
+    TutorMessageStatus, TutorPermissionKind, TutorPermissionRequest, TutorPermissionStatus,
+    TutorRole, TutorSessionSnapshot, TutorSessionStatus, TutorSettings, TutorSettingsPatch,
+    TutorTurnInput, WorkspaceTutorRequest,
 };
 pub use workspace::{
     ExternalIde, MAX_WORKSPACE_TEXT_BYTES, WorkspaceComparison, WorkspaceEntry, WorkspaceEntryKind,

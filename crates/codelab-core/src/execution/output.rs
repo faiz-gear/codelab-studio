@@ -8,6 +8,7 @@ const SCROLLBACK_LINES: usize = 5_000;
 const BUFFER_BYTES: usize = 4 * 1024 * 1024;
 const CHUNK_BYTES: usize = 128 * 1024;
 const ERROR_LINES: usize = 200;
+const ERROR_CONTINUATION_LINES: u8 = 8;
 const MAX_LINE_BYTES: usize = 8 * 1024;
 
 #[derive(Default)]
@@ -16,6 +17,7 @@ pub(super) struct Capture {
     end: u64,
     newlines: VecDeque<u64>,
     line: Vec<u8>,
+    error_follow_lines: u8,
     pub port_conflict: bool,
     pub observed_port: Option<u16>,
 }
@@ -72,7 +74,7 @@ impl Capture {
         {
             self.observed_port = reported_port(&lower).or(self.observed_port);
         }
-        if conflict
+        let is_error_header = conflict
             || [
                 "error",
                 "failed",
@@ -80,13 +82,22 @@ impl Capture {
                 "panic",
                 "fatal",
                 "traceback",
+                "goroutine ",
+                "--- fail:",
+                "undefined:",
             ]
             .iter()
             .any(|marker| lower.contains(marker))
-        {
-            errors.push_back(text.into_owned());
-            if errors.len() > ERROR_LINES {
-                errors.pop_front();
+            || is_diagnostic_or_frame(&text, &lower);
+        if is_error_header {
+            self.error_follow_lines = ERROR_CONTINUATION_LINES;
+            push_error_line(errors, text.into_owned());
+        } else if self.error_follow_lines > 0 {
+            if text.trim().is_empty() {
+                self.error_follow_lines = 0;
+            } else {
+                self.error_follow_lines -= 1;
+                push_error_line(errors, text.into_owned());
             }
         }
     }
@@ -109,6 +120,31 @@ impl Capture {
             more: cursor < self.end,
         }
     }
+}
+
+fn push_error_line(errors: &mut VecDeque<String>, line: String) {
+    errors.push_back(line);
+    if errors.len() > ERROR_LINES {
+        errors.pop_front();
+    }
+}
+
+fn is_diagnostic_or_frame(text: &str, lower: &str) -> bool {
+    let trimmed = lower.trim_start();
+    trimmed.starts_with("at ")
+        || trimmed.starts_with("file \"")
+        || trimmed.starts_with("caused by:")
+        || (text.starts_with('\t') && text.contains(':'))
+        || [".go:", ".ts:", ".tsx:", ".js:", ".py:", ".java:"]
+            .iter()
+            .any(|ext| has_line_number_after(lower, ext))
+}
+
+fn has_line_number_after(lower: &str, ext: &str) -> bool {
+    lower
+        .split(ext)
+        .skip(1)
+        .any(|rest| rest.as_bytes().first().is_some_and(u8::is_ascii_digit))
 }
 
 fn reported_port(line: &str) -> Option<u16> {

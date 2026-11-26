@@ -4,9 +4,15 @@ import {
   CoreCommandError,
   DEFAULT_SETTINGS,
   DEFAULT_TUTOR_SETTINGS,
+  MAX_CONTEXT_INPUT_TOKENS,
   type AppCommand,
   type AppEvent,
   type AppResponse,
+  type ContextChip,
+  type ContextDimension,
+  type ContextQuote,
+  type ContextSnapshot,
+  type ContextSnapshotInput,
   type CourseSummary,
   type DomainError,
   type GlobalSettings,
@@ -666,6 +672,178 @@ export class FakeCoreClient implements CoreClient {
     this.tutorHandshakeOverride = result;
   }
 
+  private estimateTokens(text: string): number {
+    let ascii = 0;
+    let nonAscii = 0;
+    for (const ch of text) {
+      if ((ch.codePointAt(0) ?? 0) <= 0x7f) ascii += 1;
+      else nonAscii += 1;
+    }
+    return nonAscii + Math.ceil(ascii / 4);
+  }
+
+  private isSensitivePath(rawPath: string): boolean {
+    const parts = rawPath.replaceAll("\\", "/").split("/").filter(Boolean);
+    return parts.some((part) => {
+      const lower = part.toLowerCase();
+      return (
+        lower === ".codelab" ||
+        lower === ".env" ||
+        lower.startsWith(".env.") ||
+        lower.includes("secret") ||
+        lower.includes("key")
+      );
+    });
+  }
+
+  private stripHtml(html: string): string {
+    return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  private buildTutorContextSnapshot(input: ContextSnapshotInput): ContextSnapshot {
+    const root = this.workspaceRoot(input.workspaceId);
+    const course = this.activeCourse();
+    const excluded = new Set<ContextDimension>(input.excludedDimensions ?? []);
+    let sensitiveFiltered = false;
+
+    let quote: ContextQuote | null = input.quote?.text.trim()
+      ? { ...input.quote, text: input.quote.text.trim() }
+      : null;
+    if (quote?.filePath && this.isSensitivePath(quote.filePath)) {
+      sensitiveFiltered = true;
+      quote = null;
+    }
+
+    const chapter =
+      course?.chapters.find((c) => c.chapterId === input.chapterId) ??
+      course?.chapters.find((c) => c.kind === "exercise") ??
+      course?.chapters[0] ??
+      null;
+
+    const chips: ContextChip[] = [];
+    const sections: string[] = [];
+
+    if (quote) {
+      sections.push(`### User Selection (source: ${quote.source})\n${quote.text}`);
+    }
+
+    if (!excluded.has("terminalErrors") && this.terminalErrors.length > 0) {
+      const lines = this.terminalErrors.slice(-200);
+      const preview = `### Terminal Error Tail (latest ${lines.length} lines)\n${lines.join("\n")}`;
+      sections.push(preview);
+      chips.push({
+        dimension: "terminalErrors",
+        label: String(lines.length),
+        detail: null,
+        preview,
+        estimatedTokens: this.estimateTokens(preview),
+        truncated: false,
+      });
+    }
+
+    if (!excluded.has("verification") && chapter) {
+      const specs = chapter.threeStep?.step3Checks ?? [];
+      const results = this.progress?.chapters[chapter.chapterId]?.lastCheckResults ?? [];
+      if (specs.length > 0 || results.length > 0) {
+        const passed = results.filter((r) => r.status === "passed").length;
+        const total = results.length || specs.length;
+        const lines =
+          results.length > 0
+            ? results.map((r) => {
+                const title = specs.find((s) => s.id === r.checkId)?.title ?? r.checkId;
+                const diffText = r.diffs
+                  .map((d) => `  - diff (${d.label}): expected \`${d.expected}\` | actual \`${d.actual}\``)
+                  .join("\n");
+                return `- [${r.status}] ${title} (${r.durationMs}ms)${diffText ? `\n${diffText}` : ""}`;
+              })
+            : specs.map((s) => `- [pending] ${s.title}`);
+        const preview = `### Verification Status (chapter: ${chapter.chapterId})\n${lines.join("\n")}`;
+        sections.push(preview);
+        chips.push({
+          dimension: "verification",
+          label: `${passed}/${total}`,
+          detail: this.progress?.chapters[chapter.chapterId]?.completionState ?? "not_started",
+          preview,
+          estimatedTokens: this.estimateTokens(preview),
+          truncated: false,
+        });
+      }
+    }
+
+    if (!excluded.has("activeFile") && input.activeFilePath?.trim()) {
+      const filePath = input.activeFilePath.trim();
+      if (this.isSensitivePath(filePath)) {
+        sensitiveFiltered = true;
+      } else {
+        const disk = this.files(root).get(filePath);
+        const rawText = input.activeFileText ?? (disk?.kind === "text" ? disk.text : null);
+        if (rawText && rawText.trim().length > 0) {
+          const allLines = rawText.split("\n");
+          const start = Math.max(1, (input.activeFileStartLine ?? 1) - 40);
+          const end = Math.min(allLines.length, (input.activeFileEndLine ?? Math.min(allLines.length, 120)) + 40);
+          const body = allLines
+            .slice(start - 1, end)
+            .map((line, idx) => `${String(start + idx).padStart(4, " ")} | ${line}`)
+            .join("\n");
+          const preview = `### Active File Snippet (${filePath}, L${start}-L${end})\n${body}`;
+          sections.push(preview);
+          chips.push({
+            dimension: "activeFile",
+            label: filePath,
+            detail: `L${start}-L${end}`,
+            preview,
+            estimatedTokens: this.estimateTokens(preview),
+            truncated: false,
+          });
+        }
+      }
+    }
+
+    if (!excluded.has("chapter") && chapter) {
+      const summary = this.stripHtml(
+        [chapter.summaryHtml, chapter.threeStep?.step2Html, chapter.reflectionsHtml]
+          .filter(Boolean)
+          .join(" ")
+      );
+      const preview = `### Current Chapter (${chapter.chapterId}: ${chapter.title})\n${summary}`;
+      sections.push(preview);
+      chips.push({
+        dimension: "chapter",
+        label: chapter.title,
+        detail: chapter.chapterId,
+        preview,
+        estimatedTokens: this.estimateTokens(preview),
+        truncated: false,
+      });
+    }
+
+    // Keep chips in canonical 4D order: Chapter, ActiveFile, TerminalErrors, Verification.
+    const order: ContextDimension[] = ["chapter", "activeFile", "terminalErrors", "verification"];
+    chips.sort((a, b) => order.indexOf(a.dimension) - order.indexOf(b.dimension));
+
+    const renderedPreamble =
+      sections.length > 0 ? `[Context Snapshot]\n\n${sections.join("\n\n")}` : "";
+    const styleTokens = 32;
+    const promptTokens = this.estimateTokens(input.prompt ?? "");
+    const estimatedTokens = Math.min(
+      MAX_CONTEXT_INPUT_TOKENS,
+      styleTokens + promptTokens + this.estimateTokens(renderedPreamble)
+    );
+
+    return {
+      workspaceId: input.workspaceId,
+      chapterId: chapter?.chapterId ?? null,
+      quote,
+      chips,
+      excludedDimensions: [...excluded],
+      estimatedTokens,
+      maxTokens: MAX_CONTEXT_INPUT_TOKENS,
+      truncated: chips.some((c) => c.truncated),
+      sensitiveFiltered,
+      renderedPreamble,
+    };
+  }
+
   private ensureTutorSession(workspaceId: number): TutorSessionSnapshot {
     this.workspaceRoot(workspaceId);
     const existing = this.tutorSessions.get(workspaceId);
@@ -1230,6 +1408,12 @@ export class FakeCoreClient implements CoreClient {
           payload: this.ensureTutorSession(command.payload.workspaceId),
         };
       }
+      case "buildTutorContext": {
+        return {
+          type: "tutorContext",
+          payload: this.buildTutorContextSnapshot(command.payload),
+        };
+      }
       case "sendTutorPrompt": {
         const prompt = command.payload.prompt.trim();
         if (!prompt) throw new CoreCommandError({ code: "TUTOR_PROMPT_EMPTY" });
@@ -1237,6 +1421,14 @@ export class FakeCoreClient implements CoreClient {
         if (session.activeTurnId) throw new CoreCommandError({ code: "TUTOR_BUSY" });
         const turnId = `turn-${this.tutorSeq++}`;
         const style = command.payload.teachingStyle ?? this.settings.tutor.teachingStyle;
+        const resolvedContext = command.payload.context
+          ? this.buildTutorContextSnapshot({
+              ...command.payload.context,
+              workspaceId: command.payload.workspaceId,
+              prompt,
+              teachingStyle: style,
+            })
+          : null;
         const now = new Date().toISOString();
         const userMsg: TutorMessage = {
           id: `msg-${this.tutorSeq++}`,
@@ -1246,6 +1438,8 @@ export class FakeCoreClient implements CoreClient {
           teachingStyle: style,
           status: "completed",
           error: null,
+          quote: resolvedContext?.quote ?? null,
+          contextDimensions: resolvedContext?.chips.map((c) => c.dimension) ?? [],
           permissions: [],
           fileChanges: [],
           createdAt: now,
