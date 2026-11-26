@@ -2,6 +2,8 @@ import type {
   AccentPreset,
   AcpAgentPreset,
   CheckKind,
+  ContextDimension,
+  ContextQuoteSource,
   CourseLanguage,
   ErrorCode,
   PermissionPolicy,
@@ -375,6 +377,46 @@ export interface Messages {
     diffAfter: string;
     openInEditor: string;
     newFileBefore: string;
+    selection: {
+      ariaLabel: string;
+      explainConcept: string;
+      explainCode: string;
+      checkIssues: string;
+      diagnoseError: string;
+      ask: string;
+    };
+    quickPrompts: {
+      explainConcept: string;
+      explainCode: string;
+      checkIssues: string;
+      diagnoseError: string;
+      checkFailure: string;
+      verificationPanel: string;
+      reflection: string;
+      portConflict: string;
+    };
+    context: {
+      quoteCardLabel: string;
+      dismissQuote: string;
+      sources: Record<ContextQuoteSource, string>;
+      chipsGroupLabel: string;
+      dimensions: Record<ContextDimension, string>;
+      terminalErrorsChip: string;
+      verificationChip: string;
+      removeChip: string;
+      previewChip: string;
+      closePreview: string;
+      restoreAll: string;
+      tokenBudget: string;
+      trimmedBadge: string;
+      trimmedChipHint: string;
+      trimmedEmptyPreview: string;
+      sensitiveFilteredBadge: string;
+      askAiAction: string;
+      askAiReflection: string;
+      askAiCheckFailure: string;
+      askAiVerificationPanel: string;
+    };
   };
   stores: Record<StoreKind, string>;
   errors: Record<ErrorCode, string>;
@@ -823,6 +865,59 @@ export const zhCN: Messages = {
     diffAfter: "修改后",
     openInEditor: "在编辑器中打开",
     newFileBefore: "（新文件）",
+    selection: {
+      ariaLabel: "划词快捷操作",
+      explainConcept: "解释概念",
+      explainCode: "解释代码",
+      checkIssues: "查问题",
+      diagnoseError: "诊断报错",
+      ask: "提问",
+    },
+    quickPrompts: {
+      explainConcept: "请解释这段概念，并结合当前章节说明它在实战中的作用。",
+      explainCode: "请解释这段代码的作用与关键逻辑。",
+      checkIssues: "请帮我检查这段代码的潜在问题或边界情况。",
+      diagnoseError: "请帮我诊断这个报错的原因并给出排查方向。",
+      checkFailure: "请帮我分析这条验收失败的原因与修复思路。",
+      verificationPanel: "请结合当前验收结果帮我定位失败原因。",
+      reflection: "我想和你聊聊这道课后思考题，请引导我深入思考。",
+      portConflict: "终端提示本地端口冲突，请帮我排查占用原因与解决步骤。",
+    },
+    context: {
+      quoteCardLabel: "引用上下文",
+      dismissQuote: "移除引用卡片",
+      sources: {
+        manual: "手册选区",
+        editor: "代码选区",
+        terminal: "终端选区",
+        checkFailure: "验收失败项",
+        verificationPanel: "验收结果",
+        reflection: "课后思考题",
+        portConflict: "端口冲突",
+      },
+      chipsGroupLabel: "本轮 Context Snapshot 上下文",
+      dimensions: {
+        chapter: "当前章节",
+        activeFile: "活跃文件",
+        terminalErrors: "终端报错",
+        verification: "验收状态",
+      },
+      terminalErrorsChip: "终端报错（{count} 行）",
+      verificationChip: "验收 {summary}",
+      removeChip: "移除 {name} 上下文",
+      previewChip: "预览 {name} 上下文",
+      closePreview: "关闭上下文预览",
+      restoreAll: "恢复默认上下文",
+      tokenBudget: "~{used} / {max} tok",
+      trimmedBadge: "已按 6k 预算裁剪",
+      trimmedChipHint: "已按 6,000 input tokens 优先级预算裁剪",
+      trimmedEmptyPreview: "为保障高优先级选区与最新报错尾在 6,000 token 预算内完整送出，本维度内容已在本轮省略。",
+      sensitiveFilteredBadge: "已屏蔽敏感文件",
+      askAiAction: "问 AI",
+      askAiReflection: "问 AI · 聊聊思考题",
+      askAiCheckFailure: "问 AI 排查 {title}",
+      askAiVerificationPanel: "问 AI 分析验收结果",
+    },
   },
   stores: {
     workspace: "Workspace 绑定",

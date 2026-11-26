@@ -6,12 +6,14 @@ use std::time::{Duration, Instant};
 
 use codelab_core::{
     AcpAgentPreset, App, AppCommand, AppConfig, AppEvent, AppResponse, BackendEvent,
-    BackendEventSink, BackendPermissionPrompt, DomainError, ErrorCode, OpenCourseRequest,
-    PermissionPolicy, RespondTutorPermission, SendTutorPrompt, StoreKind, TeachingStyle,
-    TrustSource, TrustSourceKind, TutorBackend, TutorBackendSession, TutorHandshakeRequest,
-    TutorHandshakeResult, TutorLaunchSpec, TutorMessageStatus, TutorPermissionKind,
-    TutorPermissionStatus, TutorRole, TutorSessionSnapshot, TutorSessionStatus, TutorSettingsPatch,
-    TutorTurnInput, UpdateSettingsPatch, WorkspaceTutorRequest,
+    BackendEventSink, BackendPermissionPrompt, ContextDimension, ContextQuote, ContextQuoteSource,
+    ContextSnapshotInput, DomainError, ErrorCode, ExerciseTarget, MAX_CONTEXT_INPUT_TOKENS,
+    OpenCourseRequest, PermissionPolicy, RespondTutorPermission, RunChecks, RunCommandBlock,
+    SendTutorPrompt, StoreKind, TeachingStyle, TerminalRead, TrustSource, TrustSourceKind,
+    TutorBackend, TutorBackendSession, TutorHandshakeRequest, TutorHandshakeResult,
+    TutorLaunchSpec, TutorMessageStatus, TutorPermissionKind, TutorPermissionStatus, TutorRole,
+    TutorSessionSnapshot, TutorSessionStatus, TutorSettingsPatch, TutorTurnInput,
+    UpdateSettingsPatch, WorkspaceTutorRequest,
 };
 use tempfile::TempDir;
 
@@ -415,6 +417,7 @@ fn untrusted_course_never_spawns_acp_process_and_blocks_handshake_and_session() 
             prompt: "help".into(),
             teaching_style: None,
             context_preamble: None,
+            context: None,
         }))
         .unwrap_err();
     assert_eq!(prompt_err.code, ErrorCode::CourseUntrusted);
@@ -478,6 +481,7 @@ fn lazy_start_handshake_workspace_reuse_style_switch_clear_and_atomic_history() 
         prompt: "first question".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let after_first = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -503,6 +507,7 @@ fn lazy_start_handshake_workspace_reuse_style_switch_clear_and_atomic_history() 
         prompt: "second question".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let after_second = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -549,6 +554,7 @@ fn lazy_start_handshake_workspace_reuse_style_switch_clear_and_atomic_history() 
         prompt: "before clear".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let before_clear = wait_for_snapshot(&app2, ws2, Duration::from_secs(5), |s| {
@@ -577,6 +583,7 @@ fn lazy_start_handshake_workspace_reuse_style_switch_clear_and_atomic_history() 
         prompt: "after clear".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let after_clear = wait_for_snapshot(&app2, ws2, Duration::from_secs(5), |s| {
@@ -656,6 +663,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: "CMD:READ_SAFE".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let snap = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -680,6 +688,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
             prompt: format!("CMD:READ_SENSITIVE:{target}"),
             teaching_style: None,
             context_preamble: None,
+            context: None,
         }))
         .unwrap();
         let snap = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -701,6 +710,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: format!("CMD:READ_OUTSIDE:{outside_target}"),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let awaiting = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -735,6 +745,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: "CMD:WRITE_FS".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let awaiting_write = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -787,6 +798,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: "CMD:WRITE_DIRECT".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let awaiting_direct = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -816,6 +828,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: "CMD:EXEC:rm -rf /tmp/danger".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let awaiting_risk = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -839,6 +852,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: "CMD:EXEC:go test ./...".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let awaiting_safe_cmd = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -875,6 +889,7 @@ fn permission_policy_matrix_write_diff_and_workspace_change_events() {
         prompt: "CMD:READ_SAFE".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let awaiting_strict = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -932,6 +947,7 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
         prompt: "CMD:SLOW".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -966,6 +982,7 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
         prompt: "CMD:CRASH".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let crashed = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -987,6 +1004,7 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
         prompt: "recover now".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let recovered = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -1036,6 +1054,7 @@ fn streaming_stop_generation_crash_recovery_and_process_tree_cleanup() {
         prompt: "alive before shutdown".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     wait_for_snapshot(&app, ws3.id, Duration::from_secs(5), |s| {
@@ -1224,6 +1243,7 @@ fn in_memory_tutor_backend_adapter_seam_supports_retry_and_trust_revocation_clea
         prompt: "explain pointer".into(),
         teaching_style: Some(TeachingStyle::Socratic),
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let AppResponse::TutorSession(after_fail) = app
@@ -1296,6 +1316,7 @@ fn permission_policy_handles_key_named_ancestors_multi_location_allow_once_and_m
         prompt: "CMD:ALLOW_ALWAYS_FIRST".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let snap = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -1313,6 +1334,7 @@ fn permission_policy_handles_key_named_ancestors_multi_location_allow_once_and_m
         prompt: "CMD:MULTI_LOC_SENSITIVE".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     let snap_multi = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -1330,6 +1352,7 @@ fn permission_policy_handles_key_named_ancestors_multi_location_allow_once_and_m
         prompt: "CMD:SLOW".into(),
         teaching_style: None,
         context_preamble: None,
+        context: None,
     }))
     .unwrap();
     wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
@@ -1358,4 +1381,811 @@ fn permission_policy_handles_key_named_ancestors_multi_location_allow_once_and_m
         after_switch.messages.last().unwrap().status,
         TutorMessageStatus::Cancelled
     );
+}
+
+fn read_acp_prompt_logs(log_path: &Path) -> Vec<serde_json::Value> {
+    fs::read_to_string(log_path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|entry| entry.get("method").and_then(|m| m.as_str()) == Some("session/prompt"))
+        .collect()
+}
+
+fn wait_for_terminal_errors(app: &App, workspace_id: u64, min_lines: usize) -> Vec<String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let AppResponse::Terminals(updates) = app
+            .execute(AppCommand::ReadTerminals(TerminalRead {
+                workspace_id,
+                terminal_id: None,
+                cursor: 0,
+                include_recent_errors: Some(true),
+            }))
+            .unwrap()
+        else {
+            panic!("expected Terminals");
+        };
+        if updates.recent_errors.len() >= min_lines
+            && updates.terminals.iter().all(|term| !term.running)
+        {
+            return updates.recent_errors;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {min_lines} terminal errors; got {}",
+            updates.recent_errors.len()
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn wait_for_verification_done(app: &App, workspace_id: u64) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let AppResponse::Progress(progress) = app
+            .execute(AppCommand::GetProgress(
+                codelab_core::WorkspaceTerminalRequest { workspace_id },
+            ))
+            .unwrap()
+        else {
+            panic!("expected Progress");
+        };
+        if progress.running_chapter_id.is_none()
+            && progress
+                .chapters
+                .values()
+                .any(|ch| !ch.last_check_results.is_empty())
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for verification completion"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn create_context_test_pack(
+    dir: &Path,
+    chapter_body: &str,
+    error_script: &str,
+    check_command: &str,
+) -> PathBuf {
+    let pack = dir.join("ctx-pack");
+    fs::create_dir_all(pack.join("starter")).unwrap();
+    fs::write(
+        pack.join("codelab.json"),
+        serde_json::json!({
+            "schemaVersion": "1.0",
+            "courseId": "ctx-test-pack",
+            "title": "Context Snapshot Test Pack",
+            "description": "Tests 4D Context Snapshot and 6k truncation",
+            "language": "Go",
+            "entryFile": "COURSE.md",
+            "starterDir": "starter",
+            "checksFile": ".codelab-checks.json"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        pack.join("COURSE.md"),
+        format!(
+            "# Context Snapshot Test Pack\n\n\
+             ## Exercise 1: Build Health Endpoint {{id=ex-1}}\n\n\
+             {chapter_body}\n\n\
+             ```bash\n\
+             {error_script}\n\
+             ```\n\n\
+             ## Exercise 2: Add Task Router {{id=ex-2}}\n\n\
+             Implement POST /tasks handler and return 201 Created with JSON payload.\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        pack.join(".codelab-checks.json"),
+        serde_json::json!({
+            "schemaVersion": "1.0",
+            "chapters": [
+                {
+                    "chapterId": "ex-1",
+                    "checks": [
+                        {
+                            "id": "c1",
+                            "title": "Health endpoint check",
+                            "type": "command_test",
+                            "command": check_command,
+                            "expectExitCode": 0,
+                            "timeoutSec": 5
+                        }
+                    ]
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        pack.join("starter/main.go"),
+        "package main\n\nfunc healthHandler() string {\n\treturn \"broken\"\n}\n",
+    )
+    .unwrap();
+    pack
+}
+
+#[test]
+fn context_snapshot_builds_four_dimensions_and_chip_removal_omits_dimension_from_acp_prompt() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let log_file = temp.path().join("acp-ctx.log");
+    let agent_cmd = format!(
+        "{} \"--log={}\"",
+        node_command(&script),
+        path_str(&log_file)
+    );
+
+    let pack_dir = create_context_test_pack(
+        temp.path(),
+        "CHAPTER_MARKER_HEALTH: Build the GET /healthz handler returning 200 OK.",
+        "printf 'error: bind failed on :8080\\nerror: address already in use\\n'",
+        "printf 'VERIFY_RAW_MARKER: expected status 200 got 500\\n' && exit 1",
+    );
+
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    app.execute(AppCommand::GrantTrust(TrustSource {
+        source_kind: TrustSourceKind::LocalPath,
+        source: path_str(&pack_dir),
+    }))
+    .unwrap();
+    let AppResponse::LoadedCourse(course) = app
+        .execute(AppCommand::OpenCourse(OpenCourseRequest::LocalPack {
+            path: path_str(&pack_dir),
+        }))
+        .unwrap()
+    else {
+        panic!("expected LoadedCourse");
+    };
+    let ex1_cmd_id = course.chapters[0].commands[0].id.clone();
+
+    let ws_root = temp.path().join("work-ctx");
+    fs::create_dir_all(&ws_root).unwrap();
+    let AppResponse::WorkspaceBound(ws) = app
+        .execute(AppCommand::BindWorkspace {
+            path: path_str(&ws_root),
+        })
+        .unwrap()
+    else {
+        panic!("expected WorkspaceBound");
+    };
+    configure_agent(
+        &app,
+        &agent_cmd,
+        PermissionPolicy::GuidedReadonly,
+        TeachingStyle::Socratic,
+    );
+
+    // Trigger real terminal error lines and a real failing verification check.
+    app.execute(AppCommand::RunCommandBlock(RunCommandBlock {
+        workspace_id: ws.id,
+        command_id: ex1_cmd_id,
+        confirmation: None,
+        restart_terminal_id: None,
+        drafts: Vec::new(),
+    }))
+    .unwrap();
+    wait_for_terminal_errors(&app, ws.id, 2);
+
+    app.execute(AppCommand::RunChecks(RunChecks {
+        target: ExerciseTarget {
+            workspace_id: ws.id,
+            chapter_id: "ex-1".into(),
+        },
+        drafts: Vec::new(),
+        confirmation: None,
+    }))
+    .unwrap();
+    wait_for_verification_done(&app, ws.id);
+
+    // 1. Build 4D Context Snapshot with all dimensions included.
+    let quote = ContextQuote {
+        source: ContextQuoteSource::Editor,
+        file_path: Some("main.go".into()),
+        start_line: Some(3),
+        end_line: Some(5),
+        label: None,
+        text: "func healthHandler() string {\n\treturn \"broken\"\n}".into(),
+    };
+    let AppResponse::TutorContext(full_ctx) = app
+        .execute(AppCommand::BuildTutorContext(ContextSnapshotInput {
+            workspace_id: ws.id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some("main.go".into()),
+            active_file_text: None,
+            active_file_start_line: Some(3),
+            active_file_end_line: Some(5),
+            quote: Some(quote.clone()),
+            excluded_dimensions: Vec::new(),
+            prompt: Some("Why is my health check failing?".into()),
+            teaching_style: Some(TeachingStyle::Socratic),
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorContext");
+    };
+
+    assert_eq!(full_ctx.max_tokens, MAX_CONTEXT_INPUT_TOKENS);
+    assert!(full_ctx.estimated_tokens > 0 && full_ctx.estimated_tokens <= 6_000);
+    assert!(!full_ctx.sensitive_filtered);
+    assert_eq!(full_ctx.quote.as_ref(), Some(&quote));
+    let dims: Vec<ContextDimension> = full_ctx.chips.iter().map(|c| c.dimension).collect();
+    assert!(dims.contains(&ContextDimension::Chapter));
+    assert!(dims.contains(&ContextDimension::ActiveFile));
+    assert!(dims.contains(&ContextDimension::TerminalErrors));
+    assert!(dims.contains(&ContextDimension::Verification));
+    assert!(full_ctx.rendered_preamble.contains("CHAPTER_MARKER_HEALTH"));
+    assert!(full_ctx.rendered_preamble.contains("func healthHandler()"));
+    assert!(
+        full_ctx
+            .rendered_preamble
+            .contains("address already in use")
+    );
+    assert!(full_ctx.rendered_preamble.contains("Health endpoint check"));
+
+    // 2. Remove Chapter & TerminalErrors chips and send prompt -> verify ACP prompt excludes both!
+    let excluded = vec![ContextDimension::Chapter, ContextDimension::TerminalErrors];
+    let ctx_without_two = ContextSnapshotInput {
+        workspace_id: ws.id,
+        chapter_id: Some("ex-1".into()),
+        active_file_path: Some("main.go".into()),
+        active_file_text: None,
+        active_file_start_line: Some(3),
+        active_file_end_line: Some(5),
+        quote: Some(quote.clone()),
+        excluded_dimensions: excluded.clone(),
+        prompt: Some("Why is my health check failing?".into()),
+        teaching_style: Some(TeachingStyle::Socratic),
+    };
+    let AppResponse::TutorContext(reduced_ctx) = app
+        .execute(AppCommand::BuildTutorContext(ctx_without_two.clone()))
+        .unwrap()
+    else {
+        panic!("expected TutorContext");
+    };
+    let reduced_dims: Vec<ContextDimension> =
+        reduced_ctx.chips.iter().map(|c| c.dimension).collect();
+    assert!(!reduced_dims.contains(&ContextDimension::Chapter));
+    assert!(!reduced_dims.contains(&ContextDimension::TerminalErrors));
+    assert!(reduced_dims.contains(&ContextDimension::ActiveFile));
+    assert!(reduced_dims.contains(&ContextDimension::Verification));
+    assert!(reduced_ctx.estimated_tokens < full_ctx.estimated_tokens);
+
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id: ws.id,
+        prompt: "Why is my health check failing?".into(),
+        teaching_style: Some(TeachingStyle::Socratic),
+        context_preamble: None,
+        context: Some(ctx_without_two),
+    }))
+    .unwrap();
+    let snap = wait_for_snapshot(&app, ws.id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 2
+    });
+    assert_eq!(snap.messages[0].quote.as_ref(), Some(&quote));
+    assert_eq!(snap.messages[0].context_dimensions, reduced_dims);
+
+    let prompts = read_acp_prompt_logs(&log_file);
+    assert_eq!(prompts.len(), 1);
+    let sent_text = prompts[0]["text"].as_str().unwrap();
+    assert!(sent_text.contains("[Teaching Style: socratic]"));
+    assert!(sent_text.contains("func healthHandler()"));
+    assert!(sent_text.contains("Health endpoint check"));
+    assert!(
+        !sent_text.contains("CHAPTER_MARKER_HEALTH"),
+        "removed Chapter chip must not be sent in ACP prompt"
+    );
+    assert!(
+        !sent_text.contains("address already in use"),
+        "removed TerminalErrors chip must not be sent in ACP prompt"
+    );
+    app.shutdown().unwrap();
+}
+
+#[test]
+fn context_snapshot_filters_sensitive_files_and_symlinks_never_leaking_secrets() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let log_file = temp.path().join("acp-sensitive.log");
+    let agent_cmd = format!(
+        "{} \"--log={}\"",
+        node_command(&script),
+        path_str(&log_file)
+    );
+    let outside_file = temp.path().join("outside-secret.txt");
+    fs::write(&outside_file, "OUTSIDE_LEAK_TOKEN_999").unwrap();
+
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    // Parent directory containing "key" ("mickey") must NOT falsely block legitimate workspace files.
+    let (workspace_id, ws_root) = open_trusted_workspace(&temp, &app, "mickey/work");
+    fs::write(ws_root.join("main.go"), "package main\n// SAFE_CODE_OK\n").unwrap();
+    fs::write(ws_root.join(".env"), "DB_PASS=SUPER_SECRET_ENV_VALUE").unwrap();
+    fs::write(ws_root.join(".env.local"), "LOCAL_TOKEN=SECRET_LOCAL_ENV").unwrap();
+    fs::create_dir_all(ws_root.join("config")).unwrap();
+    fs::write(
+        ws_root.join("config/api_secret.json"),
+        "{\"token\":\"API_SECRET_JSON_VALUE\"}",
+    )
+    .unwrap();
+    fs::write(ws_root.join("private.key"), "BEGIN_PRIVATE_KEY_VALUE").unwrap();
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(ws_root.join(".env"), ws_root.join("innocent.txt")).unwrap();
+        std::os::unix::fs::symlink(&outside_file, ws_root.join("escape.txt")).unwrap();
+    }
+
+    configure_agent(
+        &app,
+        &agent_cmd,
+        PermissionPolicy::GuidedReadonly,
+        TeachingStyle::Direct,
+    );
+
+    // Non-sensitive workspace file under mickey/work MUST be included normally.
+    let AppResponse::TutorContext(safe_ctx) = app
+        .execute(AppCommand::BuildTutorContext(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some("main.go".into()),
+            ..Default::default()
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorContext");
+    };
+    assert!(!safe_ctx.sensitive_filtered);
+    assert!(safe_ctx.rendered_preamble.contains("SAFE_CODE_OK"));
+
+    let sensitive_cases: &[(&str, &str)] = if cfg!(unix) {
+        &[
+            (".env", "SUPER_SECRET_ENV_VALUE"),
+            (".env.local", "SECRET_LOCAL_ENV"),
+            ("config/api_secret.json", "API_SECRET_JSON_VALUE"),
+            ("private.key", "BEGIN_PRIVATE_KEY_VALUE"),
+            ("innocent.txt", "SUPER_SECRET_ENV_VALUE"),
+        ]
+    } else {
+        &[
+            (".env", "SUPER_SECRET_ENV_VALUE"),
+            (".env.local", "SECRET_LOCAL_ENV"),
+            ("config/api_secret.json", "API_SECRET_JSON_VALUE"),
+            ("private.key", "BEGIN_PRIVATE_KEY_VALUE"),
+        ]
+    };
+
+    for (path, secret_val) in sensitive_cases {
+        let input = ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some((*path).into()),
+            active_file_text: Some(format!("DRAFT_{secret_val}")),
+            quote: Some(ContextQuote {
+                source: ContextQuoteSource::Editor,
+                file_path: Some((*path).into()),
+                start_line: Some(1),
+                end_line: Some(1),
+                label: None,
+                text: format!("QUOTE_{secret_val}"),
+            }),
+            ..Default::default()
+        };
+        let AppResponse::TutorContext(ctx) = app
+            .execute(AppCommand::BuildTutorContext(input.clone()))
+            .unwrap()
+        else {
+            panic!("expected TutorContext");
+        };
+        assert!(
+            ctx.sensitive_filtered,
+            "expected sensitive_filtered for {path}"
+        );
+        assert!(
+            ctx.quote.is_none(),
+            "sensitive quote must be stripped for {path}"
+        );
+        assert!(
+            !ctx.chips
+                .iter()
+                .any(|c| c.dimension == ContextDimension::ActiveFile),
+            "sensitive ActiveFile chip must be omitted for {path}"
+        );
+        assert!(
+            !ctx.rendered_preamble.contains(secret_val),
+            "secret leaked in preamble for {path}"
+        );
+    }
+
+    // Outside-workspace path must also never enter context.
+    let outside_target = if cfg!(unix) {
+        "escape.txt".to_owned()
+    } else {
+        path_str(&outside_file)
+    };
+    let AppResponse::TutorContext(outside_ctx) = app
+        .execute(AppCommand::BuildTutorContext(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some(outside_target),
+            active_file_text: Some("OUTSIDE_LEAK_TOKEN_999".into()),
+            ..Default::default()
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorContext");
+    };
+    assert!(
+        !outside_ctx
+            .rendered_preamble
+            .contains("OUTSIDE_LEAK_TOKEN_999")
+    );
+
+    // Sending a prompt with `.env` attached must NOT leak secrets to the ACP agent!
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "Check my config".into(),
+        teaching_style: Some(TeachingStyle::Direct),
+        context_preamble: None,
+        context: Some(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some(".env".into()),
+            active_file_text: Some("DB_PASS=SUPER_SECRET_ENV_VALUE".into()),
+            ..Default::default()
+        }),
+    }))
+    .unwrap();
+    wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 2
+    });
+    let prompts = read_acp_prompt_logs(&log_file);
+    let sent_text = prompts[0]["text"].as_str().unwrap();
+    assert!(!sent_text.contains("SUPER_SECRET_ENV_VALUE"));
+    app.shutdown().unwrap();
+}
+
+#[test]
+fn context_snapshot_enforces_6k_token_budget_protecting_selection_and_latest_error_tail() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let log_file = temp.path().join("acp-budget.log");
+    let agent_cmd = format!(
+        "{} \"--log={}\"",
+        node_command(&script),
+        path_str(&log_file)
+    );
+
+    // Huge chapter (~18,000 ASCII chars -> ~4,500 tokens)
+    let mut huge_chapter = String::from("CHAPTER_HEAD_KEEP ");
+    for i in 0..220 {
+        huge_chapter.push_str(&format!(
+            "Paragraph {i:03}: detailed architectural explanation about HTTP server lifecycle and routing conventions.\n"
+        ));
+    }
+    huge_chapter.push_str("CHAPTER_TAIL_LOW_PRIORITY_DROP");
+
+    // Emit 210 error lines (~26,000 chars -> ~6,500 tokens alone if unpruned!)
+    // Line 1..209 have filler errors; final line 210 is the latest critical tail error.
+    let error_script = "node -e 'for (let i = 1; i <= 209; i++) { console.log(\"error: noisy historic stack frame #\" + String(i).padStart(3, \"0\") + \" \" + \"x\".repeat(110)); } console.log(\"error: LATEST_CRITICAL_TAIL_ERROR_210 address already in use :8080\");'";
+
+    // Failing check with massive raw output (~14,000 chars -> ~3,500 tokens)
+    let check_cmd = "node -e 'for (let i = 0; i < 140; i++) { console.log(\"VERIFY_RAW_NOISE_\" + i + \" \" + \"y\".repeat(80)); } process.exit(1);'";
+
+    let pack_dir = create_context_test_pack(temp.path(), &huge_chapter, error_script, check_cmd);
+
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    app.execute(AppCommand::GrantTrust(TrustSource {
+        source_kind: TrustSourceKind::LocalPath,
+        source: path_str(&pack_dir),
+    }))
+    .unwrap();
+    let AppResponse::LoadedCourse(course) = app
+        .execute(AppCommand::OpenCourse(OpenCourseRequest::LocalPack {
+            path: path_str(&pack_dir),
+        }))
+        .unwrap()
+    else {
+        panic!("expected LoadedCourse");
+    };
+    let ex1_cmd_id = course.chapters[0].commands[0].id.clone();
+
+    let ws_root = temp.path().join("work-budget");
+    fs::create_dir_all(&ws_root).unwrap();
+    let AppResponse::WorkspaceBound(ws) = app
+        .execute(AppCommand::BindWorkspace {
+            path: path_str(&ws_root),
+        })
+        .unwrap()
+    else {
+        panic!("expected WorkspaceBound");
+    };
+
+    // Huge source file (~20,000 ASCII chars -> ~5,000 tokens)
+    let mut huge_code = String::from("package main\n\n");
+    for i in 1..=260 {
+        huge_code.push_str(&format!(
+            "func helperFunc{i:03}() string {{ return \"padding_code_segment_{i:03}_abcdef1234567890\" }}\n"
+        ));
+    }
+    fs::write(ws_root.join("main.go"), &huge_code).unwrap();
+
+    configure_agent(
+        &app,
+        &agent_cmd,
+        PermissionPolicy::GuidedReadonly,
+        TeachingStyle::Direct,
+    );
+
+    // Run terminal error producer & failing check.
+    app.execute(AppCommand::RunCommandBlock(RunCommandBlock {
+        workspace_id: ws.id,
+        command_id: ex1_cmd_id,
+        confirmation: None,
+        restart_terminal_id: None,
+        drafts: Vec::new(),
+    }))
+    .unwrap();
+    wait_for_terminal_errors(&app, ws.id, 180);
+
+    app.execute(AppCommand::RunChecks(RunChecks {
+        target: ExerciseTarget {
+            workspace_id: ws.id,
+            chapter_id: "ex-1".into(),
+        },
+        drafts: Vec::new(),
+        confirmation: None,
+    }))
+    .unwrap();
+    wait_for_verification_done(&app, ws.id);
+
+    let selection_text =
+        "EXACT_USER_SELECTION_KEEP_VERBATIM: func helperFunc130() string { return \"selected\" }";
+    let input = ContextSnapshotInput {
+        workspace_id: ws.id,
+        chapter_id: Some("ex-1".into()),
+        active_file_path: Some("main.go".into()),
+        active_file_text: None,
+        active_file_start_line: Some(130),
+        active_file_end_line: Some(132),
+        quote: Some(ContextQuote {
+            source: ContextQuoteSource::Editor,
+            file_path: Some("main.go".into()),
+            start_line: Some(130),
+            end_line: Some(132),
+            label: None,
+            text: selection_text.into(),
+        }),
+        excluded_dimensions: Vec::new(),
+        prompt: Some("Diagnose why port 8080 failed".into()),
+        teaching_style: Some(TeachingStyle::Direct),
+    };
+
+    let AppResponse::TutorContext(snapshot) = app
+        .execute(AppCommand::BuildTutorContext(input.clone()))
+        .unwrap()
+    else {
+        panic!("expected TutorContext");
+    };
+    assert!(snapshot.truncated, "oversized context must be truncated");
+    assert!(
+        snapshot.estimated_tokens <= MAX_CONTEXT_INPUT_TOKENS,
+        "estimated tokens {} exceeded 6000 budget",
+        snapshot.estimated_tokens
+    );
+
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id: ws.id,
+        prompt: "Diagnose why port 8080 failed".into(),
+        teaching_style: Some(TeachingStyle::Direct),
+        context_preamble: None,
+        context: Some(input),
+    }))
+    .unwrap();
+    wait_for_snapshot(&app, ws.id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 2
+    });
+
+    let prompts = read_acp_prompt_logs(&log_file);
+    assert_eq!(prompts.len(), 1);
+    let sent_text = prompts[0]["text"].as_str().unwrap();
+
+    // Independent size sanity check: 6,000 ASCII tokens ~= 24,000 chars max.
+    assert!(
+        sent_text.chars().count() <= 24_200,
+        "actual ACP prompt exceeded 6k token char ceiling: {} chars",
+        sent_text.chars().count()
+    );
+    // Protected content MUST survive verbatim!
+    assert!(
+        sent_text.contains(selection_text),
+        "user selection must NEVER be truncated"
+    );
+    assert!(
+        sent_text.contains("LATEST_CRITICAL_TAIL_ERROR_210 address already in use :8080"),
+        "latest terminal error tail must NEVER be truncated"
+    );
+    // Lowest priority content must have been truncated first!
+    assert!(
+        !sent_text.contains("CHAPTER_TAIL_LOW_PRIORITY_DROP"),
+        "low-priority chapter tail should be truncated when over 6k budget"
+    );
+    app.shutdown().unwrap();
+}
+
+#[test]
+fn chapter_switch_and_style_switch_reuse_workspace_acp_session_with_fresh_context_snapshot() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let log_file = temp.path().join("acp-reuse.log");
+    let agent_cmd = format!(
+        "{} \"--log={}\"",
+        node_command(&script),
+        path_str(&log_file)
+    );
+
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    let (workspace_id, _ws_root) = open_trusted_workspace(&temp, &app, "work-reuse");
+    configure_agent(
+        &app,
+        &agent_cmd,
+        PermissionPolicy::GuidedReadonly,
+        TeachingStyle::Socratic,
+    );
+
+    // Turn 1: ex-0 + Socratic
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "First turn question".into(),
+        teaching_style: Some(TeachingStyle::Socratic),
+        context_preamble: None,
+        context: Some(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-0".into()),
+            ..Default::default()
+        }),
+    }))
+    .unwrap();
+    let after_first = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 2
+    });
+    let first_sid = after_first.messages[1]
+        .content
+        .split("session=")
+        .nth(1)
+        .unwrap()
+        .to_owned();
+
+    // Switch Chapter to ex-1 AND switch teaching style to Direct -> MUST reuse same ACP session!
+    app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        tutor: Some(TutorSettingsPatch {
+            teaching_style: Some(TeachingStyle::Direct),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+    .unwrap();
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "Second turn on next chapter".into(),
+        teaching_style: Some(TeachingStyle::Direct),
+        context_preamble: None,
+        context: Some(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            ..Default::default()
+        }),
+    }))
+    .unwrap();
+    let after_second = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 4
+    });
+    assert!(after_second.session_reused);
+    assert!(
+        after_second.messages[3]
+            .content
+            .contains(&format!("session={first_sid}")),
+        "switching Chapter and style must reuse Workspace ACP session"
+    );
+
+    let prompts = read_acp_prompt_logs(&log_file);
+    assert_eq!(prompts.len(), 2);
+    let p1 = prompts[0]["text"].as_str().unwrap();
+    let p2 = prompts[1]["text"].as_str().unwrap();
+    assert!(p1.contains("[Teaching Style: socratic]"));
+    assert!(p1.contains("ex-0"));
+    assert!(p2.contains("[Teaching Style: direct]"));
+    assert!(p2.contains("ex-1"));
+    assert_eq!(prompts[0]["sessionId"], prompts[1]["sessionId"]);
+
+    // A large (>120 lines) file that still fits well below 6k tokens must NOT falsely flag truncated.
+    let mut medium_file = String::from("package main\n");
+    for i in 1..=140 {
+        medium_file.push_str(&format!("// line {i}\n"));
+    }
+    fs::write(_ws_root.join("medium.go"), &medium_file).unwrap();
+    let AppResponse::TutorContext(medium_ctx) = app
+        .execute(AppCommand::BuildTutorContext(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some("medium.go".into()),
+            ..Default::default()
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorContext");
+    };
+    assert!(
+        !medium_ctx.truncated,
+        "windowing a file under 6k tokens must not falsely flag 6k budget truncation"
+    );
+
+    // RetryTutorTurn rebuilds a fresh budgeted Context Snapshot with the latest style & file edits.
+    fs::write(
+        _ws_root.join("medium.go"),
+        "package main\n// RETRY_FRESH_EDIT_MARKER\n",
+    )
+    .unwrap();
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "CMD:CRASH".into(),
+        teaching_style: Some(TeachingStyle::Direct),
+        context_preamble: None,
+        context: Some(ContextSnapshotInput {
+            workspace_id,
+            chapter_id: Some("ex-1".into()),
+            active_file_path: Some("medium.go".into()),
+            ..Default::default()
+        }),
+    }))
+    .unwrap();
+    wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| s.can_retry);
+    fs::write(
+        _ws_root.join("medium.go"),
+        "package main\n// RETRY_UPDATED_AFTER_CRASH\n",
+    )
+    .unwrap();
+    app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        tutor: Some(TutorSettingsPatch {
+            teaching_style: Some(TeachingStyle::Socratic),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+    .unwrap();
+    app.execute(AppCommand::RetryTutorTurn(
+        codelab_core::WorkspaceTutorRequest { workspace_id },
+    ))
+    .unwrap();
+    wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.messages.len() == 8 && s.can_retry
+    });
+    let retry_prompt = read_acp_prompt_logs(&log_file).last().unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(retry_prompt.contains("[Teaching Style: socratic]"));
+    assert!(retry_prompt.contains("RETRY_UPDATED_AFTER_CRASH"));
+    app.shutdown().unwrap();
 }

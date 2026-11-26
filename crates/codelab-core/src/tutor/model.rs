@@ -154,6 +154,95 @@ pub struct TutorFileChange {
     pub created_at: String,
 }
 
+pub const MAX_CONTEXT_INPUT_TOKENS: u32 = 6_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ContextDimension {
+    Chapter,
+    ActiveFile,
+    TerminalErrors,
+    Verification,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ContextQuoteSource {
+    Manual,
+    Editor,
+    Terminal,
+    CheckFailure,
+    VerificationPanel,
+    Reflection,
+    PortConflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextQuote {
+    pub source: ContextQuoteSource,
+    #[serde(default)]
+    pub file_path: Option<String>,
+    #[serde(default)]
+    pub start_line: Option<u32>,
+    #[serde(default)]
+    pub end_line: Option<u32>,
+    #[serde(default)]
+    pub label: Option<String>,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextSnapshotInput {
+    pub workspace_id: u64,
+    #[serde(default)]
+    pub chapter_id: Option<String>,
+    #[serde(default)]
+    pub active_file_path: Option<String>,
+    #[serde(default)]
+    pub active_file_text: Option<String>,
+    #[serde(default)]
+    pub active_file_start_line: Option<u32>,
+    #[serde(default)]
+    pub active_file_end_line: Option<u32>,
+    #[serde(default)]
+    pub quote: Option<ContextQuote>,
+    #[serde(default)]
+    pub excluded_dimensions: Vec<ContextDimension>,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub teaching_style: Option<TeachingStyle>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextChip {
+    pub dimension: ContextDimension,
+    pub label: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+    pub preview: String,
+    pub estimated_tokens: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextSnapshot {
+    pub workspace_id: u64,
+    pub chapter_id: Option<String>,
+    pub quote: Option<ContextQuote>,
+    pub chips: Vec<ContextChip>,
+    pub excluded_dimensions: Vec<ContextDimension>,
+    pub estimated_tokens: u32,
+    pub max_tokens: u32,
+    pub truncated: bool,
+    pub sensitive_filtered: bool,
+    pub rendered_preamble: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TutorMessage {
@@ -164,6 +253,10 @@ pub struct TutorMessage {
     pub teaching_style: TeachingStyle,
     pub status: TutorMessageStatus,
     pub error: Option<DomainError>,
+    #[serde(default)]
+    pub quote: Option<ContextQuote>,
+    #[serde(default)]
+    pub context_dimensions: Vec<ContextDimension>,
     #[serde(default)]
     pub permissions: Vec<TutorPermissionRequest>,
     #[serde(default)]
@@ -218,7 +311,7 @@ pub struct TutorHandshakeResult {
     pub agent_version: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendTutorPrompt {
     pub workspace_id: u64,
@@ -227,6 +320,8 @@ pub struct SendTutorPrompt {
     pub teaching_style: Option<TeachingStyle>,
     #[serde(default)]
     pub context_preamble: Option<String>,
+    #[serde(default)]
+    pub context: Option<ContextSnapshotInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

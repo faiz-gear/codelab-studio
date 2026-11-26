@@ -99,6 +99,34 @@ pub(crate) fn evaluate_permission(
     }
 }
 
+pub(crate) struct WorkspacePathCheck {
+    pub inside_workspace: bool,
+    pub sensitive: bool,
+    pub workspace_relative_path: Option<String>,
+}
+
+pub(crate) fn inspect_workspace_path(
+    workspace_files: &WorkspacePaths,
+    raw: &str,
+) -> WorkspacePathCheck {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return WorkspacePathCheck {
+            inside_workspace: false,
+            sensitive: false,
+            workspace_relative_path: None,
+        };
+    }
+    let canonical_root =
+        fs::canonicalize(&workspace_files.root).unwrap_or_else(|_| workspace_files.root.clone());
+    let single = inspect_target_path(workspace_files, &canonical_root, trimmed);
+    WorkspacePathCheck {
+        inside_workspace: single.inside_workspace,
+        sensitive: single.sensitive,
+        workspace_relative_path: single.workspace_relative_path,
+    }
+}
+
 struct TargetInspection {
     inside_workspace: bool,
     sensitive: bool,

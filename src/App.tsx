@@ -649,6 +649,7 @@ export function App({ client }: AppProps) {
             onUpdateSettings={(patch) => void handleUpdateSettings(patch)}
             onOpenRuntimeSettings={(trigger) => openSettingsDialog(trigger, "runtime")}
             onOpenTutorSettings={(trigger) => openSettingsDialog(trigger, "tutor")}
+            onOpenTutor={() => setTutorOpen(true)}
             onCloseTutor={handleCloseTutor}
           />
         ) : (

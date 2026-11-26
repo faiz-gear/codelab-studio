@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import {
   courseSourceLocation,
   type Chapter,
+  type ContextQuote,
   type GlobalSettings,
   type CommandBlock,
   type CourseSourceChangedEvent,
@@ -13,7 +14,19 @@ import {
   type UpdateSettingsPatch,
 } from "../core/contracts";
 import { interpolate, type Messages } from "../i18n";
+import { SelectionAskPill } from "../tutor/SelectionAskPill";
 import { TutorDrawer } from "../tutor/TutorDrawer";
+import {
+  extractDomSelectionWithin,
+  formatCheckFailureQuote,
+  htmlToPlainText,
+  MIN_SELECTION_CHARS,
+  quickPromptForSelectionAction,
+  type ActiveSelection,
+  type EditorCursorContext,
+  type SelectionQuickAction,
+  type TutorAskRequest,
+} from "../tutor/contextRequest";
 import { ChapterOutlineDrawer } from "./ChapterOutlineDrawer";
 import type { CoreClient } from "../core/client";
 import { CommandWorkbench, emptyWorkbench } from "../execution/CommandWorkbench";
@@ -29,6 +42,7 @@ import {
   MenuIcon,
   PanelLeftOpenIcon,
   RefreshIcon,
+  SparklesIcon,
 } from "./Icons";
 
 import { WorkspaceComparisonTrigger } from "../workspace/WorkspaceComparison";
@@ -74,6 +88,7 @@ export interface CourseWorkbenchProps {
   onUpdateSettings?: (patch: UpdateSettingsPatch) => void;
   onOpenRuntimeSettings?: (trigger: HTMLElement) => void;
   onOpenTutorSettings?: (trigger: HTMLElement) => void;
+  onOpenTutor?: () => void;
   onCloseTutor?: () => void;
 }
 
@@ -110,6 +125,7 @@ export function CourseWorkbench({
   onUpdateSettings,
   onOpenRuntimeSettings,
   onOpenTutorSettings,
+  onOpenTutor,
   onCloseTutor,
 }: CourseWorkbenchProps) {
   const verification = useVerification(course.trusted ? client : undefined, session, onExecutionError);
@@ -145,6 +161,96 @@ export function CourseWorkbench({
 
   const wbRef = useRef<HTMLDivElement | null>(null);
   const manualScrollRef = useRef<HTMLDivElement | null>(null);
+  const manualInnerRef = useRef<HTMLDivElement | null>(null);
+  const selectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const askSeqRef = useRef(0);
+  const [selectionState, setSelectionState] = useState<{
+    chapterId: string;
+    selection: ActiveSelection;
+  } | null>(null);
+  const [editorCursor, setEditorCursor] = useState<EditorCursorContext>({
+    filePath: null,
+    startLine: null,
+    endLine: null,
+  });
+  const [pendingAskRequest, setPendingAskRequest] = useState<TutorAskRequest | null>(null);
+  const currentChapterIdRef = useRef(activeChapterId);
+  useEffect(() => {
+    currentChapterIdRef.current = activeChapterId;
+  }, [activeChapterId]);
+
+  const handleSelectionChange = useCallback((next: ActiveSelection | null) => {
+    if (selectionTimerRef.current !== null) {
+      clearTimeout(selectionTimerRef.current);
+      selectionTimerRef.current = null;
+    }
+    if (!next || next.text.trim().length < MIN_SELECTION_CHARS) {
+      setSelectionState(null);
+      return;
+    }
+    const capturedChapterId = currentChapterIdRef.current;
+    selectionTimerRef.current = setTimeout(() => {
+      selectionTimerRef.current = null;
+      setSelectionState({ chapterId: capturedChapterId, selection: next });
+    }, 35);
+  }, []);
+
+  const manualDraggingRef = useRef(false);
+
+  const handleManualSelection = useCallback(() => {
+    handleSelectionChange(
+      extractDomSelectionWithin(manualInnerRef.current, "manual", true)
+    );
+  }, [handleSelectionChange]);
+
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      if (!manualDraggingRef.current) return;
+      manualDraggingRef.current = false;
+      handleManualSelection();
+    };
+    window.addEventListener("mouseup", handleWindowMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleWindowMouseUp);
+      if (selectionTimerRef.current !== null) {
+        clearTimeout(selectionTimerRef.current);
+      }
+    };
+  }, [handleManualSelection]);
+
+  const triggerAskAI = useCallback(
+    (quote: ContextQuote, initialPrompt: string) => {
+      handleSelectionChange(null);
+      setPendingAskRequest({
+        id: ++askSeqRef.current,
+        quote,
+        initialPrompt,
+      });
+      onOpenTutor?.();
+    },
+    [handleSelectionChange, onOpenTutor]
+  );
+
+  const handleConsumeAskRequest = useCallback((consumedId: number) => {
+    setPendingAskRequest((current) => (current?.id === consumedId ? null : current));
+  }, []);
+
+  const handleSelectionAction = useCallback(
+    (selection: ActiveSelection, action: SelectionQuickAction) => {
+      triggerAskAI(
+        {
+          source: selection.zone,
+          filePath: selection.filePath ?? null,
+          startLine: selection.startLine ?? null,
+          endLine: selection.endLine ?? null,
+          label: null,
+          text: selection.text,
+        },
+        quickPromptForSelectionAction(action, messages)
+      );
+    },
+    [messages, triggerAskAI]
+  );
 
   const activeIndex = useMemo(() => {
     const idx = course.chapters.findIndex(
@@ -168,6 +274,11 @@ export function CourseWorkbench({
       manualScrollRef.current.scrollTop = 0;
     }
   }, [activeChapter?.chapterId]);
+
+  const visibleSelection =
+    selectionState && selectionState.chapterId === activeChapterId
+      ? selectionState.selection
+      : null;
 
   const isOutlineVisible = outlineOpen && !focusMode;
 
@@ -480,9 +591,21 @@ export function CourseWorkbench({
           </div>
         ) : null}
 
-        <div ref={manualScrollRef} className="manual-scroll">
+        <div
+          ref={manualScrollRef}
+          className="manual-scroll"
+          onMouseDown={() => {
+            manualDraggingRef.current = true;
+          }}
+          onMouseUp={() => {
+            manualDraggingRef.current = false;
+            handleManualSelection();
+          }}
+          onKeyUp={handleManualSelection}
+          onScroll={() => handleSelectionChange(null)}
+        >
           {activeChapter ? (
-            <div className="manual-inner">
+            <div ref={manualInnerRef} className="manual-inner">
               {activeIndex === 0 && course.introHtml ? (
                 <div
                   className="course-intro md-prose"
@@ -626,6 +749,7 @@ export function CourseWorkbench({
 
                         {threeStep.step3Checks.map((check) => {
                           const result = checkResults.find(r=>r.checkId===check.id);
+                          const isFailed = result?.status === "failed" || result?.status === "timedOut";
                           return <div key={check.id} className="v-item"><div className="v-row">
                             {check.kind === "selfCheck" ? <input type="checkbox" aria-label={check.title}
                               disabled={!session || switching || verification.busy}
@@ -634,6 +758,27 @@ export function CourseWorkbench({
                               : <span className={`badge badge--${result?.status === "passed" ? "success" : result?.status === "failed" || result?.status === "timedOut" ? "danger" : "neutral"}`}>{result ? messages.verification.status[result.status] : t.checkKinds[check.kind]}</span>}
                             <span className="v-text">{check.title}{check.kind === "selfCheck" && check.required && <span className="badge badge--neutral">{messages.verification.required}</span>}</span>
                             {result && <span className="mono">{result.durationMs} ms</span>}
+                            {isFailed && result && (
+                              <button
+                                type="button"
+                                className="btn btn--ai-soft btn--xs btn--pill"
+                                aria-label={interpolate(messages.tutor.context.askAiCheckFailure, { title: check.title })}
+                                data-testid={`step3-check-ask-ai-${check.id}`}
+                                onClick={() =>
+                                  triggerAskAI(
+                                    {
+                                      source: "checkFailure",
+                                      label: check.title,
+                                      text: formatCheckFailureQuote(check, result, messages, settings.locale),
+                                    },
+                                    messages.tutor.quickPrompts.checkFailure
+                                  )
+                                }
+                              >
+                                <SparklesIcon size={11} />
+                                <span>{messages.tutor.context.askAiAction}</span>
+                              </button>
+                            )}
                           </div></div>;
                         })}
                         <div className="verification-actions">
@@ -722,6 +867,26 @@ export function CourseWorkbench({
                         __html: activeReflectionsHtml,
                       }}
                     />
+                    <div className="reflect-actions">
+                      <button
+                        type="button"
+                        className="btn btn--ai-soft btn--xs btn--pill"
+                        data-testid="reflections-ask-ai"
+                        onClick={() =>
+                          triggerAskAI(
+                            {
+                              source: "reflection",
+                              label: t.reflectionsTitle,
+                              text: htmlToPlainText(activeReflectionsHtml),
+                            },
+                            messages.tutor.quickPrompts.reflection
+                          )
+                        }
+                      >
+                        <SparklesIcon size={12} />
+                        <span>{messages.tutor.context.askAiReflection}</span>
+                      </button>
+                    </div>
                   </div>
                 </details>
               ) : null}
@@ -784,6 +949,8 @@ export function CourseWorkbench({
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
               onOpenRuntimeSettings={onOpenRuntimeSettings}
               onRevokeTrust={course.isBuiltin ? undefined : onRevokeTrust}
+              onSelectionChange={handleSelectionChange}
+              onCursorContextChange={setEditorCursor}
             />
             <div className="verification-tabs" role="tablist" aria-label={messages.verification.results} onKeyDown={event=>{
               if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key) || (event.target as HTMLElement).getAttribute("role") !== "tab") return;
@@ -798,11 +965,72 @@ export function CourseWorkbench({
               <button className="btn btn--ghost btn--xs" type="button" onClick={()=>setResetOpen(true)}>{messages.verification.reset}</button>
             </div>
             <div role="tabpanel" id="verification-results-panel" aria-labelledby="verification-results-tab" hidden={!resultsOpen} className="verification-panel">
-              <CheckResults checks={activeChapter?.threeStep?.step3Checks ?? []} results={checkResults} messages={messages} locale={settings.locale} />
+              <CheckResults
+                checks={activeChapter?.threeStep?.step3Checks ?? []}
+                results={checkResults}
+                messages={messages}
+                locale={settings.locale}
+                onAskCheck={(check, result) =>
+                  triggerAskAI(
+                    {
+                      source: "checkFailure",
+                      label: check?.title ?? result.checkId,
+                      text: formatCheckFailureQuote(check, result, messages, settings.locale),
+                    },
+                    messages.tutor.quickPrompts.checkFailure
+                  )
+                }
+                onAskAll={() => {
+                  const specs = activeChapter?.threeStep?.step3Checks ?? [];
+                  const failing = checkResults.filter(
+                    (r) => r.status === "failed" || r.status === "timedOut"
+                  );
+                  const targets = failing.length > 0 ? failing : checkResults;
+                  const summaryText = targets
+                    .map((result) =>
+                      formatCheckFailureQuote(
+                        specs.find((s) => s.id === result.checkId),
+                        result,
+                        messages,
+                        settings.locale
+                      )
+                    )
+                    .join("\n\n");
+                  triggerAskAI(
+                    {
+                      source: "verificationPanel",
+                      label: messages.verification.results,
+                      text: summaryText,
+                    },
+                    messages.tutor.quickPrompts.verificationPanel
+                  );
+                }}
+              />
             </div>
             <div role="tabpanel" className="execution-terminal-container" id="execution-terminal-panel" aria-labelledby="execution-terminal-tab" hidden={resultsOpen}>
-            <TerminalPanel key={`terminal-${session.workspace.id}`} workbench={workbench} state={execution} messages={messages}
-              settings={settings} disabled={switching} onError={onExecutionError} />
+            <TerminalPanel
+              key={`terminal-${session.workspace.id}`}
+              workbench={workbench}
+              state={execution}
+              messages={messages}
+              settings={settings}
+              disabled={switching}
+              onError={onExecutionError}
+              onSelectionChange={handleSelectionChange}
+              onAskAI={({ port, text }) =>
+                triggerAskAI(
+                  {
+                    source: "portConflict",
+                    label:
+                      port !== null
+                        ? interpolate(messages.execution.port, { port })
+                        : messages.execution.portConflict,
+                    text,
+                  },
+                  messages.tutor.quickPrompts.portConflict
+                )
+              }
+            />
             </div>
           </>
         ) : (
@@ -843,7 +1071,13 @@ export function CourseWorkbench({
           overlay={isTutorOverlay}
           client={client}
           course={course}
+          activeChapterId={activeChapter?.chapterId ?? ""}
           session={session}
+          editorCursor={editorCursor}
+          verificationProgress={verification.progress}
+          terminalRevision={execution.outputVersion}
+          askRequest={pendingAskRequest}
+          onConsumeAskRequest={handleConsumeAskRequest}
           settings={settings}
           messages={messages}
           snapshot={tutorSnapshot}
@@ -852,10 +1086,19 @@ export function CourseWorkbench({
           onOpenTutorSettings={onOpenTutorSettings}
           onRequestTrust={onRequestTrust}
           onChooseWorkspace={onChooseWorkspace}
-          onClose={onCloseTutor}
+          onClose={() => {
+            setPendingAskRequest(null);
+            onCloseTutor();
+          }}
           onError={onExecutionError}
         />
       )}
+      <SelectionAskPill
+        selection={visibleSelection}
+        messages={messages}
+        onAction={handleSelectionAction}
+        onDismiss={() => handleSelectionChange(null)}
+      />
       {verification.confirmation && <CommandConfirmationDialog detail={verification.confirmation.detail} messages={messages}
         onCancel={verification.dismiss} onConfirm={()=>{ const pending=verification.confirmation!; void verification.run(pending.chapterId,pending.detail.token); }} />}
       {resetOpen && session && <WorkspaceDialog title={messages.verification.resetTitle} detail={messages.verification.resetDetail}

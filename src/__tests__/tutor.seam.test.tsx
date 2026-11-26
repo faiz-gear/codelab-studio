@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
+import type { LearningProgress } from "../core/contracts";
 import { createBuiltinGoCourseFixture, FakeCoreClient } from "./fakeCoreClient";
 
 beforeEach(() => {
@@ -353,5 +354,325 @@ describe("Pure ACP Tutor Session frontend seam (CoreClient)", () => {
     expect(screen.getByLabelText("Edit task-api/main.go")).toHaveValue(
       "package main\n// my unsaved draft\n"
     );
+  });
+
+  it("shows non-overlapping selection pill across Manual, Editor, and Terminal (>=2 chars, <150ms) and hides on Escape or scroll", async () => {
+    const user = userEvent.setup();
+    const client = new FakeCoreClient({ settings: { locale: "en-US" } });
+    await openBuiltinWithWorkspace(client, user);
+
+    // Navigate to ex-1 and open task-api/main.go + a terminal with error output.
+    await user.click(screen.getByRole("button", { name: "Next Chapter" }));
+    await user.click(screen.getByRole("button", { name: /Open task-api\/main\.go/ }));
+    const editor = (await screen.findByLabelText("Edit task-api/main.go")) as HTMLTextAreaElement;
+
+    const selectDomText = (node: Text, start: number, end: number) => {
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    };
+
+    // 1. Manual prose: < 2 chars must NOT trigger pill; >= 2 chars triggers within 150ms.
+    const manualPane = screen.getByTestId("manual-pane");
+    const step2 = within(manualPane).getByTestId("step-2-section");
+    const manualProseText = within(step2).getByText("GET /healthz").firstChild as Text;
+    selectDomText(manualProseText, 0, 1);
+    fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(screen.queryByTestId("selection-ask-pill")).toBeNull();
+
+    const t0 = performance.now();
+    selectDomText(manualProseText, 0, manualProseText.length);
+    const origGetRect = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = () =>
+      ({
+        top: 220,
+        bottom: 244,
+        left: 120,
+        right: 260,
+        width: 140,
+        height: 24,
+        x: 120,
+        y: 220,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    try {
+      fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
+      const manualPill = await screen.findByTestId("selection-ask-pill");
+      expect(performance.now() - t0).toBeLessThan(150);
+      expect(manualPill).toHaveAttribute("data-zone", "manual");
+      expect(manualPill).toHaveAttribute("data-placement", "above");
+      expect(Number.parseInt(manualPill.style.top, 10) + 34).toBeLessThanOrEqual(220);
+      expect(within(manualPill).getByRole("button", { name: "Explain concept" })).toBeInTheDocument();
+      expect(within(manualPill).getByRole("button", { name: "Ask" })).toBeInTheDocument();
+
+      // Near topbar selection flips strictly below without overlapping the selection rect.
+      Range.prototype.getBoundingClientRect = () =>
+        ({
+          top: 40,
+          bottom: 64,
+          left: 120,
+          right: 260,
+          width: 140,
+          height: 24,
+          x: 120,
+          y: 40,
+          toJSON: () => ({}),
+        }) as DOMRect;
+      fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
+      await waitFor(() => {
+        expect(screen.getByTestId("selection-ask-pill")).toHaveAttribute("data-placement", "below");
+      });
+      expect(Number.parseInt(screen.getByTestId("selection-ask-pill").style.top, 10)).toBeGreaterThanOrEqual(64);
+    } finally {
+      Range.prototype.getBoundingClientRect = origGetRect;
+    }
+
+    // Pressing Escape hides the pill immediately.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("selection-ask-pill")).toBeNull();
+
+    // Selecting again and scrolling hides the pill immediately.
+    selectDomText(manualProseText, 0, manualProseText.length);
+    fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
+    await screen.findByTestId("selection-ask-pill");
+    fireEvent.scroll(manualPane.querySelector(".manual-scroll")!);
+    expect(screen.queryByTestId("selection-ask-pill")).toBeNull();
+
+    // Clicking "Explain concept" opens AI drawer with pinned manual quote card.
+    selectDomText(manualProseText, 0, manualProseText.length);
+    fireEvent.mouseUp(manualPane.querySelector(".manual-scroll")!);
+    await user.click(
+      within(await screen.findByTestId("selection-ask-pill")).getByRole("button", {
+        name: "Explain concept",
+      })
+    );
+    const drawer = screen.getByTestId("tutor-drawer");
+    const manualQuote = within(drawer).getByTestId("tutor-quote-card");
+    expect(manualQuote).toHaveAttribute("data-source", "manual");
+    expect(manualQuote).toHaveTextContent(/GET \/healthz/);
+    await user.click(within(drawer).getByRole("button", { name: "Close AI Tutor drawer" }));
+
+    // Reopening the drawer normally via TopBar must NOT resurrect the previously consumed quote.
+    await user.click(screen.getByRole("button", { name: "AI Tutor" }));
+    expect(within(screen.getByTestId("tutor-drawer")).queryByTestId("tutor-quote-card")).toBeNull();
+    await user.click(
+      within(screen.getByTestId("tutor-drawer")).getByRole("button", {
+        name: "Close AI Tutor drawer",
+      })
+    );
+
+    // 2. Editor selection (>= 2 chars) shows Explain code / Check issues / Ask.
+    editor.focus();
+    editor.setSelectionRange(0, 12);
+    fireEvent.select(editor);
+    const editorPill = await screen.findByTestId("selection-ask-pill");
+    expect(editorPill).toHaveAttribute("data-zone", "editor");
+    expect(within(editorPill).getByRole("button", { name: "Explain code" })).toBeInTheDocument();
+    expect(within(editorPill).getByRole("button", { name: "Check issues" })).toBeInTheDocument();
+    expect(within(editorPill).getByRole("button", { name: "Ask" })).toBeInTheDocument();
+
+    await user.click(within(editorPill).getByRole("button", { name: "Check issues" }));
+    const editorQuote = within(screen.getByTestId("tutor-drawer")).getByTestId("tutor-quote-card");
+    expect(editorQuote).toHaveAttribute("data-source", "editor");
+    expect(editorQuote).toHaveTextContent("task-api/main.go:L1");
+    expect(editorQuote).toHaveTextContent("package main");
+    await user.click(
+      within(screen.getByTestId("tutor-drawer")).getByRole("button", {
+        name: "Close AI Tutor drawer",
+      })
+    );
+
+    // 3. Terminal selection (>= 2 chars) shows Diagnose error / Ask.
+    await user.click(screen.getByRole("button", { name: /New terminal/ }));
+    client.writeTerminalOutput("panic: listen tcp :8080: bind: address already in use\n");
+    const termOutput = await screen.findByTestId("terminal-fallback-output");
+    await waitFor(() => expect(termOutput).toHaveTextContent("address already in use"));
+    const termTextNode = termOutput.firstChild as Text;
+    selectDomText(termTextNode, 0, termTextNode.length);
+    fireEvent.mouseUp(termOutput);
+    const termPill = await screen.findByTestId("selection-ask-pill");
+    expect(termPill).toHaveAttribute("data-zone", "terminal");
+    expect(within(termPill).getByRole("button", { name: "Diagnose error" })).toBeInTheDocument();
+    expect(within(termPill).getByRole("button", { name: "Ask" })).toBeInTheDocument();
+
+    await user.click(within(termPill).getByRole("button", { name: "Diagnose error" }));
+    const termQuote = within(screen.getByTestId("tutor-drawer")).getByTestId("tutor-quote-card");
+    expect(termQuote).toHaveAttribute("data-source", "terminal");
+    expect(termQuote).toHaveTextContent("address already in use");
+  });
+
+  it("wires all four one-click Ask AI entries and 4D removable Context Snapshot Chips with live token estimate", async () => {
+    const user = userEvent.setup();
+    const client = new FakeCoreClient({ settings: { locale: "en-US" } });
+    await openBuiltinWithWorkspace(client, user);
+
+    // Move to ex-1 (has checks, entry file, reflections, and daemon command).
+    await user.click(screen.getByRole("button", { name: "Next Chapter" }));
+    await user.click(screen.getByRole("button", { name: /Open task-api\/main\.go/ }));
+    await screen.findByLabelText("Edit task-api/main.go");
+
+    // Open terminal & trigger port conflict error lines.
+    await user.click(screen.getByRole("button", { name: /New terminal/ }));
+    const termTab = await screen.findByRole("tab", { name: "Terminal 1" });
+    expect(termTab).toBeInTheDocument();
+    const readRes = await client.dispatch({
+      type: "readTerminals",
+      payload: { workspaceId: 1 },
+    });
+    if (readRes.type !== "terminals") throw new Error("Expected terminals");
+    act(() => {
+      client.markPortConflict(
+        readRes.payload.terminals[0].id,
+        "ERROR: listen tcp :8080: address already in use"
+      );
+    });
+
+    // Emit failing check results for ex-1.
+    const progress: LearningProgress = {
+      workspaceId: 1,
+      completedExercises: 0,
+      totalExercises: 10,
+      runningChapterId: null,
+      chapters: {
+        "ex-1": {
+          completionState: "in_progress",
+          selfChecks: {},
+          lastCheckResults: [
+            {
+              checkId: "v1",
+              status: "failed",
+              durationMs: 28,
+              diffs: [{ label: "status", expected: "200", actual: "500" }],
+              rawOutput: "HTTP 500 internal error",
+              testCases: [],
+              error: null,
+            },
+          ],
+        },
+      },
+    };
+    act(() => client.emitEvent({ type: "progressUpdated", payload: progress }));
+
+    // Entry 1: Failed check item in Step 3 opens Tutor drawer with checkFailure quote card.
+    await user.click(await screen.findByTestId("step3-check-ask-ai-v1"));
+    const drawer = screen.getByTestId("tutor-drawer");
+    expect(within(drawer).getByTestId("tutor-quote-card")).toHaveAttribute(
+      "data-source",
+      "checkFailure"
+    );
+    expect(within(drawer).getByTestId("tutor-quote-card")).toHaveTextContent(/200/);
+
+    // Verify all 4 Context Snapshot Chips + monospace token estimate render above composer.
+    const contextBar = within(drawer).getByTestId("tutor-context-bar");
+    await waitFor(() => {
+      expect(within(contextBar).getByTestId("context-chip-chapter")).toBeInTheDocument();
+      expect(within(contextBar).getByTestId("context-chip-activeFile")).toBeInTheDocument();
+      expect(within(contextBar).getByTestId("context-chip-terminalErrors")).toBeInTheDocument();
+      expect(within(contextBar).getByTestId("context-chip-verification")).toBeInTheDocument();
+    });
+    const tokenEl = within(drawer).getByTestId("tutor-token-estimate");
+    expect(tokenEl).toHaveClass("mono");
+    const parseTokens = () => Number(/~(\d+)/.exec(tokenEl.textContent ?? "")?.[1] ?? "0");
+    const initialTokens = parseTokens();
+    expect(initialTokens).toBeGreaterThan(0);
+
+    // Click ActiveFile chip to preview its context text.
+    await user.click(
+      within(within(contextBar).getByTestId("context-chip-activeFile")).getByRole("button", {
+        name: /Preview/,
+      })
+    );
+    expect(within(drawer).getByTestId("context-chip-preview")).toHaveTextContent(
+      "task-api/main.go"
+    );
+
+    // Remove Chapter and TerminalErrors chips -> token estimate drops and sendTutorPrompt omits them!
+    await user.click(
+      within(within(contextBar).getByTestId("context-chip-chapter")).getByRole("button", {
+        name: /Remove/,
+      })
+    );
+    await user.click(
+      within(within(contextBar).getByTestId("context-chip-terminalErrors")).getByRole("button", {
+        name: /Remove/,
+      })
+    );
+    await waitFor(() => {
+      expect(within(contextBar).queryByTestId("context-chip-chapter")).toBeNull();
+      expect(within(contextBar).queryByTestId("context-chip-terminalErrors")).toBeNull();
+      expect(parseTokens()).toBeLessThan(initialTokens);
+    });
+
+    await user.click(within(drawer).getByRole("button", { name: "Send" }));
+    const sentCmd = client.commandLog
+      .filter((cmd) => cmd.type === "sendTutorPrompt")
+      .at(-1);
+    expect(sentCmd?.type).toBe("sendTutorPrompt");
+    if (sentCmd?.type === "sendTutorPrompt") {
+      expect(sentCmd.payload.context?.chapterId).toBe("ex-1");
+      expect(sentCmd.payload.context?.excludedDimensions).toEqual([
+        "chapter",
+        "terminalErrors",
+      ]);
+      expect(sentCmd.payload.context?.quote?.source).toBe("checkFailure");
+    }
+    act(() => client.emitTutorTurnCompleted(1));
+
+    // Entry 2: Bottom "Check results" panel Ask AI button.
+    await user.click(screen.getByRole("tab", { name: /Check results/ }));
+    await user.click(screen.getByTestId("verification-panel-ask-ai"));
+    expect(within(drawer).getByTestId("tutor-quote-card")).toHaveAttribute(
+      "data-source",
+      "verificationPanel"
+    );
+
+    // Entry 3: Reflections disclosure Ask AI button.
+    const reflections = screen.getByTestId("reflections-details");
+    await user.click(within(reflections).getByText("Reflection prompts"));
+    await user.click(screen.getByTestId("reflections-ask-ai"));
+    expect(within(drawer).getByTestId("tutor-quote-card")).toHaveAttribute(
+      "data-source",
+      "reflection"
+    );
+    expect(within(drawer).getByTestId("tutor-quote-card")).toHaveTextContent("http.Server");
+
+    // Entry 4: Port conflict banner Ask AI button.
+    await user.click(screen.getByRole("tab", { name: "Terminal" }));
+    const recovery = await screen.findByRole("region", {
+      name: "A local port is already in use.",
+    });
+    await user.click(within(recovery).getByRole("button", { name: "Ask AI" }));
+    await waitFor(() => {
+      expect(within(drawer).getByTestId("tutor-quote-card")).toHaveAttribute(
+        "data-source",
+        "portConflict"
+      );
+    });
+    expect(within(drawer).getByTestId("tutor-quote-card")).toHaveTextContent(
+      "address already in use"
+    );
+
+    // Chapter switch + style switch updates Context Snapshot & reuses Workspace ACP session.
+    await user.click(screen.getByRole("button", { name: "Previous Chapter" }));
+    await user.click(within(drawer).getByRole("button", { name: "Direct Answer" }));
+    await waitFor(() => {
+      expect(within(drawer).getByTestId("context-chip-chapter")).toHaveTextContent(/练习 0/);
+    });
+    const composer = within(drawer).getByLabelText("Ask the local ACP Tutor");
+    await user.clear(composer);
+    await user.type(composer, "Explain the task rules");
+    await user.click(within(drawer).getByRole("button", { name: "Send" }));
+    const secondCmd = client.commandLog
+      .filter((cmd) => cmd.type === "sendTutorPrompt")
+      .at(-1);
+    if (secondCmd?.type === "sendTutorPrompt") {
+      expect(secondCmd.payload.teachingStyle).toBe("direct");
+      expect(secondCmd.payload.context?.chapterId).toBe("ex-0");
+    }
+    expect(within(drawer).getByText("Session reused")).toBeInTheDocument();
   });
 });

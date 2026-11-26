@@ -89,24 +89,40 @@ pub trait TutorBackend: Send + Sync {
     ) -> Result<Box<dyn TutorBackendSession>, DomainError>;
 }
 
-pub(crate) fn compose_turn_prompt(input: &TutorTurnInput) -> String {
-    let style_directive = match input.teaching_style {
+pub(crate) fn teaching_style_directive(style: TeachingStyle) -> &'static str {
+    match style {
         TeachingStyle::Socratic => {
             "[Teaching Style: socratic] Guide the learner step-by-step with clarifying hints and targeted questions first. Avoid giving away the full final solution immediately unless explicitly asked."
         }
         TeachingStyle::Direct => {
             "[Teaching Style: direct] Provide a direct, concise technical explanation and concrete solution guidance."
         }
-    };
-    let mut parts = vec![style_directive.to_owned()];
-    if let Some(context) = input
-        .context_preamble
-        .as_deref()
+    }
+}
+
+pub(crate) fn compose_turn_prompt(input: &TutorTurnInput) -> String {
+    compose_prompt_parts(
+        input.teaching_style,
+        input.context_preamble.as_deref(),
+        &input.prompt,
+    )
+}
+
+pub(crate) fn compose_prompt_parts(
+    teaching_style: TeachingStyle,
+    context_preamble: Option<&str>,
+    prompt: &str,
+) -> String {
+    let mut parts = vec![teaching_style_directive(teaching_style).to_owned()];
+    if let Some(context) = context_preamble
         .map(str::trim)
         .filter(|text| !text.is_empty())
     {
         parts.push(context.to_owned());
     }
-    parts.push(input.prompt.trim().to_owned());
+    let trimmed_prompt = prompt.trim();
+    if !trimmed_prompt.is_empty() {
+        parts.push(trimmed_prompt.to_owned());
+    }
     parts.join("\n\n")
 }

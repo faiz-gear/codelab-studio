@@ -11,6 +11,11 @@ import "monaco-editor/languages/definitions/typescript/register.js";
 import "monaco-editor/languages/definitions/yaml/register.js";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import type { GlobalSettings } from "../core/contracts";
+import {
+  MIN_SELECTION_CHARS,
+  normalizeSelectionRect,
+  type ActiveSelection,
+} from "../tutor/contextRequest";
 import type { LanguageSession } from "./languageSession";
 import { connectLanguage } from "./monacoLanguage";
 import { editorText, type EditorTab } from "./editorSession";
@@ -54,7 +59,17 @@ type EditorModel = {
   value: string;
 };
 
-export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdit, languageSession }: {
+export function MonacoTextSurface({
+  tabs,
+  path,
+  label,
+  settings,
+  readOnly,
+  languageSession,
+  onEdit,
+  onSelectionChange,
+  onCursorLinesChange,
+}: {
   tabs: EditorTab[];
   path: string | null;
   label: string;
@@ -62,12 +77,17 @@ export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdi
   readOnly: boolean;
   languageSession?: LanguageSession;
   onEdit: (path: string, text: string) => void;
+  onSelectionChange?: (selection: ActiveSelection | null) => void;
+  onCursorLinesChange?: (range: { startLine: number; endLine: number } | null) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const models = useRef(new Map<string, EditorModel>());
   const select = useRef<string | null>(null);
   const edit = useRef(onEdit);
+  const selectionCb = useRef(onSelectionChange);
+  const cursorCb = useRef(onCursorLinesChange);
+  const pointerDown = useRef(false);
   const syncing = useRef(false);
   const languageBridge = useRef<ReturnType<typeof connectLanguage> | null>(null);
 
@@ -76,11 +96,102 @@ export function MonacoTextSurface({ tabs, path, label, settings, readOnly, onEdi
   }, [onEdit]);
 
   useEffect(() => {
-    if (!host.current) return;
-    const instance = monaco.editor.create(host.current, { ...editorOptions, model: null });
+    selectionCb.current = onSelectionChange;
+  }, [onSelectionChange]);
+
+  useEffect(() => {
+    cursorCb.current = onCursorLinesChange;
+  }, [onCursorLinesChange]);
+
+  useEffect(() => {
+    const node = host.current;
+    if (!node) return;
+    const instance = monaco.editor.create(node, { ...editorOptions, model: null });
     const modelsByPath = models.current;
     editor.current = instance;
+
+    const emitSelection = () => {
+      const sel = instance.getSelection();
+      const model = instance.getModel();
+      if (!sel || !model) {
+        cursorCb.current?.(null);
+        selectionCb.current?.(null);
+        return;
+      }
+      cursorCb.current?.({
+        startLine: sel.startLineNumber,
+        endLine: sel.endLineNumber,
+      });
+      if (sel.isEmpty()) {
+        selectionCb.current?.(null);
+        return;
+      }
+      const text = model.getValueInRange(sel).trim();
+      if (text.length < MIN_SELECTION_CHARS) {
+        selectionCb.current?.(null);
+        return;
+      }
+      const hostRect = node.getBoundingClientRect();
+      const startPos = instance.getScrolledVisiblePosition(sel.getStartPosition());
+      const endPos = instance.getScrolledVisiblePosition(sel.getEndPosition());
+      const anchor = startPos ?? endPos;
+      const rect = anchor
+        ? {
+            top: hostRect.top + (startPos ? startPos.top : anchor.top),
+            bottom:
+              hostRect.top +
+              (endPos ? endPos.top + endPos.height : anchor.top + anchor.height),
+            left: hostRect.left + anchor.left,
+            right:
+              hostRect.left +
+              (startPos && endPos
+                ? Math.max(startPos.left + 80, endPos.left)
+                : anchor.left + 120),
+          }
+        : normalizeSelectionRect(null, node);
+      selectionCb.current?.({
+        zone: "editor",
+        text,
+        rect,
+        filePath: select.current,
+        startLine: sel.startLineNumber,
+        endLine: sel.endLineNumber,
+      });
+    };
+
+    const handleMouseDown = () => {
+      pointerDown.current = true;
+    };
+    const handleMouseUp = () => {
+      if (!pointerDown.current) return;
+      pointerDown.current = false;
+      emitSelection();
+    };
+    node.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    const onSel = instance.onDidChangeCursorSelection(() => {
+      if (pointerDown.current) {
+        const sel = instance.getSelection();
+        if (sel) {
+          cursorCb.current?.({
+            startLine: sel.startLineNumber,
+            endLine: sel.endLineNumber,
+          });
+        }
+        return;
+      }
+      emitSelection();
+    });
+    const onScroll = instance.onDidScrollChange(() => {
+      selectionCb.current?.(null);
+    });
+
     return () => {
+      node.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mouseup", handleMouseUp);
+      onSel.dispose();
+      onScroll.dispose();
       instance.dispose();
       editor.current = null;
       select.current = null;
