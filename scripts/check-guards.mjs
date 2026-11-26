@@ -273,16 +273,30 @@ if (!handlerBlock) {
   }
 }
 
-// 3d. Use gradient tokens in image-capable properties and reserve the hero mesh for .hero-panel.
+// 3d. Enforce CSS token integrity, Medium-Ceiling font-weight (<=500), gradient-token misuse, hero-mesh scope, and stylesheet manifest parity.
 const appTokensPath = "src/styles/tokens.css";
 const appTokens = readText(appTokensPath);
 const tokensCss = postcss.parse(appTokens, { from: appTokensPath });
 const gradientTokens = new Set();
+const declaredCssTokens = new Set();
 tokensCss.walkDecls(/^--/, (declaration) => {
+  declaredCssTokens.add(declaration.prop);
   if (/\b(?:linear|radial|conic)-gradient\(/i.test(declaration.value)) {
     gradientTokens.add(declaration.prop);
   }
 });
+
+const cssFiles = sourceFiles.filter((rel) => rel.endsWith(".css"));
+const parsedCssFiles = new Map();
+for (const rel of cssFiles) {
+  const css = rel === appTokensPath ? tokensCss : postcss.parse(readText(rel), { from: rel });
+  parsedCssFiles.set(rel, css);
+  if (rel !== appTokensPath) {
+    css.walkDecls(/^--/, (declaration) => {
+      declaredCssTokens.add(declaration.prop);
+    });
+  }
+}
 
 const COLOR_TYPED_PROPERTIES = new Set([
   "color",
@@ -306,20 +320,41 @@ const COLOR_TYPED_PROPERTIES = new Set([
   "stroke",
 ]);
 const HERO_MESH_TOKEN = "--arc-hero-bg";
-// Consume quoted text so only actual var() calls contribute references.
-const CSS_VARIABLE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\bvar\(\s*(--[\w-]+)\s*(?=[,)])/gi;
+const FONT_WEIGHT_CEILING_ALLOWLIST = new Set([".md-prose strong"]);
+// Consume quoted text so only actual var() calls contribute references; capture optional fallback comma.
+const CSS_VARIABLE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\bvar\(\s*(--[\w-]+)\s*(,|\))/gi;
 
-for (const rel of sourceFiles) {
-  if (!rel.endsWith(".css")) continue;
-  const css = rel === appTokensPath ? tokensCss : postcss.parse(readText(rel), { from: rel });
+for (const [rel, css] of parsedCssFiles) {
   css.walkDecls((declaration) => {
     const property = declaration.prop.toLowerCase();
+    const location = `${rel}:${declaration.source.start.line}`;
+    if (property === "font-weight") {
+      const value = declaration.value.trim().toLowerCase();
+      const numeric = Number(value);
+      const exceedsCeiling =
+        value === "bold" ||
+        value === "bolder" ||
+        (Number.isFinite(numeric) && numeric > 500);
+      const selector = declaration.parent?.selector?.trim() ?? "";
+      if (exceedsCeiling && !FONT_WEIGHT_CEILING_ALLOWLIST.has(selector)) {
+        fail(
+          "css-font-weight-ceiling",
+          `${location} sets font-weight: ${declaration.value} on "${selector}"; DESIGN.md caps UI typography at 500.`
+        );
+      }
+    }
+
     const expectsColor =
       COLOR_TYPED_PROPERTIES.has(property) ||
       (!property.startsWith("--") && property.endsWith("-color"));
-    for (const [, token] of declaration.value.matchAll(CSS_VARIABLE)) {
+    for (const [, token, delimiter] of declaration.value.matchAll(CSS_VARIABLE)) {
       if (!token) continue;
-      const location = `${rel}:${declaration.source.start.line}`;
+      if (delimiter !== "," && !declaredCssTokens.has(token)) {
+        fail(
+          "css-undefined-token",
+          `${location} references undeclared CSS custom property ${token}.`
+        );
+      }
       if (expectsColor && gradientTokens.has(token)) {
         fail(
           "css-gradient-token-misuse",
@@ -331,6 +366,20 @@ for (const rel of sourceFiles) {
       }
     }
   });
+}
+
+// Ensure every stylesheet under src/styles/ is registered in src/styles/loadStyles.ts (shared by app & Playwright fixture).
+const loadStylesSrc = readText("src/styles/loadStyles.ts");
+const loadedStylesheets = new Set(
+  Array.from(loadStylesSrc.matchAll(/import\s+["']\.\/([^"']+\.css)["']/g), (m) => `src/styles/${m[1]}`)
+);
+for (const rel of cssFiles) {
+  if (rel.startsWith("src/styles/") && !loadedStylesheets.has(rel)) {
+    fail(
+      "css-stylesheet-manifest",
+      `${rel} is not imported in src/styles/loadStyles.ts; register it so both the app and Playwright fixture load it.`
+    );
+  }
 }
 
 // 3e. Never Debug-format Rust ErrorCode variants into production strings.
