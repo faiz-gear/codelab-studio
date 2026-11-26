@@ -97,10 +97,14 @@ fn extract_unified_minus_expected_plus_actual(text: &str) -> Option<ExtractedDif
             .unwrap_or(0)
     };
 
-    let pytest_col = if is_pytest_diff {
+    let mut indent_col = if is_pytest_diff {
         lines
             .get(start.saturating_sub(1))
             .and_then(|line| line.find("Full diff:"))
+    } else if is_node_diff {
+        lines
+            .get(start.saturating_sub(1))
+            .map(|line| line.bytes().take_while(|byte| *byte == b' ').count())
     } else {
         None
     };
@@ -111,7 +115,17 @@ fn extract_unified_minus_expected_plus_actual(text: &str) -> Option<ExtractedDif
     let mut saw_plus = false;
 
     for raw in &lines[start..] {
-        let line = if let Some(col) = pytest_col {
+        let trimmed_raw = raw.trim();
+        if is_node_diff && trimmed_raw.starts_with("+ actual - expected") {
+            if saw_minus || saw_plus {
+                break;
+            }
+            expected_lines.clear();
+            actual_lines.clear();
+            indent_col = Some(raw.bytes().take_while(|byte| *byte == b' ').count());
+            continue;
+        }
+        let line = if is_pytest_diff && let Some(col) = indent_col {
             if let Some(after_e) = raw.strip_prefix('E') {
                 let target = col.saturating_sub(1);
                 let spaces = after_e
@@ -123,6 +137,13 @@ fn extract_unified_minus_expected_plus_actual(text: &str) -> Option<ExtractedDif
             } else {
                 raw
             }
+        } else if is_node_diff && let Some(col) = indent_col {
+            let spaces = raw
+                .bytes()
+                .take_while(|byte| *byte == b' ')
+                .count()
+                .min(col);
+            &raw[spaces..]
         } else {
             raw
         };

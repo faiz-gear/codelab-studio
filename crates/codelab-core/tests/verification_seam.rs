@@ -1729,9 +1729,12 @@ fn js_ts_adapter_runs_real_tests_extracts_expected_actual_diffs_and_syntax_error
             ]},
             {"chapterId":"ex-3","checks":[
                 {"id":"ts-syntax","title":"JS/TS syntax","type":"test_suite","command":"bun test tests/syntax.test.ts"}
+            ]},
+            {"chapterId":"ex-4","checks":[
+                {"id":"node-fail","title":"Node TS diff","type":"test_suite","command":"node --test tests/fail.test.ts"}
             ]}
         ]),
-        "# JS/TS Seam\n\n## Exercise 1\n\n## Exercise 2\n\n## Exercise 3\n",
+        "# JS/TS Seam\n\n## Exercise 1\n\n## Exercise 2\n\n## Exercise 3\n\n## Exercise 4\n",
         Some("ts"),
     );
     let root = temp.path().join("work");
@@ -1827,6 +1830,29 @@ fn js_ts_adapter_runs_real_tests_extracts_expected_actual_diffs_and_syntax_error
             .any(|d| d["label"] == "jsTsTestReport"),
         "expected syntax error report diff in {r3}"
     );
+
+    send(
+        &app,
+        "runChecks",
+        json!({"workspaceId":id,"chapterId":"ex-4"}),
+    );
+    let node_fail = wait(&app, id);
+    let r4 = &node_fail["chapters"]["ex-4"]["lastCheckResults"][0];
+    assert_eq!(r4["status"], "failed", "{r4}");
+    let node_diff = r4["diffs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["label"].as_str().unwrap().contains("reports deep diff"))
+        .unwrap_or_else(|| panic!("expected node test diff in {r4}"));
+    assert!(
+        node_diff["expected"].as_str().unwrap().contains("count: 2"),
+        "unexpected node expected diff: {node_diff}"
+    );
+    assert!(
+        node_diff["actual"].as_str().unwrap().contains("count: 1"),
+        "unexpected node actual diff: {node_diff}"
+    );
     // Report temp files must never pollute the learner Workspace.
     assert!(!root.join("junit.xml").exists());
 }
@@ -1837,6 +1863,7 @@ fn js_ts_adapter_parses_bun_diffs_rejects_malformed_xml_and_enforces_5s_default_
         json!([
             {"chapterId":"ex-1","checks":[
                 {"id":"bun-diff","title":"Bun scalar and object diff","type":"test_suite","command":"cat bun-junit.xml"},
+                {"id":"node-diff","title":"Node 22 deepStrictEqual diff","type":"test_suite","command":"cat node-junit.xml"},
                 {"id":"bad-xml","title":"Truncated XML","type":"test_suite","command":"cat truncated.xml"},
                 {"id":"skip-only","title":"Skipped only","type":"test_suite","command":"cat skipped.xml"}
             ]},
@@ -1878,6 +1905,26 @@ Received: "hello"
     )
     .unwrap();
     fs::write(
+        root.join("node-junit.xml"),
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="diff" tests="1" failures="1" errors="0" skipped="0" time="0.01">
+    <testcase name="reports deep diff" classname="test" time="0.002">
+      <failure type="testCodeFailure" message="Expected values to be strictly deep-equal:&#10;+ actual - expected">
+Error [ERR_TEST_FAILURE]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  {
++   count: 1
+-   count: 2
+  }
+      </failure>
+    </testcase>
+  </testsuite>
+</testsuites>"#,
+    )
+    .unwrap();
+    fs::write(
         root.join("truncated.xml"),
         "<testsuites><testsuite name=\"broken\"><testcase name=\"x\" time=\"0.01\">",
     )
@@ -1910,10 +1957,26 @@ Received: "hello"
     assert!(to_eq["expected"].as_str().unwrap().contains("\"count\": 2"));
     assert!(to_eq["actual"].as_str().unwrap().contains("\"count\": 1"));
 
-    assert_eq!(results[1]["status"], "failed");
-    assert_eq!(results[1]["diffs"][0]["label"], "jsTsTestReport");
+    assert_eq!(results[1]["status"], "failed", "{}", results[1]);
+    let node_diff = results[1]["diffs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["label"] == "test > reports deep diff")
+        .unwrap_or_else(|| panic!("missing Node 22 diff: {}", results[1]));
+    assert!(
+        node_diff["expected"].as_str().unwrap().contains("count: 2"),
+        "unexpected Node 22 expected diff: {node_diff}"
+    );
+    assert!(
+        node_diff["actual"].as_str().unwrap().contains("count: 1"),
+        "unexpected Node 22 actual diff: {node_diff}"
+    );
+
     assert_eq!(results[2]["status"], "failed");
     assert_eq!(results[2]["diffs"][0]["label"], "jsTsTestReport");
+    assert_eq!(results[3]["status"], "failed");
+    assert_eq!(results[3]["diffs"][0]["label"], "jsTsTestReport");
 
     send(
         &app,
