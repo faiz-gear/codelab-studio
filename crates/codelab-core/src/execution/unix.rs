@@ -12,15 +12,16 @@ use std::time::{Duration, Instant};
 
 use super::{Ports, Spawn};
 
-pub(super) struct Process {
+pub(crate) struct Process {
     child: Child,
     master: Option<File>,
     session: libc::pid_t,
     reaped: bool,
+    piped: bool,
 }
 
 impl Process {
-    pub fn spawn(spec: Spawn) -> io::Result<(Self, Ports)> {
+    pub(super) fn spawn(spec: Spawn) -> io::Result<(Self, Ports)> {
         let mut master = -1;
         let mut slave = -1;
         let mut size = winsize(80, 24);
@@ -76,12 +77,13 @@ impl Process {
                 master: Some(master),
                 session,
                 reaped: false,
+                piped: false,
             },
             ports,
         ))
     }
 
-    pub fn spawn_headless(spec: Spawn, output: File) -> io::Result<Self> {
+    pub(super) fn spawn_headless(spec: Spawn, output: File) -> io::Result<Self> {
         let mut command = Command::new(spec.program);
         command
             .args(spec.args)
@@ -89,11 +91,30 @@ impl Process {
             .stdin(Stdio::null())
             .stdout(Stdio::from(output.try_clone()?))
             .stderr(Stdio::from(output));
+        Self::spawn_stdio(command, spec.directory)
+    }
+
+    pub(super) fn spawn_piped(spec: Spawn) -> io::Result<(Self, Ports)> {
+        let mut command = Command::new(spec.program);
+        command
+            .args(spec.args)
+            .envs(spec.env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let mut process = Self::spawn_stdio(command, spec.directory)?;
+        process.piped = true;
+        let writer = process.child.stdin.take().expect("piped stdin");
+        let reader = process.child.stdout.take().expect("piped stdout");
+        Ok((process, (Box::new(reader), Box::new(writer))))
+    }
+
+    fn spawn_stdio(mut command: Command, directory: super::Directory) -> io::Result<Self> {
         // SAFETY: the validated directory handle is retained across fork; only
         // async-signal-safe syscalls run before exec.
         unsafe {
             command.pre_exec(move || {
-                if libc::setsid() < 0 || libc::fchdir(spec.directory.handle.as_raw_fd()) < 0 {
+                if libc::setsid() < 0 || libc::fchdir(directory.handle.as_raw_fd()) < 0 {
                     return Err(io::Error::last_os_error());
                 }
                 Ok(())
@@ -106,6 +127,7 @@ impl Process {
             master: None,
             session,
             reaped: false,
+            piped: false,
         })
     }
 
@@ -129,7 +151,7 @@ impl Process {
         }
     }
 
-    fn exited(&self) -> bool {
+    pub(crate) fn exited(&self) -> bool {
         // Leave the leader waitable until cleanup has finished so its PID stays reserved.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
         let result = unsafe {
@@ -170,7 +192,7 @@ impl Process {
     }
 
     fn signal_session(&self, signal: libc::c_int) {
-        signal_jobs(self.session, signal);
+        signal_jobs(self.session, signal, self.piped);
         // The leader remains waitable here, so this group ID cannot be reused.
         unsafe { libc::kill(-self.session, signal) };
     }
@@ -194,7 +216,7 @@ fn winsize(cols: u16, rows: u16) -> libc::winsize {
 }
 
 #[cfg(target_os = "macos")]
-fn signal_jobs(session: libc::pid_t, signal: libc::c_int) {
+fn signal_jobs(session: libc::pid_t, signal: libc::c_int, track_descendants: bool) {
     // SAFETY: the first call measures the buffer and the second fills it.
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
     let mut pids = vec![0; count.max(0) as usize + 128];
@@ -205,6 +227,33 @@ fn signal_jobs(session: libc::pid_t, signal: libc::c_int) {
         )
     };
     pids.truncate(count.max(0) as usize);
+
+    // Some helpers create their own session. Collect them before signaling any
+    // ancestor, so reparenting cannot hide a still-live descendant during cleanup.
+    if track_descendants {
+        let detached: Vec<_> = pids
+            .iter()
+            .copied()
+            .filter(|&pid| pid > 1 && unsafe { libc::getsid(pid) != session })
+            .filter_map(|pid| {
+                let info = process_info(pid)?;
+                let mut parent = info.pbi_ppid as libc::pid_t;
+                while parent > 1 && parent != session {
+                    let ancestor = process_info(parent)?;
+                    parent = ancestor.pbi_ppid as libc::pid_t;
+                }
+                (parent == session).then_some((pid, info.pbi_start_tvsec, info.pbi_start_tvusec))
+            })
+            .collect();
+        for (pid, seconds, micros) in detached {
+            if process_info(pid).is_some_and(|info| {
+                info.pbi_start_tvsec == seconds && info.pbi_start_tvusec == micros
+            }) {
+                unsafe { libc::kill(pid, signal) };
+            }
+        }
+    }
+
     let mut groups = BTreeSet::new();
     for pid in pids.into_iter().filter(|&pid| pid > 0) {
         // macOS only exposes numeric IDs for signals here. Recheck both the
@@ -224,8 +273,24 @@ fn signal_jobs(session: libc::pid_t, signal: libc::c_int) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn process_info(pid: libc::pid_t) -> Option<libc::proc_bsdinfo> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    let returned = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    (returned == size).then(|| unsafe { info.assume_init() })
+}
+
 #[cfg(target_os = "linux")]
-fn signal_jobs(session: libc::pid_t, signal: libc::c_int) {
+fn signal_jobs(session: libc::pid_t, signal: libc::c_int, _track_descendants: bool) {
     let pids = std::fs::read_dir("/proc")
         .into_iter()
         .flatten()
@@ -294,4 +359,4 @@ fn child_of_session(pid: libc::pid_t, handle: &OwnedFd, session: libc::pid_t) ->
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn signal_jobs(_session: libc::pid_t, _signal: libc::c_int) {}
+fn signal_jobs(_session: libc::pid_t, _signal: libc::c_int, _track_descendants: bool) {}

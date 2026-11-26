@@ -142,3 +142,44 @@ it("shows a conflict for a background tab and keeps one tab when its path is cre
   expect(screen.getAllByRole("tab", { name: /main.go/ })).toHaveLength(1);
   expect(await screen.findByText("Changed on disk")).toBeInTheDocument();
 });
+
+it("shows active language status, links to runtime settings, and keeps editing after degradation", async () => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value(this: HTMLDialogElement) { this.setAttribute("open", ""); } },
+    close: { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute("open"); } },
+  });
+  const { client, user } = await openWorkspace();
+  const syncs = () => client.commandLog.filter((command) => command.type === "syncLanguageDocument");
+  expect(syncs()).toEqual([{
+    type: "syncLanguageDocument",
+    payload: { workspaceId: 1, version: 1, document: { path: "main.go", text: "package main\n" } },
+  }]);
+  const status = (path: string, version: number, state: "missing" | "ready" | "degraded") => {
+    act(() => client.emitEvent({
+      type: "languageStatusChanged",
+      payload: { workspaceId: 1, path, version, language: "Go", status: state },
+    }));
+  };
+  status("main.go", 1, "missing");
+  await user.click(await screen.findByRole("button", { name: "Go LSP missing" }));
+  const settings = await screen.findByRole("dialog");
+  expect(within(settings).getByRole("tab", { name: "4-Language Runtimes" })).toHaveAttribute("aria-selected", "true");
+  await user.click(within(settings).getByRole("button", { name: "Close" }));
+
+  await user.click(screen.getByRole("button", { name: "other.go" }));
+  expect(syncs().at(-1)?.payload.document?.path).toBe("other.go");
+  status("main.go", 1, "ready");
+  expect(screen.queryByRole("button", { name: "Go LSP ready" })).not.toBeInTheDocument();
+  status("other.go", 2, "degraded");
+  await screen.findByRole("button", { name: "Go LSP degraded" });
+  const otherEditor = screen.getByRole("textbox", { name: "Edit other.go" });
+  fireEvent.change(otherEditor, { target: { value: "package other\n// still editing" } });
+  fireEvent.keyDown(otherEditor, { key: "s", ctrlKey: true });
+  await screen.findByText("All changes saved");
+  await user.click(screen.getByRole("button", { name: "Next Chapter" }));
+  await user.click(screen.getAllByRole("button", { name: "Run command" })[0]);
+  await waitFor(() => expect(client.commandLog.some(({ type }) => type === "runCommandBlock")).toBe(true));
+  await user.click(screen.getByRole("button", { name: "Run checks" }));
+  await waitFor(() => expect(client.commandLog.some(({ type }) => type === "runChecks")).toBe(true));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});

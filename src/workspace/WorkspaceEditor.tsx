@@ -18,7 +18,7 @@ const IDES: Record<ExternalIde, string> = {
 };
 
 export function WorkspaceEditor({
-  session, settings, messages, onChangeWorkspace, onRevokeTrust, switching, workspaceActionLabel, workspaceLabel, tutorOpen = false,
+  session, settings, messages, onChangeWorkspace, onRevokeTrust, onOpenRuntimeSettings, switching, workspaceActionLabel, workspaceLabel, tutorOpen = false,
 }: {
   session: WorkspaceEditorSession;
   settings: GlobalSettings;
@@ -27,10 +27,12 @@ export function WorkspaceEditor({
   workspaceActionLabel?: string;
   workspaceLabel?: string;
   onRevokeTrust?: () => void;
+  onOpenRuntimeSettings?: (trigger: HTMLElement) => void;
   switching: boolean;
   tutorOpen?: boolean;
 }) {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
+  const { status: languageStatus } = useSyncExternalStore(session.language.subscribe, session.language.snapshot);
   const conflictBanner = useRef<HTMLDivElement>(null);
   const { executionConflict } = state;
   useEffect(() => {
@@ -227,7 +229,7 @@ export function WorkspaceEditor({
             <div className="workspace-text-editor" hidden={comparing} role="tabpanel">
               {useMonaco ? (
                 <Suspense fallback={<p className="workspace-empty" role="status">{t.loading}</p>}>
-                  <MonacoText tabs={state.tabs} path={path} label={label} settings={settings} readOnly={switching}
+                  <MonacoText tabs={state.tabs} path={path} label={label} settings={settings} readOnly={switching} languageSession={session.language}
                     onEdit={(filePath, value) => session.change(filePath, value)} />
                 </Suspense>
               ) : (
@@ -252,6 +254,12 @@ export function WorkspaceEditor({
           {active && <div className="workspace-status" role="status">
             <span className="mono workspace-status-path" title={active.file.path}>{active.file.path}</span>
             {editorText(active) !== null && <span className="workspace-status-message">{dirty ? t.unsaved : t.saved}</span>}
+            {languageStatus && onOpenRuntimeSettings && (
+              <button type="button" className="btn btn--ghost btn--xs workspace-language-status"
+                onClick={(event) => onOpenRuntimeSettings(event.currentTarget)}>
+                {interpolate(t.languageStatus[languageStatus.status], { language: languageStatus.language })}
+              </button>
+            )}
           </div>}
         </div>
       </div>

@@ -63,3 +63,26 @@ test("shows the reviewed Reference Solution in Monaco before enabling confirmati
   await expect(page.getByRole("tabpanel").getByText("// reference implementation", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => window.workspaceSmoke.readMainFile())).toBe("package main\n// reference implementation\n");
 });
+
+test("Monaco shows completion, hover documentation and diagnostic markers from CoreClient", async ({ page }) => {
+  await page.goto("/src/__tests__/browser/workspace.html?language-server");
+  await page.getByRole("button", { name: "Start Built-in Go / GoFrame Lab" }).click();
+  await page.getByRole("button", { name: "Choose Workspace" }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await page.getByRole("navigation", { name: "Files" }).getByRole("button", { name: "main.go", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Go LSP ready" })).toBeVisible();
+
+  const editor = page.locator(".workspace-text-editor .monaco-editor");
+  const line = editor.locator(".view-line").first();
+  await expect(line).toHaveText("package main");
+  await expect(editor.locator(".squiggly-warning")).toBeVisible();
+  await line.hover({ position: { x: 8, y: 7 } });
+  await expect(editor.locator(".monaco-hover").getByText("Fixture documentation")).toBeVisible();
+  await expect(editor.locator(".monaco-hover").getByText("Fixture diagnostic")).toBeVisible();
+  await line.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Control+Space");
+  await expect(editor.locator(".suggest-widget").getByText("mainFixture")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(line).toHaveText("package mainFixture");
+});

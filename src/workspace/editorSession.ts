@@ -10,6 +10,8 @@ import {
   type WorkspaceSummary,
 } from "../core/contracts";
 
+import { LanguageSession } from "./languageSession";
+
 export interface EditorTab {
   file: WorkspaceFile;
   draft: string | null;
@@ -60,7 +62,11 @@ export class WorkspaceEditorSession {
     executionConflict: 0,
   };
 
-  constructor(private client: CoreClient, readonly workspace: WorkspaceSummary) {}
+  readonly language: LanguageSession;
+
+  constructor(private client: CoreClient, readonly workspace: WorkspaceSummary) {
+    this.language = new LanguageSession(client, workspace.id);
+  }
 
   snapshot = () => this.state;
 
@@ -71,6 +77,7 @@ export class WorkspaceEditorSession {
 
   private update(patch: Partial<EditorState>) {
     this.state = { ...this.state, ...patch };
+    if (this.trusted && ("activePath" in patch || "tabs" in patch)) this.syncLanguage();
     for (const listener of this.listeners) listener();
   }
 
@@ -94,10 +101,22 @@ export class WorkspaceEditorSession {
     return this.queue;
   }
 
+  private syncLanguage() {
+    const path = this.state.activePath;
+    const tab = path === null ? undefined : this.tab(path);
+    const text = tab ? editorText(tab) : null;
+    this.language.select(path !== null && text !== null ? { path, text } : null);
+  }
+
   setTrusted(trusted: boolean) {
     if (this.trusted === trusted) return;
     this.trusted = trusted;
-    if (trusted) void this.refresh([""]);
+    if (trusted) {
+      this.syncLanguage();
+      void this.refresh([""]);
+    } else {
+      this.language.suspend();
+    }
   }
 
   async list(path: string) {
