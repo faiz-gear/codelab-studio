@@ -11,6 +11,7 @@ export default tseslint.config(
       "test-results/**",
       "src-tauri/**",
       "docs/**",
+      "website/**",
       ".agents/**",
       ".claude/**",
       ".codex/**",

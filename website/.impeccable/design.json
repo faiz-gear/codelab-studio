@@ -1,0 +1,418 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T23:22:00+08:00",
+  "title": "Design System: CodeLab Studio Website",
+  "extensions": {
+    "colorMeta": {
+      "marker-yellow": {
+        "role": "primary",
+        "displayName": "Marker Yellow",
+        "canonical": "#FFE84D",
+        "tonalRamp": [
+          "oklch(24% 0.05 97)",
+          "oklch(38% 0.09 97)",
+          "oklch(52% 0.13 97)",
+          "oklch(68% 0.16 97)",
+          "oklch(82% 0.17 97)",
+          "oklch(92% 0.16 97)",
+          "oklch(95% 0.11 97)",
+          "oklch(97% 0.04 97)"
+        ]
+      },
+      "marker-yellow-hover": {
+        "role": "primary",
+        "displayName": "Marker Yellow Hover",
+        "canonical": "#FFEF78",
+        "tonalRamp": [
+          "oklch(24% 0.05 98)",
+          "oklch(38% 0.09 98)",
+          "oklch(52% 0.12 98)",
+          "oklch(68% 0.15 98)",
+          "oklch(83% 0.15 98)",
+          "oklch(94% 0.14 98)",
+          "oklch(96% 0.09 98)",
+          "oklch(98% 0.03 98)"
+        ]
+      },
+      "marker-teal-ink": {
+        "role": "secondary",
+        "displayName": "Marker Teal Ink",
+        "canonical": "#0B6E63",
+        "tonalRamp": [
+          "oklch(20% 0.045 176)",
+          "oklch(31% 0.075 176)",
+          "oklch(42% 0.095 176)",
+          "oklch(49% 0.095 176)",
+          "oklch(62% 0.115 176)",
+          "oklch(76% 0.10 176)",
+          "oklch(89% 0.055 176)",
+          "oklch(96% 0.02 176)"
+        ]
+      },
+      "marker-teal": {
+        "role": "secondary",
+        "displayName": "Marker Teal",
+        "canonical": "#16A394",
+        "tonalRamp": [
+          "oklch(20% 0.045 176)",
+          "oklch(32% 0.075 176)",
+          "oklch(46% 0.10 176)",
+          "oklch(64% 0.12 176)",
+          "oklch(74% 0.115 176)",
+          "oklch(84% 0.085 176)",
+          "oklch(92% 0.045 176)",
+          "oklch(96% 0.02 176)"
+        ]
+      },
+      "fluorescent-pink": {
+        "role": "tertiary",
+        "displayName": "Fluorescent Pink",
+        "canonical": "#FF6FAE",
+        "tonalRamp": [
+          "oklch(20% 0.06 356)",
+          "oklch(32% 0.11 356)",
+          "oklch(44% 0.16 356)",
+          "oklch(58% 0.20 356)",
+          "oklch(71% 0.18 356)",
+          "oklch(81% 0.12 356)",
+          "oklch(90% 0.065 356)",
+          "oklch(96% 0.025 356)"
+        ]
+      },
+      "fluorescent-pink-ink": {
+        "role": "tertiary",
+        "displayName": "Fluorescent Pink Ink",
+        "canonical": "#A8185B",
+        "tonalRamp": [
+          "oklch(19% 0.065 356)",
+          "oklch(30% 0.115 356)",
+          "oklch(43% 0.165 356)",
+          "oklch(55% 0.19 356)",
+          "oklch(68% 0.175 356)",
+          "oklch(80% 0.115 356)",
+          "oklch(90% 0.06 356)",
+          "oklch(96% 0.02 356)"
+        ]
+      },
+      "notebook-paper": {
+        "role": "neutral",
+        "displayName": "Notebook Paper",
+        "canonical": "#FFF8E8",
+        "tonalRamp": [
+          "oklch(18% 0.012 85)",
+          "oklch(30% 0.016 85)",
+          "oklch(44% 0.02 85)",
+          "oklch(58% 0.022 85)",
+          "oklch(72% 0.024 85)",
+          "oklch(85% 0.026 85)",
+          "oklch(94% 0.028 85)",
+          "oklch(98% 0.025 85)"
+        ]
+      },
+      "bright-card": {
+        "role": "neutral",
+        "displayName": "Bright Card",
+        "canonical": "#FFFDF7",
+        "tonalRamp": [
+          "oklch(18% 0.008 85)",
+          "oklch(30% 0.01 85)",
+          "oklch(44% 0.012 85)",
+          "oklch(58% 0.014 85)",
+          "oklch(72% 0.015 85)",
+          "oklch(86% 0.014 85)",
+          "oklch(95% 0.012 85)",
+          "oklch(99% 0.01 85)"
+        ]
+      },
+      "warm-tint": {
+        "role": "neutral",
+        "displayName": "Warm Tint",
+        "canonical": "#F5EDD8",
+        "tonalRamp": [
+          "oklch(18% 0.014 84)",
+          "oklch(30% 0.018 84)",
+          "oklch(44% 0.022 84)",
+          "oklch(58% 0.026 84)",
+          "oklch(72% 0.028 84)",
+          "oklch(84% 0.03 84)",
+          "oklch(94% 0.03 84)",
+          "oklch(98% 0.016 84)"
+        ]
+      },
+      "printer-ink": {
+        "role": "neutral",
+        "displayName": "Printer Ink",
+        "canonical": "#111111",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(24% 0 0)",
+          "oklch(36% 0 0)",
+          "oklch(48% 0 0)",
+          "oklch(62% 0 0)",
+          "oklch(76% 0 0)",
+          "oklch(88% 0 0)",
+          "oklch(96% 0 0)"
+        ]
+      },
+      "pencil-soft": {
+        "role": "neutral",
+        "displayName": "Pencil Soft",
+        "canonical": "#4A4439",
+        "tonalRamp": [
+          "oklch(18% 0.014 78)",
+          "oklch(28% 0.018 78)",
+          "oklch(39% 0.02 78)",
+          "oklch(52% 0.02 78)",
+          "oklch(66% 0.018 78)",
+          "oklch(79% 0.016 78)",
+          "oklch(90% 0.014 78)",
+          "oklch(96% 0.01 78)"
+        ]
+      },
+      "chalk-white": {
+        "role": "neutral",
+        "displayName": "Chalk White",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "oklch(16% 0 0)",
+          "oklch(28% 0 0)",
+          "oklch(42% 0 0)",
+          "oklch(56% 0 0)",
+          "oklch(70% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(93% 0 0)",
+          "oklch(100% 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Marker Display",
+        "purpose": "Hero H1 thesis statement pairing Shantell Sans with single-weight ZCOOL KuaiLe (font-synthesis-weight: none)."
+      },
+      "headline": {
+        "displayName": "Section Headline",
+        "purpose": "Top-level H2 section openings across the five narrative chapters below the fold."
+      },
+      "title": {
+        "displayName": "Plate Title",
+        "purpose": "Step titles, course titles, Context Snapshot header, and ink-ruled principle headings."
+      },
+      "body": {
+        "displayName": "Notebook Prose",
+        "purpose": "Bilingual explanations, section leads, tutor replies, and transparent preview launch notes."
+      },
+      "label": {
+        "displayName": "Control Label",
+        "purpose": "Buttons, navigation links, folder tabs, mode switchers, and interactive chips."
+      },
+      "code": {
+        "displayName": "Code & Telemetry",
+        "purpose": "Editable Go workspace, Markdown source, terminal output strip, SHA-256 commands, and tabular counters."
+      }
+    },
+    "shadows": [
+      {
+        "name": "canvas-dot-grid",
+        "value": "radial-gradient(rgba(17, 17, 17, 0.065) 1px, transparent 1px) / 22px 22px",
+        "purpose": "Subtle notebook dot-grid background texture across the uncoated warm paper canvas."
+      },
+      {
+        "name": "halftone-focal-mat",
+        "value": ".zine-plate-focal (position: relative; isolation: isolate) ::before { inset: 7px -7px -7px 7px; border-radius: 14px; background-image: radial-gradient(rgba(17, 17, 17, 0.34) 1.35px, transparent 1.35px); background-size: 5px 5px; z-index: -1; pointer-events: none; }",
+        "purpose": "Print-offset halftone dot-matrix mat painted behind an opaque .zine-plate-focal-inner (z-index: 1; overflow: hidden) shell on primary focal plates."
+      },
+      {
+        "name": "primary-hover-lift",
+        "value": "0 8px 18px rgba(17, 17, 17, 0.12)",
+        "purpose": "Soft ambient hover lift exclusive to .zine-btn-primary:hover alongside translateY(-2px)."
+      },
+      {
+        "name": "focus-outline",
+        "value": "2.5px solid #0B6E63 (outline-offset: 2px; border-radius: 6px)",
+        "purpose": "Universal AA-safe keyboard :focus-visible outline across all links, buttons, and tabs."
+      }
+    ],
+    "motion": [
+      {
+        "name": "zine-ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Primary exponential deceleration curve (--zine-ease) shared by controls, swipes, and SVG ink draws."
+      },
+      {
+        "name": "duration-control",
+        "value": "180ms",
+        "purpose": "Hover lift, background transition, and tactile active press (scale 0.985) on primary and secondary buttons."
+      },
+      {
+        "name": "duration-progress",
+        "value": "300ms",
+        "purpose": "Context Snapshot 6,000-token progress meter width transitions when chips are removed or restored."
+      },
+      {
+        "name": "duration-swipe",
+        "value": "420ms",
+        "purpose": "Left-to-right clip-path highlighter reveal (.zine-swipe-reveal) triggered by route edits and passing checks."
+      },
+      {
+        "name": "duration-draw",
+        "value": "780ms",
+        "purpose": "State-triggered SVG stroke-dashoffset draw-on (280 -> 0) for hero, margin, and workbench connector arrows."
+      },
+      {
+        "name": "duration-underline",
+        "value": "820ms (delay 120ms)",
+        "purpose": "Mount-triggered SVG stroke-dashoffset draw-on (460 -> 0) for teal marker underlines."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce -> animation: none; stroke-dashoffset: 0; clip-path: none; duration: 0.01ms",
+        "purpose": "Collapses all scroll, swipe, draw, and control animations to static final states."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Zine Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Marker Yellow 2px-ink-bordered primary CTA paired on hero with radial black emphasis ticks and ambient hover lift.",
+      "html": "<div class=\"ds-cta-wrap\"><button class=\"ds-btn-primary\" type=\"button\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3v12\"/><path d=\"m7 11 5 5 5-5\"/><path d=\"M5 20h14\"/></svg><span>Download macOS Universal v0.1.0 (16.2 MB)</span></button><svg class=\"ds-cta-ticks\" width=\"24\" height=\"36\" viewBox=\"0 0 24 36\" fill=\"none\" aria-hidden=\"true\"><path d=\"M3 9 L14 3\" stroke=\"#111111\" stroke-width=\"2.4\" stroke-linecap=\"round\"/><path d=\"M5 18 L20 18\" stroke=\"#111111\" stroke-width=\"2.4\" stroke-linecap=\"round\"/><path d=\"M3 27 L14 33\" stroke=\"#111111\" stroke-width=\"2.4\" stroke-linecap=\"round\"/></svg></div>",
+      "css": ".ds-cta-wrap { display: inline-flex; align-items: center; gap: 6px; } .ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 24px; background: var(--zine-yellow, #FFE84D); color: var(--zine-ink, #111111); border: 2px solid var(--zine-ink, #111111); border-radius: 11px; font-family: 'Onest', 'PingFang SC', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), background-color 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background: #FFEF78; transform: translateY(-2px); box-shadow: 0 8px 18px rgba(17, 17, 17, 0.12); } .ds-btn-primary:active { transform: translateY(0) scale(0.985); } .ds-btn-primary:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; border-radius: 6px; } .ds-cta-ticks { flex-shrink: 0; }"
+    },
+    {
+      "name": "Secondary Zine Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Bright-paper 2px-ink-bordered utility button for Reference Diff inspection, GitHub links, locale switches, and secondary actions.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><line x1=\"12\" y1=\"4\" x2=\"12\" y2=\"20\"/><path d=\"M7 10h2\"/><path d=\"M15 10h2\"/><path d=\"M16 9v2\"/></svg><span>View Reference Diff</span></button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 16px; background: var(--zine-card, #FFFDF7); color: var(--zine-ink, #111111); border: 2px solid var(--zine-ink, #111111); border-radius: 11px; font-family: 'Onest', 'PingFang SC', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), background-color 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-secondary:hover { background: var(--zine-tint, #F5EDD8); transform: translateY(-1px); } .ds-btn-secondary:active { transform: translateY(0) scale(0.985); } .ds-btn-secondary:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; border-radius: 6px; }"
+    },
+    {
+      "name": "Zine TOC Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "sidebar-rail",
+      "description": "248px warm-paper left rail holding the circular yellow arch mark, teal marker underline, active section pill, and tilted language tags.",
+      "html": "<aside class=\"ds-rail\"><div class=\"ds-brand-row\"><span class=\"ds-arch-badge\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.3\" stroke-linecap=\"round\"><path d=\"M5 19V11a7 7 0 0 1 14 0v8\"/><path d=\"M9.5 19v-5.5a2.5 2.5 0 0 1 5 0V19\" opacity=\"0.6\"/></svg></span><span class=\"ds-brand-title\">CodeLab Studio</span></div><svg class=\"ds-underline\" viewBox=\"0 0 360 14\" fill=\"none\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><path d=\"M3 9 C 92 4, 248 4, 357 8\" stroke=\"#16A394\" stroke-width=\"4.5\" stroke-linecap=\"round\"/></svg><nav class=\"ds-nav-list\" aria-label=\"Sections\"><a class=\"ds-nav-link ds-nav-active\" href=\"#try-it\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"6 4 20 12 6 20 6 4\"/></svg><span>Interactive Lab</span></a><a class=\"ds-nav-link\" href=\"#courses\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/></svg><span>4 Built-in Courses</span></a></nav></aside>",
+      "css": ".ds-rail { width: 248px; padding: 24px 20px; background: var(--zine-paper, #FFF8E8); border-right: 2px solid var(--zine-ink, #111111); font-family: 'Onest', 'PingFang SC', sans-serif; color: var(--zine-ink, #111111); } .ds-brand-row { display: flex; align-items: center; gap: 10px; } .ds-arch-badge { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9999px; border: 2px solid var(--zine-ink, #111111); background: var(--zine-yellow, #FFE84D); transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-brand-row:hover .ds-arch-badge { transform: rotate(-6deg); } .ds-brand-title { font-family: 'Shantell Sans', 'ZCOOL KuaiLe', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -0.015em; font-synthesis-weight: none; } .ds-underline { display: block; width: 100%; height: 10px; margin-top: 8px; } .ds-nav-list { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; } .ds-nav-link { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; border: 2px solid transparent; color: var(--zine-ink-soft, #4A4439); text-decoration: none; font-size: 14px; font-weight: 700; transition: background-color 180ms, color 180ms; } .ds-nav-link:hover { background: var(--zine-tint, #F5EDD8); color: var(--zine-ink, #111111); } .ds-nav-active, .ds-nav-active:hover { border-color: var(--zine-ink, #111111); background: rgba(255, 232, 77, 0.75); color: var(--zine-ink, #111111); } .ds-nav-link:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; border-radius: 6px; }"
+    },
+    {
+      "name": "Mode Segmented Switcher",
+      "kind": "nav",
+      "refersTo": "segmented-switcher",
+      "description": "2px-ink-bordered tab tray switching between Static README (pink wash) and Interactive Workbench (Marker Yellow), accompanied by a teal SVG arrow.",
+      "html": "<div class=\"ds-mode-row\"><div class=\"ds-mode-tray\" role=\"tablist\" aria-label=\"Workbench mode\"><button class=\"ds-mode-tab\" role=\"tab\" aria-selected=\"false\" type=\"button\">Static README.md</button><button class=\"ds-mode-tab ds-mode-live\" role=\"tab\" aria-selected=\"true\" type=\"button\">Interactive Workbench</button></div><svg width=\"46\" height=\"20\" viewBox=\"0 0 46 20\" fill=\"none\" aria-hidden=\"true\"><path d=\"M2 11 C 14 7, 28 7, 40 10\" stroke=\"#0B6E63\" stroke-width=\"2.6\" stroke-linecap=\"round\"/><path d=\"M33 4 L42 10 L33 16\" stroke=\"#0B6E63\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></div>",
+      "css": ".ds-mode-row { display: inline-flex; align-items: center; gap: 12px; } .ds-mode-tray { display: inline-flex; padding: 4px; border: 2px solid var(--zine-ink, #111111); border-radius: 10px; background: var(--zine-card, #FFFDF7); } .ds-mode-tab { padding: 6px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--zine-ink-soft, #4A4439); font-family: 'Onest', 'PingFang SC', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; transition: background-color 180ms, color 180ms; } .ds-mode-tab:hover { color: var(--zine-ink, #111111); } .ds-mode-live { background: var(--zine-yellow, #FFE84D); color: var(--zine-ink, #111111); } .ds-mode-tab:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; border-radius: 6px; }"
+    },
+    {
+      "name": "Tilted Language Tags, Context Chips & Ink Tape",
+      "kind": "chip",
+      "refersTo": "context-chip",
+      "description": "Tactile ±1deg tilted course pills, removable monospace Context Snapshot chips, and the black printer-ink tape stamp.",
+      "html": "<div class=\"ds-chip-group\"><button class=\"ds-lang-tag ds-lang-go\" type=\"button\">Go · 10</button><button class=\"ds-lang-tag ds-lang-ts\" type=\"button\">TS · 8</button><button class=\"ds-lang-tag ds-lang-java\" type=\"button\">Java 21 · 7</button><button class=\"ds-ctx-pill\" type=\"button\"><span>task-api/main.go</span><span class=\"ds-ctx-tok\">410t</span><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\"><line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"/><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"/></svg></button><span class=\"ds-ink-tape\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z\"/></svg><span>ACP · Claude Code</span></span></div>",
+      "css": ".ds-chip-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; } .ds-lang-tag { padding: 4px 10px; border: 2px solid var(--zine-ink, #111111); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: var(--zine-ink, #111111); cursor: pointer; transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-lang-go { background: rgba(22, 163, 148, 0.25); transform: rotate(-1deg); } .ds-lang-ts { background: var(--zine-yellow, #FFE84D); transform: rotate(1deg); } .ds-lang-java { background: rgba(255, 111, 174, 0.40); transform: rotate(-1deg); } .ds-lang-tag:hover { transform: rotate(0deg); } .ds-ctx-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 2px solid var(--zine-ink, #111111); border-radius: 9999px; background: var(--zine-card, #FFFDF7); color: var(--zine-ink, #111111); font-family: 'Onest', 'PingFang SC', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 180ms; } .ds-ctx-pill:hover { background: rgba(255, 111, 174, 0.25); } .ds-ctx-tok { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-size: 10px; color: var(--zine-ink-soft, #4A4439); } .ds-ink-tape { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 5px; background: var(--zine-ink, #111111); color: var(--zine-card, #FFFDF7); font-family: 'Shantell Sans', 'ZCOOL KuaiLe', sans-serif; font-size: 12px; letter-spacing: 0.03em; } .ds-lang-tag:focus-visible, .ds-ctx-pill:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; }"
+    },
+    {
+      "name": "Editable Code Workspace & Terminal Strip",
+      "kind": "input",
+      "refersTo": "code-textarea",
+      "description": "Line-numbered JetBrains Mono editor pane with warm-paper gutter anchored above a dark printer-ink daemon output footer.",
+      "html": "<div class=\"ds-editor-box\"><div class=\"ds-editor-body\"><div class=\"ds-gutter\" aria-hidden=\"true\"><div>16</div><div>17</div><div>18</div><div>19</div></div><textarea class=\"ds-code-input\" rows=\"4\" aria-label=\"Edit task-api/main.go\" spellcheck=\"false\">mux := http.NewServeMux()\n// Prefix route with GET method\nmux.HandleFunc(\"GET /healthz\", healthz)\nreturn mux</textarea></div><div class=\"ds-term-bar\"><span class=\"ds-term-left\"><span class=\"ds-term-dot\"></span><span>Managed Daemon · go run .</span></span><span class=\"ds-term-pass\">PASS · 3/3 (9ms)</span></div></div>",
+      "css": ".ds-editor-box { max-width: 520px; border: 2px solid var(--zine-ink, #111111); border-radius: 14px; overflow: hidden; background: var(--zine-card, #FFFDF7); } .ds-editor-body { display: flex; } .ds-gutter { user-select: none; padding: 14px 12px; background: var(--zine-paper, #FFF8E8); border-right: 1px solid rgba(17, 17, 17, 0.15); font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1.7; text-align: right; color: var(--zine-ink-soft, #4A4439); } .ds-code-input { flex: 1; padding: 14px 16px; border: 0; background: transparent; color: var(--zine-ink, #111111); caret-color: var(--zine-teal-ink, #0B6E63); font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; resize: none; outline: none; } .ds-code-input:focus-visible { background: rgba(255, 232, 77, 0.12); } .ds-term-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-top: 2px solid var(--zine-ink, #111111); background: var(--zine-ink, #111111); color: var(--zine-paper, #FFF8E8); font-family: 'JetBrains Mono', monospace; font-size: 11px; } .ds-term-left { display: inline-flex; align-items: center; gap: 8px; } .ds-term-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--zine-teal, #16A394); } .ds-term-pass { font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Focal Halftone Zine Plate",
+      "kind": "card",
+      "refersTo": "plate-focal",
+      "description": "Non-clipping isolated wrapper with a ::before 7px down-right halftone dot-matrix mat behind an opaque overflow-hidden inner shell, AA-safe teal pass toggle, and yellow highlighted route token.",
+      "html": "<div class=\"ds-focal-card\"><div class=\"ds-focal-inner\"><div class=\"ds-focal-head\"><span>task-api/main.go · Live Workbench</span><button class=\"ds-pass-pill\" type=\"button\" aria-pressed=\"true\"><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg><span>3/3 Passed</span></button></div><pre class=\"ds-focal-code\"><code>func routes() *http.ServeMux {\n  mux := http.NewServeMux()\n  mux.HandleFunc(<span class=\"ds-hl-yellow\">\"GET /healthz\"</span>, healthz)\n  return mux\n}</code></pre></div></div>",
+      "css": ".ds-focal-card { position: relative; isolation: isolate; max-width: 440px; } .ds-focal-card::before { content: ''; position: absolute; inset: 7px -7px -7px 7px; border-radius: 14px; background-image: radial-gradient(rgba(17, 17, 17, 0.34) 1.35px, transparent 1.35px); background-size: 5px 5px; z-index: -1; pointer-events: none; } .ds-focal-inner { position: relative; z-index: 1; background: var(--zine-card, #FFFDF7); border: 2px solid var(--zine-ink, #111111); border-radius: 14px; overflow: hidden; } .ds-focal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 2px solid var(--zine-ink, #111111); background: var(--zine-tint, #F5EDD8); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: var(--zine-ink, #111111); } .ds-pass-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 2px solid var(--zine-ink, #111111); border-radius: 9999px; background: var(--zine-teal-ink, #0B6E63); color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; cursor: pointer; } .ds-pass-pill:hover { opacity: 0.92; } .ds-pass-pill:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; } .ds-focal-code { margin: 0; padding: 14px 16px; background: var(--zine-card, #FFFDF7); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7; color: var(--zine-ink, #111111); overflow-x: auto; } .ds-hl-yellow { background: var(--zine-yellow, #FFE84D); color: var(--zine-ink, #111111); padding: 1px 6px; border-radius: 4px; font-weight: 700; }"
+    },
+    {
+      "name": "Attached Notebook Folder Course Tabs",
+      "kind": "custom",
+      "refersTo": "plate-resting",
+      "description": "Top-rounded folder tabs whose active tab fuses seamlessly over the 2px top ink border of a resting single-sheet course plate.",
+      "html": "<div class=\"ds-folder-wrap\"><div class=\"ds-folder-tabs\" role=\"tablist\" aria-label=\"Built-in courses\"><button class=\"ds-ftab ds-ftab-active\" role=\"tab\" aria-selected=\"true\" type=\"button\"><span>Go</span><span class=\"ds-ftab-count\">10 ex</span></button><button class=\"ds-ftab\" role=\"tab\" aria-selected=\"false\" type=\"button\"><span>TypeScript</span><span class=\"ds-ftab-count\">8 ex</span></button><button class=\"ds-ftab\" role=\"tab\" aria-selected=\"false\" type=\"button\"><span>Python</span><span class=\"ds-ftab-count\">6 ex</span></button></div><div class=\"ds-folder-sheet\"><h4 class=\"ds-sheet-title\">Go &amp; GoFrame Engineering Handbook</h4><p class=\"ds-sheet-desc\">Build one Task API from stdlib net/http and SQLite through GoFrame migration across 10 exercises.</p></div></div>",
+      "css": ".ds-folder-wrap { max-width: 480px; font-family: 'Onest', 'PingFang SC', sans-serif; } .ds-folder-tabs { display: flex; flex-wrap: wrap; gap: 8px; } .ds-ftab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border: 2px solid var(--zine-ink, #111111); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--zine-tint, #F5EDD8); color: var(--zine-ink-soft, #4A4439); font-size: 14px; font-weight: 700; cursor: pointer; transition: background-color 180ms, color 180ms; } .ds-ftab:hover { background: var(--zine-card, #FFFDF7); color: var(--zine-ink, #111111); } .ds-ftab-active { position: relative; z-index: 2; margin-bottom: -2px; padding-bottom: 12px; background: rgba(22, 163, 148, 0.25); color: var(--zine-ink, #111111); } .ds-ftab-count { padding: 2px 8px; border-radius: 9999px; background: var(--zine-card, #FFFDF7); font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; color: var(--zine-ink, #111111); } .ds-folder-sheet { padding: 20px 24px; border: 2px solid var(--zine-ink, #111111); border-radius: 0 14px 14px 14px; background: var(--zine-card, #FFFDF7); } .ds-sheet-title { margin: 0; font-family: 'Shantell Sans', 'ZCOOL KuaiLe', sans-serif; font-size: 20px; font-weight: 700; color: var(--zine-ink, #111111); font-synthesis-weight: none; } .ds-sheet-desc { margin: 8px 0 0; font-size: 14px; line-height: 1.6; color: var(--zine-ink-soft, #4A4439); } .ds-ftab:focus-visible { outline: 2.5px solid var(--zine-teal-ink, #0B6E63); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Annotated Engineering Zine",
+    "overview": "The CodeLab Studio public website treats developer documentation like a tactile, hand-annotated technical zine laid out on uncoated warm notebook paper. Rather than mimicking a generic dark-mode SaaS pitch deck, every viewport reads like an open engineering workbook: crisp `2px` black printer-ink linework structures the page, a `22px` dot-grid wash grounds the canvas, and three flat highlighter inks—yellow for primary actions and active routes, pink for emphasis swipes and failing diffs, and teal for animated flow connectors and passing checks—guide the eye directly from static Markdown prose into live verifiable code.\n\nExpressive personality stays strictly separated from reading legibility. Hand-lettered marker headings (`Shantell Sans` paired with self-hosted `ZCOOL KuaiLe` for Simplified Chinese) supply zine warmth and margin callouts, while clean geometric sans (`Onest`) carries bilingual explanations and tabular `JetBrains Mono` locks code snippets, check timings, file sizes, and token counts into crisp alignment. Confirmed visual rejections include dark-mode neon-glow landing templates, equal-sized SaaS bento grids, solid black slab drop shadows, and nested bordered cards stacked inside bordered cards.",
+    "keyCharacteristics": [
+      "Uncoated warm paper ground (`#FFF8E8`) washed with a subtle `22px × 22px` dot grid, bright notebook plate surfaces (`#FFFDF7`), and crisp `2px solid #111111` ink linework.",
+      "Three flat highlighter families—Marker Yellow (`#FFE84D`), Marker Teal (`#16A394` strokes / `#0B6E63` AA-safe ink), and Fluorescent Pink (`#FF6FAE` swipes / `#A8185B` AA-safe ink)—strictly paired so every text label clears WCAG 2.1 AA (≥ 4.5:1).",
+      "Halftone dot-matrix offset mats (`5px × 5px` dots offset `7px` down-right) reserved exclusively for primary focal plates, leaving secondary containers flat on `2px` borders and open ink rules.",
+      "Fully self-hosted bilingual typography (`Shantell Sans`, `ZCOOL KuaiLe`, `Onest`, `JetBrains Mono`) with `font-synthesis-weight: none` on marker display text and `tabular-nums` on all numeric diagnostics.",
+      "State-triggered SVG ink motion (`stroke-dashoffset` connector arrows and `clip-path` highlighter swipes) keyed to interactive mode flips and verification passes, honoring `prefers-reduced-motion: reduce`."
+    ],
+    "rules": [
+      {
+        "name": "The AA-Paired Ink Rule",
+        "body": "Bright highlighter fills (`#16A394` Marker Teal and `#FF6FAE` Fluorescent Pink) are restricted to decorative strokes, marker swipes, tint washes (15%–45% opacity), and dark-ink-filled pills; all colored text, icons, focus rings, and white-foreground badges must use their deepened ink twins (`#0B6E63` and `#A8185B`).",
+        "section": "colors"
+      },
+      {
+        "name": "The Three-Highlighter Ceiling Rule",
+        "body": "Keep chromatic accent hues strictly within the yellow, teal, and pink marker triad—yellow for primary actions and focused code/tabs, teal for verification passes and flow connectors, and pink for headline emphasis, failing diffs, and safety callouts—without introducing extra rainbow categories.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Faux-Bold Marker Rule",
+        "body": "Apply `font-synthesis-weight: none` whenever `.font-marker` pairs multi-weight `Shantell Sans` (`600`–`800`) with single-weight `ZCOOL KuaiLe` (`400`), preventing browser synthetic bolding from blurring Simplified Chinese strokes.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Telemetry Rule",
+        "body": "Every numeric readout that updates or aligns vertically—check ratios (`2/3`, `3/3`), assertion timings (`4ms`), exercise counts (`10 题`), editor line numbers, installer sizes (`16.2 MB`), and ACP token budgets (`~1180 / 6,000 tok`)—uses `JetBrains Mono` with `font-variant-numeric: tabular-nums`.",
+        "section": "typography"
+      },
+      {
+        "name": "The Persistent Rail Rule",
+        "body": "Above `1024px`, navigation stays anchored in the `248px` sticky left zine table-of-contents rail while the right top utility strip holds only locale switching, the GitHub link, and the primary download action; below `1024px`, the rail collapses into a single sticky top notebook bar and toggleable dropdown TOC.",
+        "section": "layout"
+      },
+      {
+        "name": "The Open-Paper Spread Rule",
+        "body": "Separate page sections with full-width `2px solid #111111` ink dividers and divide internal plate panes with borderless tonal shifts (`#FFFDF7` / `#F5EDD8` / `#FFF8E8`) and hairlines rather than wrapping bordered cards inside outer bordered cards.",
+        "section": "layout"
+      },
+      {
+        "name": "The Halftone Focal-Only Rule",
+        "body": "Reserve the `7px` offset halftone dot-matrix mat (`.zine-plate-focal`) strictly for primary focal plates (the hero live preview, interactive workbench, desktop capture figure, ACP permission card, and download plate); resting secondary surfaces stay flat with `2px` borders and zero drop shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Hover-Only Ambient Shadow Rule",
+        "body": "Avoid solid black slab shadows anywhere in the system; soft ambient elevation (`0 8px 18px rgba(17, 17, 17, 0.12)`) appears solely on `.zine-btn-primary:hover` alongside a `-2px` vertical lift.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Whisper-Tilt Rule",
+        "body": "Physical paper tilt is capped at `±1deg` (`-rotate-1` / `rotate-1`) on small movable artifacts—tilted language jump tags, the static README slip, and margin callout notes—and straightens cleanly to `0deg` on hover; main reading columns and code editors stay strictly upright.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do self-host every typeface (`Shantell Sans`, `ZCOOL KuaiLe`, `Onest`, `JetBrains Mono`) via bundled `@fontsource` assets so the bilingual zine renders identically offline and across locales.",
+      "Do pair bright highlighters (`#16A394`, `#FF6FAE`) with their AA-safe ink twins (`#0B6E63`, `#A8185B`) on every colored text label, pointer arrow, focus outline (`2.5px solid #0B6E63`), and solid badge carrying white glyphs.",
+      "Do use `2px solid #111111` structural borders on plates, controls, and section dividers, and keep internal sub-regions flat with tonal shifts (`#FFFDF7`, `#F5EDD8`, `#FFF8E8`) and light ink hairlines (`rgba(17, 17, 17, 0.15–0.20)`).",
+      "Do keep SVG ink connectors (`HeroFlowConnector`, `PinkPointerArrow`, `TransformArrowSvg`) in-flow with state-keyed `stroke-dashoffset` draw-on animations and collapse all motion cleanly under `prefers-reduced-motion: reduce`.",
+      "Do preserve `tabular-nums` (`JetBrains Mono`) on every check counter, latency, file size, line gutter, and token budget meter."
+    ],
+    "donts": [
+      "Don't replace halftone dot-matrix offset mats (`5px × 5px` radial dots) with solid black neobrutalist slab shadows or heavy blurred dark-mode glows.",
+      "Don't nest bordered `.zine-plate` boxes inside another bordered `.zine-plate` or `.zine-plate-focal` container; use tonal bands and hairline dividers inside plates instead.",
+      "Don't use raw `#16A394` or `#FF6FAE` for body copy, links, or small labels on warm `#FFF8E8` / `#FFFDF7` paper—they fall below WCAG 2.1 AA text contrast without their deep ink counterparts.",
+      "Don't add eyebrow kickers above section headings or decorative equal-card SaaS bento grids; open every section directly with its marker `<h2>` heading and prose lead.",
+      "Don't apply synthetic bolding to CJK marker headings or tilt large readable panels beyond `0deg`."
+    ]
+  }
+}

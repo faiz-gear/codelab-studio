@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --zine-paper: #fff8e8;
+  --zine-card: #fffdf7;
+  --zine-tint: #f5edd8;
+  --zine-ink: #111111;
+  --zine-ink-soft: #4a4439;
+  --zine-yellow: #ffe84d;
+  --zine-pink: #ff6fae;
+  --zine-pink-ink: #a8185b;
+  --zine-teal: #16a394;
+  --zine-teal-ink: #0b6e63;
+  --zine-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    background-color: var(--zine-paper);
+    color: var(--zine-ink);
+    font-family: "Onest", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--zine-paper);
+    background-image: radial-gradient(rgba(17, 17, 17, 0.065) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--zine-ink);
+    caret-color: var(--zine-teal-ink);
+  }
+
+  ::selection {
+    background-color: var(--zine-yellow);
+    color: var(--zine-ink);
+  }
+
+  :focus-visible {
+    outline: 2.5px solid var(--zine-teal-ink);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  a {
+    text-underline-offset: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--zine-paper);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(17, 17, 17, 0.24);
+    border: 2px solid var(--zine-paper);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(17, 17, 17, 0.44);
+  }
+}
+
+/* Marker display typography: Shantell Sans (Latin) + self-hosted ZCOOL KuaiLe (Simplified Chinese) */
+.font-marker {
+  font-family: "Shantell Sans", "ZCOOL KuaiLe", "PingFang SC", "Noto Sans SC", sans-serif;
+  font-synthesis-weight: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Resting flat notebook plate (border-only elevation) */
+.zine-plate {
+  background-color: var(--zine-card);
+  border: 2px solid var(--zine-ink);
+  border-radius: 14px;
+}
+
+/* Focal zine plate with halftone dot-matrix offset mat behind an opaque inner shell (zero clipping, zero bleed) */
+.zine-plate-focal {
+  position: relative;
+  isolation: isolate;
+}
+
+.zine-plate-focal::before {
+  content: "";
+  position: absolute;
+  inset: 7px -7px -7px 7px;
+  border-radius: 14px;
+  background-image: radial-gradient(rgba(17, 17, 17, 0.34) 1.35px, transparent 1.35px);
+  background-size: 5px 5px;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.zine-plate-focal-inner {
+  position: relative;
+  z-index: 1;
+  background-color: var(--zine-card);
+  border: 2px solid var(--zine-ink);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* Black ink tape badge matching zine-board.png section headers */
+.zine-ink-tape {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--zine-ink);
+  color: var(--zine-card);
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-family: "Shantell Sans", "ZCOOL KuaiLe", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.zine-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--zine-yellow);
+  color: var(--zine-ink);
+  border: 2px solid var(--zine-ink);
+  border-radius: 11px;
+  font-weight: 700;
+  transition: transform 180ms var(--zine-ease), background-color 180ms var(--zine-ease), box-shadow 180ms var(--zine-ease);
+}
+
+.zine-btn-primary:hover {
+  background-color: #ffef78;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.12);
+}
+
+.zine-btn-primary:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.zine-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--zine-card);
+  color: var(--zine-ink);
+  border: 2px solid var(--zine-ink);
+  border-radius: 11px;
+  font-weight: 600;
+  transition: transform 180ms var(--zine-ease), background-color 180ms var(--zine-ease);
+}
+
+.zine-btn-secondary:hover {
+  background-color: var(--zine-tint);
+  transform: translateY(-1px);
+}
+
+.zine-btn-secondary:active {
+  transform: translateY(0) scale(0.985);
+}
+
+/* Marker highlighter swipes */
+.swipe-pink {
+  background-image: linear-gradient(
+    180deg,
+    transparent 34%,
+    rgba(255, 111, 174, 0.56) 34%,
+    rgba(255, 111, 174, 0.56) 90%,
+    transparent 90%
+  );
+  padding: 0 6px;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.swipe-yellow {
+  background-color: var(--zine-yellow);
+  color: var(--zine-ink);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Sliding highlighter reveal for state transitions (mode switch & pass check) */
+.zine-swipe-reveal {
+  display: inline-block;
+  animation: zineHighlighterSlide 420ms var(--zine-ease) both;
+}
+
+@keyframes zineHighlighterSlide {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* State- and mount-triggered SVG stroke-dashoffset draw-on motion */
+.zine-draw-path {
+  stroke-dasharray: 280;
+  stroke-dashoffset: 0;
+  animation: zineStrokeDraw 780ms var(--zine-ease) both;
+}
+
+.zine-draw-underline {
+  stroke-dasharray: 460;
+  stroke-dashoffset: 0;
+  animation: zineUnderlineDraw 820ms 120ms var(--zine-ease) both;
+}
+
+@keyframes zineStrokeDraw {
+  from {
+    stroke-dashoffset: 280;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes zineUnderlineDraw {
+  from {
+    stroke-dashoffset: 460;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Code editor textarea styling */
+.zine-code-textarea {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  tab-size: 4;
+  resize: none;
+  outline: none;
+}
+
+.zine-code-textarea:focus {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .zine-draw-path,
+  .zine-draw-underline,
+  .zine-swipe-reveal {
+    animation: none;
+    stroke-dashoffset: 0;
+    clip-path: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
