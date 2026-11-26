@@ -9,5 +9,10 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     setupFiles: ["./src/__tests__/setup.ts"],
     css: true,
+    poolOptions: {
+      forks: {
+        execArgv: ["--disable-warning=ExperimentalWarning"],
+      },
+    },
   },
 });

@@ -13,6 +13,7 @@ Issues and specs for this repo live as GitHub issues in the private repo `faiz-g
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: post the explanation with `gh issue comment <number> --body "..."`, then `gh issue close <number>`. On an already-closed issue, `gh issue close --comment` drops the comment and still exits 0.
+- **Resolve PR conflicts by rebasing**: Rebase feature PR branches onto `origin/main` (`git fetch origin && git rebase origin/main`, verify checks, then `git push --force-with-lease`) rather than reverse-merging `main` so GitHub cleanly re-evaluates mergeability and CI.
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 

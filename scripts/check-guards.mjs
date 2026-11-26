@@ -333,6 +333,178 @@ for (const rel of sourceFiles) {
   });
 }
 
+// 3e. Never Debug-format Rust ErrorCode variants into production strings.
+function skipRustLiteral(source, i) {
+  const prevIsIdent = i > 0 && /[A-Za-z0-9_]/.test(source[i - 1]);
+  // Raw string literal: r"...", r#"..."#, br#"..."#, cr#"..."#
+  const rawMatch = !prevIsIdent && /^(?:[bc]?r)(#*)"/.exec(source.slice(i));
+  if (rawMatch) {
+    const hashes = rawMatch[1];
+    const pos = i + rawMatch[0].length;
+    const endToken = `"${hashes}`;
+    const closeIdx = source.indexOf(endToken, pos);
+    return closeIdx === -1 ? source.length : closeIdx + endToken.length;
+  }
+  // Normal or byte/C string literal: "...", b"...", c"..."
+  const strMatch = !prevIsIdent && /^[bc]?"/.exec(source.slice(i));
+  if (strMatch) {
+    let pos = i + strMatch[0].length;
+    while (pos < source.length) {
+      if (source[pos] === "\\") pos += 2;
+      else if (source[pos] === "\"") return pos + 1;
+      else pos += 1;
+    }
+    return pos;
+  }
+  // Character / byte-character literal (avoid consuming Rust lifetimes like 'a or 'static)
+  const charMatch =
+    !prevIsIdent &&
+    /^b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]+\}|.)|[^'\\])'/.exec(
+      source.slice(i)
+    );
+  if (charMatch) {
+    return i + charMatch[0].length;
+  }
+  return i;
+}
+
+function stripRustCommentsPreserveLines(source) {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out += " ";
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      let depth = 1;
+      out += "  ";
+      i += 2;
+      while (i < source.length && depth > 0) {
+        if (source[i] === "/" && source[i + 1] === "*") {
+          depth += 1;
+          out += "  ";
+          i += 2;
+        } else if (source[i] === "*" && source[i + 1] === "/") {
+          depth -= 1;
+          out += "  ";
+          i += 2;
+        } else {
+          out += source[i] === "\n" ? "\n" : " ";
+          i += 1;
+        }
+      }
+      continue;
+    }
+    const litEnd = skipRustLiteral(source, i);
+    if (litEnd > i) {
+      out += source.slice(i, litEnd);
+      i = litEnd;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+function stripCfgTestBlocksPreserveLines(source) {
+  let out = source;
+  const cfgTest = /#\[cfg\(test\)\]/g;
+  let match;
+  while ((match = cfgTest.exec(out)) !== null) {
+    const start = match.index;
+    let pos = cfgTest.lastIndex;
+    let end = pos;
+    while (pos < out.length) {
+      const litEnd = skipRustLiteral(out, pos);
+      if (litEnd > pos) {
+        pos = litEnd;
+        continue;
+      }
+      if (out[pos] === ";") {
+        end = pos + 1;
+        break;
+      }
+      if (out[pos] === "{") {
+        let depth = 1;
+        pos += 1;
+        while (pos < out.length && depth > 0) {
+          const innerLitEnd = skipRustLiteral(out, pos);
+          if (innerLitEnd > pos) {
+            pos = innerLitEnd;
+            continue;
+          }
+          if (out[pos] === "{") depth += 1;
+          else if (out[pos] === "}") depth -= 1;
+          pos += 1;
+        }
+        end = pos;
+        break;
+      }
+      pos += 1;
+    }
+    const blanked = out.slice(start, end).replace(/[^\n]/g, " ");
+    out = out.slice(0, start) + blanked + out.slice(end);
+    cfgTest.lastIndex = end;
+  }
+  return out;
+}
+
+function findRustFormatInvocations(source) {
+  const results = [];
+  const macroPattern = /\b(?:format|write|writeln)\s*!\s*([([{])/g;
+  const closers = { "(": ")", "[": "]", "{": "}" };
+  let match;
+  while ((match = macroPattern.exec(source)) !== null) {
+    const open = match[1];
+    const close = closers[open];
+    let depth = 1;
+    let i = macroPattern.lastIndex;
+    while (i < source.length && depth > 0) {
+      const litEnd = skipRustLiteral(source, i);
+      if (litEnd > i) {
+        i = litEnd;
+        continue;
+      }
+      if (source[i] === open) depth += 1;
+      else if (source[i] === close) depth -= 1;
+      i += 1;
+    }
+    const line = source.slice(0, match.index).split("\n").length;
+    results.push({ line, body: source.slice(match.index, i) });
+  }
+  return results;
+}
+
+const rustCoreSrcFiles = walkFiles(join(ROOT, "crates/codelab-core/src")).map((file) =>
+  relative(ROOT, file).replaceAll("\\", "/")
+);
+for (const rel of rustCoreSrcFiles) {
+  if (!rel.endsWith(".rs") || rel === "crates/codelab-core/src/error.rs") continue;
+  const cleaned = stripCfgTestBlocksPreserveLines(
+    stripRustCommentsPreserveLines(readText(rel))
+  );
+  for (const { line, body } of findRustFormatInvocations(cleaned)) {
+    const hasDebugSpec = /\{[^"{}]*:#?\?\}/.test(body);
+    const referencesErrorCode =
+      /\bErrorCode::/.test(body) ||
+      /\.(?:error_)?code\b(?!\s*\()/.test(body) ||
+      /\{\s*(?:err|error)_code\s*:#?\?\}/.test(body);
+    if (hasDebugSpec && referencesErrorCode) {
+      fail(
+        "rust-no-debug-error-code",
+        `${rel}:${line} Debug-formats an ErrorCode into a string; pass typed DomainError to UI or serialize via serde.`
+      );
+    }
+  }
+}
+
 // 4. Design token sync: src/styles/tokens.css <-> docs/design/tokens.css
 const docTokens = readText("docs/design/tokens.css");
 if (appTokens !== docTokens) {
