@@ -127,6 +127,10 @@
   box-shadow: var(--shadow-resting);
 }
 
+.tutor-policy-option.is-active:focus-visible {
+  box-shadow: var(--focus-outline);
+}
+
 .tutor-policy-option strong {
   font-size: 13px;
   font-weight: 500;
@@ -145,8 +149,24 @@
 
 /* ---------- Right Pane: AI Tutor Drawer ---------- */
 .wb.has-tutor-docked:not(.is-focus) .pane-left {
-  width: 32%;
+  width: 28%;
   min-width: 300px;
+  max-width: calc(100% - 520px - var(--ai-w));
+}
+
+.wb.has-tutor-docked .pane-center {
+  min-width: 520px;
+}
+
+@media (width >= 1440px) {
+  .wb.has-tutor-docked:not(.is-focus) .pane-left {
+    width: 32%;
+    max-width: calc(100% - var(--editor-docked-min-w) - var(--ai-w));
+  }
+
+  .wb.has-tutor-docked .pane-center {
+    min-width: var(--editor-docked-min-w);
+  }
 }
 
 .tutor-drawer {
@@ -169,22 +189,8 @@
   z-index: 35;
   width: min(380px, calc(100vw - 24px));
   background: color-mix(in oklab, var(--surface-raised) 92%, transparent);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
   box-shadow: var(--shadow-floating);
-}
-
-@media (width <= 1279px) {
-  .tutor-drawer {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 35;
-    width: min(380px, calc(100vw - 24px));
-    background: color-mix(in oklab, var(--surface-raised) 92%, transparent);
-    backdrop-filter: blur(12px);
-    box-shadow: var(--shadow-floating);
-  }
 }
 
 @keyframes slide-in-right {
@@ -274,6 +280,10 @@
   background: var(--surface);
   color: var(--foreground);
   box-shadow: var(--shadow-resting);
+}
+
+.tutor-style-toggle .seg-btn.is-active:focus-visible {
+  box-shadow: var(--focus-outline);
 }
 
 .tutor-policy-pill {

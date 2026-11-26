@@ -23,16 +23,6 @@ impl AcpAgentPreset {
             Self::Custom => "",
         }
     }
-
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "Claude Code",
-            Self::GeminiCli => "Gemini CLI",
-            Self::CodexCli => "Codex CLI",
-            Self::OpenCode => "OpenCode",
-            Self::Custom => "Custom ACP Agent",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -265,6 +255,13 @@ impl TutorHistory {
         self.messages
             .iter()
             .all(|msg| !msg.id.trim().is_empty() && !msg.turn_id.trim().is_empty())
+    }
+
+    pub fn find_assistant_mut(&mut self, turn_id: &str) -> Option<&mut TutorMessage> {
+        self.messages
+            .iter_mut()
+            .rev()
+            .find(|msg| msg.turn_id == turn_id && msg.role == TutorRole::Assistant)
     }
 
     pub fn recover_interrupted(&mut self) -> bool {

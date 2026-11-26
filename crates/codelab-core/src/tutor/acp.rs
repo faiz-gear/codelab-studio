@@ -65,25 +65,7 @@ impl TutorBackend for AcpStdioBackend {
             let _ = reader_child;
         });
 
-        let init_req = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": 1,
-                "clientInfo": {
-                    "name": CLIENT_NAME,
-                    "version": CLIENT_VERSION,
-                },
-                "clientCapabilities": {
-                    "fs": {
-                        "readTextFile": true,
-                        "writeTextFile": true,
-                    },
-                    "terminal": true,
-                }
-            }
-        });
+        let init_req = initialize_request(1);
         let write_result = write_json_line(&stdin, &init_req);
         let outcome = match write_result {
             Err(_) => Err(DomainError::new(ErrorCode::AcpHandshakeFailed)
@@ -156,15 +138,20 @@ impl AcpStdioSession {
         let shutting_down = Arc::new(AtomicBool::new(false));
         let next_agent_req = Arc::new(AtomicU64::new(1));
 
+        let router = AgentRequestRouter {
+            stdin: Arc::clone(&stdin),
+            pending_agent: Arc::clone(&pending_agent),
+            active_turn: Arc::clone(&active_turn),
+            next_agent_req: Arc::clone(&next_agent_req),
+            sink: Arc::clone(&sink),
+        };
         {
-            let stdin = Arc::clone(&stdin);
             let child = Arc::clone(&child);
             let pending_client = Arc::clone(&pending_client);
             let pending_agent = Arc::clone(&pending_agent);
             let active_turn = Arc::clone(&active_turn);
             let shutting_down = Arc::clone(&shutting_down);
             let sink = Arc::clone(&sink);
-            let next_agent_req = Arc::clone(&next_agent_req);
             thread::Builder::new()
                 .name("codelab-acp-reader".into())
                 .spawn(move || {
@@ -204,15 +191,10 @@ impl AcpStdioSession {
                                 }
                             }
                             (Some(method), Some(rpc_id)) => {
-                                handle_agent_request(
+                                router.handle(
                                     method,
                                     rpc_id.clone(),
                                     value.get("params").unwrap_or(&Value::Null),
-                                    &stdin,
-                                    &pending_agent,
-                                    &active_turn,
-                                    &next_agent_req,
-                                    &sink,
                                 );
                             }
                             (None, None) => {}
@@ -261,20 +243,7 @@ impl AcpStdioSession {
 
         let init_response = session.call_rpc(
             "initialize",
-            json!({
-                "protocolVersion": 1,
-                "clientInfo": {
-                    "name": CLIENT_NAME,
-                    "version": CLIENT_VERSION,
-                },
-                "clientCapabilities": {
-                    "fs": {
-                        "readTextFile": true,
-                        "writeTextFile": true,
-                    },
-                    "terminal": true,
-                }
-            }),
+            initialize_params(),
             HANDSHAKE_TIMEOUT,
             ErrorCode::AcpHandshakeFailed,
             &spec.command,
@@ -425,16 +394,10 @@ impl TutorBackendSession for AcpStdioSession {
                             sink(BackendEvent::TurnCancelled { turn_id });
                             return;
                         }
-                        if let Some(error) = response.get("error") {
-                            let message = error
-                                .get("message")
-                                .and_then(Value::as_str)
-                                .unwrap_or("ACP error")
-                                .to_owned();
+                        if response.get("error").is_some() {
                             sink(BackendEvent::TurnFailed {
                                 turn_id,
                                 code: ErrorCode::AcpProtocolError,
-                                detail: message,
                             });
                             return;
                         }
@@ -662,156 +625,163 @@ impl Drop for AcpStdioSession {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn handle_agent_request(
-    method: &str,
-    rpc_id: Value,
-    params: &Value,
-    stdin: &Arc<Mutex<Option<ChildStdin>>>,
-    pending_agent: &Arc<Mutex<HashMap<String, PendingAgentRequest>>>,
-    active_turn: &Arc<Mutex<Option<ActiveTurnState>>>,
-    next_agent_req: &AtomicU64,
-    sink: &BackendEventSink,
-) {
-    let turn_id = active_turn
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .as_ref()
-        .map(|t| t.turn_id.clone())
-        .unwrap_or_else(|| "session".to_owned());
+struct AgentRequestRouter {
+    stdin: Arc<Mutex<Option<ChildStdin>>>,
+    pending_agent: Arc<Mutex<HashMap<String, PendingAgentRequest>>>,
+    active_turn: Arc<Mutex<Option<ActiveTurnState>>>,
+    next_agent_req: Arc<AtomicU64>,
+    sink: BackendEventSink,
+}
 
-    let request_id = format!("perm-{}", next_agent_req.fetch_add(1, Ordering::SeqCst));
+impl AgentRequestRouter {
+    fn handle(&self, method: &str, rpc_id: Value, params: &Value) {
+        let turn_id = self
+            .active_turn
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map(|t| t.turn_id.clone())
+            .unwrap_or_else(|| "session".to_owned());
 
-    match method {
-        "session/request_permission" => {
-            let (kind, title, target_path, command, raw_input, allow_opt, reject_opt) =
-                parse_permission_params(params);
-            pending_agent
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .insert(
-                    request_id.clone(),
-                    PendingAgentRequest {
-                        rpc_id,
-                        method: method.to_owned(),
-                        turn_id: turn_id.clone(),
-                        allow_option_id: allow_opt,
-                        reject_option_id: reject_opt,
+        let request_id = format!(
+            "perm-{}",
+            self.next_agent_req.fetch_add(1, Ordering::SeqCst)
+        );
+
+        match method {
+            "session/request_permission" => {
+                let parsed = parse_permission_params(params);
+                self.pending_agent
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(
+                        request_id.clone(),
+                        PendingAgentRequest {
+                            rpc_id,
+                            method: method.to_owned(),
+                            turn_id: turn_id.clone(),
+                            allow_option_id: parsed.allow_option_id,
+                            reject_option_id: parsed.reject_option_id,
+                        },
+                    );
+                (self.sink)(BackendEvent::PermissionRequested {
+                    turn_id,
+                    request: BackendPermissionPrompt {
+                        request_id,
+                        kind: parsed.kind,
+                        title: parsed.title,
+                        target_path: parsed.target_paths.first().cloned(),
+                        target_paths: parsed.target_paths,
+                        command: parsed.command,
+                        raw_input: parsed.raw_input,
+                        write_content: None,
+                        is_fs_method: false,
                     },
-                );
-            sink(BackendEvent::PermissionRequested {
-                turn_id,
-                request: BackendPermissionPrompt {
-                    request_id,
-                    kind,
-                    title,
-                    target_path,
-                    command,
-                    raw_input,
-                    write_content: None,
-                    is_fs_method: false,
-                },
-            });
-        }
-        "fs/read_text_file" => {
-            let path = params
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let title = path
-                .as_deref()
-                .map(|p| format!("Read {p}"))
-                .unwrap_or_else(|| "Read file".to_owned());
-            pending_agent
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .insert(
-                    request_id.clone(),
-                    PendingAgentRequest {
-                        rpc_id,
-                        method: method.to_owned(),
-                        turn_id: turn_id.clone(),
-                        allow_option_id: None,
-                        reject_option_id: None,
+                });
+            }
+            "fs/read_text_file" => {
+                let path = params
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let title = path
+                    .as_deref()
+                    .map(|p| format!("Read {p}"))
+                    .unwrap_or_else(|| "Read file".to_owned());
+                self.pending_agent
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(
+                        request_id.clone(),
+                        PendingAgentRequest {
+                            rpc_id,
+                            method: method.to_owned(),
+                            turn_id: turn_id.clone(),
+                            allow_option_id: None,
+                            reject_option_id: None,
+                        },
+                    );
+                let target_paths = path.iter().cloned().collect();
+                (self.sink)(BackendEvent::PermissionRequested {
+                    turn_id,
+                    request: BackendPermissionPrompt {
+                        request_id,
+                        kind: TutorPermissionKind::Read,
+                        title,
+                        target_path: path,
+                        target_paths,
+                        command: None,
+                        raw_input: Some(params.clone()),
+                        write_content: None,
+                        is_fs_method: true,
                     },
-                );
-            sink(BackendEvent::PermissionRequested {
-                turn_id,
-                request: BackendPermissionPrompt {
-                    request_id,
-                    kind: TutorPermissionKind::Read,
-                    title,
-                    target_path: path,
-                    command: None,
-                    raw_input: Some(params.clone()),
-                    write_content: None,
-                    is_fs_method: true,
-                },
-            });
-        }
-        "fs/write_text_file" => {
-            let path = params
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let content = params
-                .get("content")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let title = path
-                .as_deref()
-                .map(|p| format!("Write {p}"))
-                .unwrap_or_else(|| "Write file".to_owned());
-            pending_agent
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .insert(
-                    request_id.clone(),
-                    PendingAgentRequest {
-                        rpc_id,
-                        method: method.to_owned(),
-                        turn_id: turn_id.clone(),
-                        allow_option_id: None,
-                        reject_option_id: None,
+                });
+            }
+            "fs/write_text_file" => {
+                let path = params
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let content = params
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let title = path
+                    .as_deref()
+                    .map(|p| format!("Write {p}"))
+                    .unwrap_or_else(|| "Write file".to_owned());
+                self.pending_agent
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(
+                        request_id.clone(),
+                        PendingAgentRequest {
+                            rpc_id,
+                            method: method.to_owned(),
+                            turn_id: turn_id.clone(),
+                            allow_option_id: None,
+                            reject_option_id: None,
+                        },
+                    );
+                let target_paths = path.iter().cloned().collect();
+                (self.sink)(BackendEvent::PermissionRequested {
+                    turn_id,
+                    request: BackendPermissionPrompt {
+                        request_id,
+                        kind: TutorPermissionKind::Write,
+                        title,
+                        target_path: path,
+                        target_paths,
+                        command: None,
+                        raw_input: Some(params.clone()),
+                        write_content: content,
+                        is_fs_method: true,
                     },
-                );
-            sink(BackendEvent::PermissionRequested {
-                turn_id,
-                request: BackendPermissionPrompt {
-                    request_id,
-                    kind: TutorPermissionKind::Write,
-                    title,
-                    target_path: path,
-                    command: None,
-                    raw_input: Some(params.clone()),
-                    write_content: content,
-                    is_fs_method: true,
-                },
-            });
-        }
-        _ => {
-            let reply = json!({
-                "jsonrpc": "2.0",
-                "id": rpc_id,
-                "error": { "code": -32601, "message": "Method not found" }
-            });
-            let _ = write_json_line(stdin, &reply);
+                });
+            }
+            _ => {
+                let reply = json!({
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": { "code": -32601, "message": "Method not found" }
+                });
+                let _ = write_json_line(&self.stdin, &reply);
+            }
         }
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn parse_permission_params(
-    params: &Value,
-) -> (
-    TutorPermissionKind,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<Value>,
-    Option<String>,
-    Option<String>,
-) {
+struct ParsedPermissionParams {
+    kind: TutorPermissionKind,
+    title: String,
+    target_paths: Vec<String>,
+    command: Option<String>,
+    raw_input: Option<Value>,
+    allow_option_id: Option<String>,
+    reject_option_id: Option<String>,
+}
+
+fn parse_permission_params(params: &Value) -> ParsedPermissionParams {
     let tool_call = params.get("toolCall").or_else(|| params.get("tool_call"));
     let raw_input = tool_call
         .and_then(|tc| tc.get("rawInput").or_else(|| tc.get("raw_input")))
@@ -825,22 +795,33 @@ fn parse_permission_params(
         .and_then(Value::as_str)
         .map(|s| s.to_ascii_lowercase());
 
-    let target_path = tool_call
+    let mut target_paths = Vec::new();
+    let mut push_path = |candidate: Option<&str>| {
+        if let Some(path) = candidate.map(str::trim).filter(|s| !s.is_empty())
+            && !target_paths.iter().any(|existing| existing == path)
+        {
+            target_paths.push(path.to_owned());
+        }
+    };
+    if let Some(locations) = tool_call
         .and_then(|tc| tc.get("locations"))
         .and_then(Value::as_array)
-        .and_then(|arr| arr.first())
-        .and_then(|loc| loc.get("path"))
-        .and_then(Value::as_str)
-        .or_else(|| {
-            raw_input.as_ref().and_then(|inp| {
-                inp.get("path")
-                    .or_else(|| inp.get("file_path"))
-                    .or_else(|| inp.get("filePath"))
-                    .and_then(Value::as_str)
-            })
-        })
-        .or_else(|| params.get("path").and_then(Value::as_str))
-        .map(str::to_owned);
+    {
+        for loc in locations {
+            push_path(loc.get("path").and_then(Value::as_str));
+        }
+    }
+    if let Some(inp) = raw_input.as_ref() {
+        for key in ["path", "file_path", "filePath", "target", "destination"] {
+            push_path(inp.get(key).and_then(Value::as_str));
+        }
+        if let Some(paths) = inp.get("paths").and_then(Value::as_array) {
+            for item in paths {
+                push_path(item.as_str());
+            }
+        }
+    }
+    push_path(params.get("path").and_then(Value::as_str));
 
     let command = raw_input
         .as_ref()
@@ -864,7 +845,7 @@ fn parse_permission_params(
                 .is_some_and(|inp| inp.get("content").is_some() || inp.get("edits").is_some())
             {
                 TutorPermissionKind::Write
-            } else if target_path.is_some() && raw_kind.as_deref() == Some("read_file") {
+            } else if !target_paths.is_empty() && raw_kind.as_deref() == Some("read_file") {
                 TutorPermissionKind::Read
             } else {
                 // Unknown tool kinds must never be auto-allowed as read-only.
@@ -873,6 +854,7 @@ fn parse_permission_params(
         }
     };
 
+    let primary_path = target_paths.first().map(String::as_str);
     let title = tool_call
         .and_then(|tc| tc.get("title"))
         .or_else(|| params.get("title"))
@@ -880,12 +862,10 @@ fn parse_permission_params(
         .filter(|s| !s.trim().is_empty())
         .map(str::to_owned)
         .unwrap_or_else(|| match kind {
-            TutorPermissionKind::Read => target_path
-                .as_deref()
+            TutorPermissionKind::Read => primary_path
                 .map(|p| format!("Read {p}"))
                 .unwrap_or_else(|| "Read file".to_owned()),
-            TutorPermissionKind::Write => target_path
-                .as_deref()
+            TutorPermissionKind::Write => primary_path
                 .map(|p| format!("Write {p}"))
                 .unwrap_or_else(|| "Write file".to_owned()),
             TutorPermissionKind::Execute => command
@@ -894,8 +874,10 @@ fn parse_permission_params(
                 .unwrap_or_else(|| "Execute command".to_owned()),
         });
 
-    let mut allow_opt = None;
-    let mut reject_opt = None;
+    let mut allow_once = None;
+    let mut allow_fallback = None;
+    let mut reject_once = None;
+    let mut reject_fallback = None;
     if let Some(options) = params.get("options").and_then(Value::as_array) {
         for option in options {
             let Some(opt_id) = option
@@ -911,25 +893,54 @@ fn parse_permission_params(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            if allow_opt.is_none() && (opt_kind == "allow_once" || opt_kind.starts_with("allow")) {
-                allow_opt = Some(opt_id.to_owned());
+            if opt_kind == "allow_once" {
+                allow_once.get_or_insert_with(|| opt_id.to_owned());
+            } else if opt_kind.starts_with("allow") && opt_kind != "allow_always" {
+                allow_fallback.get_or_insert_with(|| opt_id.to_owned());
             }
-            if reject_opt.is_none() && (opt_kind == "reject_once" || opt_kind.starts_with("reject"))
-            {
-                reject_opt = Some(opt_id.to_owned());
+            if opt_kind == "reject_once" {
+                reject_once.get_or_insert_with(|| opt_id.to_owned());
+            } else if opt_kind.starts_with("reject") {
+                reject_fallback.get_or_insert_with(|| opt_id.to_owned());
             }
         }
     }
 
-    (
+    ParsedPermissionParams {
         kind,
         title,
-        target_path,
+        target_paths,
         command,
         raw_input,
-        allow_opt,
-        reject_opt,
-    )
+        allow_option_id: allow_once.or(allow_fallback),
+        reject_option_id: reject_once.or(reject_fallback),
+    }
+}
+
+fn initialize_params() -> Value {
+    json!({
+        "protocolVersion": 1,
+        "clientInfo": {
+            "name": CLIENT_NAME,
+            "version": CLIENT_VERSION,
+        },
+        "clientCapabilities": {
+            "fs": {
+                "readTextFile": true,
+                "writeTextFile": true,
+            },
+            "terminal": false,
+        }
+    })
+}
+
+fn initialize_request(id: u64) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "initialize",
+        "params": initialize_params(),
+    })
 }
 
 fn extract_update_delta(notification: &Value) -> Option<String> {
@@ -1026,10 +1037,20 @@ fn read_bounded_line<R: BufRead>(reader: &mut R, cap: usize) -> Option<String> {
     match limited.read_until(b'\n', &mut buf) {
         Ok(0) => None,
         Ok(_) => {
-            // If line exceeded cap without newline, discard remaining bytes until newline.
             if !buf.ends_with(b"\n") {
-                let mut discard = Vec::new();
-                let _ = reader.read_until(b'\n', &mut discard);
+                // Drain the oversized remainder in bounded buffer chunks without allocating.
+                loop {
+                    let available = match reader.fill_buf() {
+                        Ok([]) | Err(_) => break,
+                        Ok(slice) => slice,
+                    };
+                    if let Some(pos) = available.iter().position(|&b| b == b'\n') {
+                        reader.consume(pos + 1);
+                        break;
+                    }
+                    let len = available.len();
+                    reader.consume(len);
+                }
                 return Some(String::new());
             }
             let text = String::from_utf8_lossy(&buf);

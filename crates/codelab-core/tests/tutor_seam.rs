@@ -216,6 +216,48 @@ rl.on("line", async (line) => {
       return;
     }
 
+    if (promptText.includes("CMD:MULTI_LOC_SENSITIVE")) {
+      const resp = await requestClient("session/request_permission", {
+        sessionId: msg.params?.sessionId,
+        toolCall: {
+          toolCallId: "tc-multi",
+          title: "Read multiple files",
+          kind: "read",
+          locations: [{ path: "main.go" }, { path: ".env" }],
+        },
+        options: [
+          { optionId: "allow_always", name: "Always", kind: "allow_always" },
+          { optionId: "allow_once", name: "Allow", kind: "allow_once" },
+          { optionId: "reject_once", name: "Deny", kind: "reject_once" },
+        ],
+      });
+      const opt = resp.result?.outcome?.optionId || resp.result?.outcome?.outcome;
+      sendChunk(`MULTI_RESULT:${opt}`);
+      send({ jsonrpc: "2.0", id: msg.id, result: { stopReason: "end_turn" } });
+      return;
+    }
+
+    if (promptText.includes("CMD:ALLOW_ALWAYS_FIRST")) {
+      const resp = await requestClient("session/request_permission", {
+        sessionId: msg.params?.sessionId,
+        toolCall: {
+          toolCallId: "tc-order",
+          title: "Read main.go",
+          kind: "read",
+          locations: [{ path: "main.go" }],
+        },
+        options: [
+          { optionId: "perm_always", name: "Always", kind: "allow_always" },
+          { optionId: "perm_once", name: "Once", kind: "allow_once" },
+          { optionId: "perm_reject", name: "Deny", kind: "reject_once" },
+        ],
+      });
+      const opt = resp.result?.outcome?.optionId || resp.result?.outcome?.outcome;
+      sendChunk(`OPTION:${opt}`);
+      send({ jsonrpc: "2.0", id: msg.id, result: { stopReason: "end_turn" } });
+      return;
+    }
+
     if (promptText.includes("CMD:EXEC:")) {
       const cmd = promptText.split("CMD:EXEC:")[1].trim();
       const resp = await requestClient("session/request_permission", {
@@ -1079,6 +1121,7 @@ impl TutorBackendSession for InMemorySession {
                 kind: TutorPermissionKind::Read,
                 title: "Read main.go".into(),
                 target_path: Some("main.go".into()),
+                target_paths: vec!["main.go".into()],
                 command: None,
                 raw_input: None,
                 write_content: None,
@@ -1208,4 +1251,97 @@ fn in_memory_tutor_backend_adapter_seam_supports_retry_and_trust_revocation_clea
     }))
     .unwrap();
     assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn permission_policy_handles_key_named_ancestors_multi_location_allow_once_and_mid_turn_agent_switch()
+ {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let agent_cmd = node_command(&script);
+
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    // Workspace placed under a parent directory containing `key` ("mickey") must NOT falsely block workspace reads.
+    let (workspace_id, ws_root) = open_trusted_workspace(&temp, &app, "mickey/work");
+    fs::write(ws_root.join("main.go"), "package main\n").unwrap();
+    fs::write(ws_root.join(".env"), "TOKEN=1\n").unwrap();
+
+    configure_agent(
+        &app,
+        &agent_cmd,
+        PermissionPolicy::GuidedReadonly,
+        TeachingStyle::Direct,
+    );
+
+    // 1. Ancestor containing "key" does not block non-sensitive workspace read; allow_once preferred over allow_always.
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "CMD:ALLOW_ALWAYS_FIRST".into(),
+        teaching_style: None,
+        context_preamble: None,
+    }))
+    .unwrap();
+    let snap = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 2
+    });
+    assert_eq!(snap.messages[1].content, "OPTION:perm_once");
+    assert_eq!(
+        snap.messages[1].permissions[0].status,
+        TutorPermissionStatus::AutoAllowed
+    );
+
+    // 2. Multi-location read containing both main.go and .env MUST be BlockedSensitive.
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "CMD:MULTI_LOC_SENSITIVE".into(),
+        teaching_style: None,
+        context_preamble: None,
+    }))
+    .unwrap();
+    let snap_multi = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.messages.len() == 4
+    });
+    assert_eq!(
+        snap_multi.messages[3].permissions[0].status,
+        TutorPermissionStatus::BlockedSensitive
+    );
+    assert_eq!(snap_multi.messages[3].content, "MULTI_RESULT:reject_once");
+
+    // 3. Switching Agent mid-turn cancels the in-flight streaming message cleanly instead of stranding Streaming.
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "CMD:SLOW".into(),
+        teaching_style: None,
+        context_preamble: None,
+    }))
+    .unwrap();
+    wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.messages
+            .last()
+            .is_some_and(|m| m.content.contains("streaming-part-1"))
+    });
+    app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        tutor: Some(TutorSettingsPatch {
+            preset: Some(AcpAgentPreset::GeminiCli),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+    .unwrap();
+    let AppResponse::TutorSession(after_switch) = app
+        .execute(AppCommand::GetTutorSession(WorkspaceTutorRequest {
+            workspace_id,
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorSession");
+    };
+    assert!(!after_switch.process_running);
+    assert_eq!(
+        after_switch.messages.last().unwrap().status,
+        TutorMessageStatus::Cancelled
+    );
 }

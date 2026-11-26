@@ -28,6 +28,7 @@ pub struct BackendPermissionPrompt {
     pub kind: TutorPermissionKind,
     pub title: String,
     pub target_path: Option<String>,
+    pub target_paths: Vec<String>,
     pub command: Option<String>,
     pub raw_input: Option<Value>,
     pub write_content: Option<String>,
@@ -54,7 +55,6 @@ pub enum BackendEvent {
     TurnFailed {
         turn_id: String,
         code: ErrorCode,
-        detail: String,
     },
     ProcessExited {
         exit_code: Option<i32>,

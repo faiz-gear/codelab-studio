@@ -145,6 +145,7 @@ impl TutorManager {
     pub(crate) fn detach_workspace(&self) {
         let old_session = {
             let mut state = self.lock();
+            state.cancel_active_turn_in_history();
             let old = state.teardown_session_inner();
             state.workspace = None;
             state.status = TutorSessionStatus::Idle;
@@ -161,6 +162,7 @@ impl TutorManager {
     pub(crate) fn stop_process(&self) {
         let (old_session, snapshot) = {
             let mut state = self.lock();
+            state.cancel_active_turn_in_history();
             let old = state.teardown_session_inner();
             state.active_turn_id = None;
             state.status = TutorSessionStatus::Idle;
@@ -181,6 +183,7 @@ impl TutorManager {
                 || state.settings.resolved_command() != next.resolved_command();
             state.settings = next;
             let old = if agent_changed {
+                state.cancel_active_turn_in_history();
                 let old = state.teardown_session_inner();
                 state.status = TutorSessionStatus::Idle;
                 state.active_turn_id = None;
@@ -371,33 +374,10 @@ impl TutorManager {
         let (session_to_cancel, turn_id, snapshot) = {
             let mut state = self.lock();
             state.require_workspace(workspace_id)?;
-            let Some(turn_id) = state.active_turn_id.take() else {
+            let Some(turn_id) = state.active_turn_id.clone() else {
                 return Ok(state.snapshot_opt().expect("attached workspace"));
             };
-            state
-                .pending_permissions
-                .retain(|_, ctx| ctx.turn_id != turn_id);
-            let now = Utc::now().to_rfc3339();
-            if let Some(ws) = state.workspace.as_mut() {
-                if let Some(msg) = ws
-                    .history
-                    .messages
-                    .iter_mut()
-                    .rev()
-                    .find(|m| m.turn_id == turn_id && m.role == TutorRole::Assistant)
-                {
-                    if msg.status == TutorMessageStatus::Streaming {
-                        msg.status = TutorMessageStatus::Cancelled;
-                    }
-                    for perm in &mut msg.permissions {
-                        if perm.status == TutorPermissionStatus::Pending {
-                            perm.status = TutorPermissionStatus::Cancelled;
-                            perm.resolved_at = Some(now.clone());
-                        }
-                    }
-                }
-                let _ = ws.history_store.save_atomic(&ws.history);
-            }
+            state.cancel_active_turn_in_history();
             state.status = if state.session.is_some() {
                 TutorSessionStatus::Ready
             } else {
@@ -608,27 +588,23 @@ impl TutorManager {
     fn handle_backend_event(&self, generation: u64, event: BackendEvent) {
         match event {
             BackendEvent::Chunk { turn_id, delta } => {
-                let snapshot =
+                let snapshot = {
+                    let mut state = self.lock();
+                    if state.session_generation != generation
+                        || state.active_turn_id.as_deref() != Some(turn_id.as_str())
                     {
-                        let mut state = self.lock();
-                        if state.session_generation != generation
-                            || state.active_turn_id.as_deref() != Some(turn_id.as_str())
-                        {
-                            return;
-                        }
-                        if let Some(ws) = state.workspace.as_mut()
-                            && let Some(msg) =
-                                ws.history.messages.iter_mut().rev().find(|m| {
-                                    m.turn_id == turn_id && m.role == TutorRole::Assistant
-                                })
-                        {
-                            msg.content.push_str(&delta);
-                        }
-                        if state.pending_permissions.is_empty() {
-                            state.status = TutorSessionStatus::Streaming;
-                        }
-                        state.snapshot_opt()
-                    };
+                        return;
+                    }
+                    if let Some(ws) = state.workspace.as_mut()
+                        && let Some(msg) = ws.history.find_assistant_mut(&turn_id)
+                    {
+                        msg.content.push_str(&delta);
+                    }
+                    if state.pending_permissions.is_empty() {
+                        state.status = TutorSessionStatus::Streaming;
+                    }
+                    state.snapshot_opt()
+                };
                 if let Some(snapshot) = snapshot {
                     (self.on_session_updated)(snapshot);
                 }
@@ -651,13 +627,7 @@ impl TutorManager {
                     state.session_turns_completed = state.session_turns_completed.saturating_add(1);
                     state.status = TutorSessionStatus::Ready;
                     if let Some(ws) = state.workspace.as_mut() {
-                        if let Some(msg) = ws
-                            .history
-                            .messages
-                            .iter_mut()
-                            .rev()
-                            .find(|m| m.turn_id == turn_id && m.role == TutorRole::Assistant)
-                        {
+                        if let Some(msg) = ws.history.find_assistant_mut(&turn_id) {
                             msg.status = TutorMessageStatus::Completed;
                         }
                         let _ = ws.history_store.save_atomic(&ws.history);
@@ -672,32 +642,28 @@ impl TutorManager {
                 }
             }
             BackendEvent::TurnCancelled { turn_id } => {
-                let (changed, snapshot) =
-                    {
-                        let mut state = self.lock();
-                        if state.session_generation != generation {
-                            return;
+                let (changed, snapshot) = {
+                    let mut state = self.lock();
+                    if state.session_generation != generation {
+                        return;
+                    }
+                    let changed = state.collect_watched_writes(&turn_id);
+                    if state.active_turn_id.as_deref() == Some(turn_id.as_str()) {
+                        state.active_turn_id = None;
+                        state.pending_permissions.clear();
+                        state.approved_grants.clear();
+                        state.status = TutorSessionStatus::Ready;
+                    }
+                    if let Some(ws) = state.workspace.as_mut() {
+                        if let Some(msg) = ws.history.find_assistant_mut(&turn_id)
+                            && msg.status == TutorMessageStatus::Streaming
+                        {
+                            msg.status = TutorMessageStatus::Cancelled;
                         }
-                        let changed = state.collect_watched_writes(&turn_id);
-                        if state.active_turn_id.as_deref() == Some(turn_id.as_str()) {
-                            state.active_turn_id = None;
-                            state.pending_permissions.clear();
-                            state.approved_grants.clear();
-                            state.status = TutorSessionStatus::Ready;
-                        }
-                        if let Some(ws) = state.workspace.as_mut() {
-                            if let Some(msg) =
-                                ws.history.messages.iter_mut().rev().find(|m| {
-                                    m.turn_id == turn_id && m.role == TutorRole::Assistant
-                                })
-                                && msg.status == TutorMessageStatus::Streaming
-                            {
-                                msg.status = TutorMessageStatus::Cancelled;
-                            }
-                            let _ = ws.history_store.save_atomic(&ws.history);
-                        }
-                        (changed, state.snapshot_opt())
-                    };
+                        let _ = ws.history_store.save_atomic(&ws.history);
+                    }
+                    (changed, state.snapshot_opt())
+                };
                 if let Some(event) = changed {
                     (self.on_workspace_files_changed)(event);
                 }
@@ -705,22 +671,13 @@ impl TutorManager {
                     (self.on_session_updated)(snapshot);
                 }
             }
-            BackendEvent::TurnFailed {
-                turn_id,
-                code,
-                detail,
-            } => {
+            BackendEvent::TurnFailed { turn_id, code } => {
                 let snapshot = {
                     let mut state = self.lock();
                     if state.session_generation != generation {
                         return;
                     }
-                    let err = if detail.is_empty() {
-                        DomainError::new(code)
-                    } else {
-                        DomainError::new(code).with_detail("detail", detail)
-                    };
-                    state.fail_turn(&turn_id, err);
+                    state.fail_turn(&turn_id, DomainError::new(code));
                     state.snapshot_opt()
                 };
                 if let Some(snapshot) = snapshot {
@@ -790,14 +747,19 @@ impl TutorManager {
                 return;
             };
             let policy = state.settings.permission_policy;
-            let Some(ws_root) = state.workspace.as_ref().map(|ws| ws.root.clone()) else {
+            let Some(ws_files) = state.workspace.as_ref().map(|ws| Arc::clone(&ws.files)) else {
                 return;
             };
+            let target_paths: Vec<String> = if !request.target_paths.is_empty() {
+                request.target_paths.clone()
+            } else {
+                request.target_path.iter().cloned().collect()
+            };
             let eval = evaluate_permission(
-                &ws_root,
+                &ws_files,
                 policy,
                 request.kind,
-                request.target_path.as_deref(),
+                &target_paths,
                 request.command.as_deref(),
             );
             let now = Utc::now().to_rfc3339();
@@ -988,6 +950,29 @@ impl TutorRuntimeState {
         self.session.take()
     }
 
+    fn cancel_active_turn_in_history(&mut self) {
+        let Some(turn_id) = self.active_turn_id.take() else {
+            return;
+        };
+        self.pending_permissions
+            .retain(|_, ctx| ctx.turn_id != turn_id);
+        let now = Utc::now().to_rfc3339();
+        if let Some(ws) = self.workspace.as_mut() {
+            if let Some(msg) = ws.history.find_assistant_mut(&turn_id) {
+                if msg.status == TutorMessageStatus::Streaming {
+                    msg.status = TutorMessageStatus::Cancelled;
+                }
+                for perm in &mut msg.permissions {
+                    if perm.status == TutorPermissionStatus::Pending {
+                        perm.status = TutorPermissionStatus::Cancelled;
+                        perm.resolved_at = Some(now.clone());
+                    }
+                }
+            }
+            let _ = ws.history_store.save_atomic(&ws.history);
+        }
+    }
+
     fn fail_turn(&mut self, turn_id: &str, error: DomainError) {
         if self.active_turn_id.as_deref() == Some(turn_id) {
             self.active_turn_id = None;
@@ -998,13 +983,7 @@ impl TutorRuntimeState {
         self.status = TutorSessionStatus::Error;
         let now = Utc::now().to_rfc3339();
         if let Some(ws) = self.workspace.as_mut() {
-            if let Some(msg) = ws
-                .history
-                .messages
-                .iter_mut()
-                .rev()
-                .find(|m| m.turn_id == turn_id && m.role == TutorRole::Assistant)
-            {
+            if let Some(msg) = ws.history.find_assistant_mut(turn_id) {
                 msg.status = TutorMessageStatus::Failed;
                 msg.error = Some(error);
                 for perm in &mut msg.permissions {
@@ -1122,13 +1101,7 @@ fn push_permission_record(
     turn_id: &str,
     record: TutorPermissionRequest,
 ) {
-    if let Some(msg) = ws
-        .history
-        .messages
-        .iter_mut()
-        .rev()
-        .find(|m| m.turn_id == turn_id && m.role == TutorRole::Assistant)
-    {
+    if let Some(msg) = ws.history.find_assistant_mut(turn_id) {
         msg.permissions.push(record);
     }
 }
@@ -1140,12 +1113,7 @@ fn update_permission_status(
     status: TutorPermissionStatus,
     resolved_at: &str,
 ) {
-    if let Some(msg) = ws
-        .history
-        .messages
-        .iter_mut()
-        .rev()
-        .find(|m| m.turn_id == turn_id && m.role == TutorRole::Assistant)
+    if let Some(msg) = ws.history.find_assistant_mut(turn_id)
         && let Some(perm) = msg.permissions.iter_mut().find(|p| p.id == request_id)
     {
         perm.status = status;
@@ -1154,13 +1122,7 @@ fn update_permission_status(
 }
 
 fn record_file_change(ws: &mut TutorWorkspaceAttachment, turn_id: &str, change: TutorFileChange) {
-    if let Some(msg) = ws
-        .history
-        .messages
-        .iter_mut()
-        .rev()
-        .find(|m| m.turn_id == turn_id && m.role == TutorRole::Assistant)
-    {
+    if let Some(msg) = ws.history.find_assistant_mut(turn_id) {
         if let Some(existing) = msg.file_changes.iter_mut().find(|c| c.path == change.path) {
             existing.after_text = change.after_text;
             existing.created_at = change.created_at;

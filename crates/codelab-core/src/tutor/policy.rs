@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::execution::risk::is_high_risk;
-use crate::workspace::is_sensitive_path;
+use crate::workspace::{WorkspacePaths, is_sensitive_path};
 
 use super::model::{PermissionPolicy, TutorPermissionKind};
 
@@ -24,54 +24,46 @@ pub(crate) struct PermissionEvaluation {
 }
 
 pub(crate) fn evaluate_permission(
-    workspace_root: &Path,
+    workspace_files: &WorkspacePaths,
     policy: PermissionPolicy,
     kind: TutorPermissionKind,
-    target_path: Option<&str>,
+    target_paths: &[String],
     command: Option<&str>,
 ) -> PermissionEvaluation {
     let canonical_root =
-        fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+        fs::canonicalize(&workspace_files.root).unwrap_or_else(|_| workspace_files.root.clone());
+
+    let cleaned_targets: Vec<&str> = target_paths
+        .iter()
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+        .collect();
 
     let mut sensitive = false;
-    let mut inside_workspace = false;
-    let mut workspace_relative_path = None;
-    let mut resolved_absolute_path = None;
+    let mut all_inside_workspace = !cleaned_targets.is_empty();
+    let mut first_workspace_rel = None;
+    let mut first_resolved_abs = None;
 
-    if let Some(raw) = target_path.map(str::trim).filter(|raw| !raw.is_empty()) {
-        let raw_path = Path::new(raw);
-        if is_sensitive_path(raw_path) {
+    for raw in &cleaned_targets {
+        let single = inspect_target_path(workspace_files, &canonical_root, raw);
+        if single.sensitive {
             sensitive = true;
         }
-        let candidate = if raw_path.is_absolute() {
-            raw_path.to_path_buf()
-        } else {
-            canonical_root.join(raw_path)
-        };
-        if let Some(resolved) = resolve_canonical_or_ancestor(&candidate) {
-            if is_sensitive_path(&resolved) {
-                sensitive = true;
-            }
-            if let Ok(rel) = resolved.strip_prefix(&canonical_root) {
-                if !is_sensitive_path(rel) && !has_parent_dir(rel) {
-                    inside_workspace = true;
-                    workspace_relative_path = to_wire_relative(rel);
-                } else {
-                    sensitive = sensitive || is_sensitive_path(rel);
-                }
-            }
-            resolved_absolute_path = Some(resolved);
-        } else {
-            // Unresolvable path: keep conservative outside_workspace = true.
-            if is_sensitive_path(&candidate) {
-                sensitive = true;
-            }
+        if !single.inside_workspace {
+            all_inside_workspace = false;
+        }
+        if first_workspace_rel.is_none() {
+            first_workspace_rel = single.workspace_relative_path;
+        }
+        if first_resolved_abs.is_none() {
+            first_resolved_abs = single.resolved_absolute_path;
         }
     }
 
     let outside_workspace = match kind {
         TutorPermissionKind::Execute => false,
-        TutorPermissionKind::Read | TutorPermissionKind::Write => !inside_workspace,
+        TutorPermissionKind::Read | TutorPermissionKind::Write => !all_inside_workspace,
     };
 
     let high_risk = match kind {
@@ -86,7 +78,7 @@ pub(crate) fn evaluate_permission(
         PolicyDecision::BlockSensitive
     } else if policy == PermissionPolicy::GuidedReadonly
         && kind == TutorPermissionKind::Read
-        && inside_workspace
+        && all_inside_workspace
     {
         PolicyDecision::AutoAllow
     } else {
@@ -98,8 +90,93 @@ pub(crate) fn evaluate_permission(
         outside_workspace,
         sensitive,
         high_risk,
+        workspace_relative_path: if all_inside_workspace {
+            first_workspace_rel
+        } else {
+            None
+        },
+        resolved_absolute_path: first_resolved_abs,
+    }
+}
+
+struct TargetInspection {
+    inside_workspace: bool,
+    sensitive: bool,
+    workspace_relative_path: Option<String>,
+    resolved_absolute_path: Option<PathBuf>,
+}
+
+fn inspect_target_path(
+    workspace_files: &WorkspacePaths,
+    canonical_root: &Path,
+    raw: &str,
+) -> TargetInspection {
+    let raw_path = Path::new(raw);
+    let mut sensitive = path_suffix_after_common_prefix(raw_path, canonical_root)
+        .as_deref()
+        .is_some_and(is_sensitive_path);
+
+    let candidate = if raw_path.is_absolute() {
+        raw_path.to_path_buf()
+    } else {
+        canonical_root.join(raw_path)
+    };
+
+    let Some(resolved) = resolve_without_lexical_symlink_collapse(&candidate) else {
+        return TargetInspection {
+            inside_workspace: false,
+            sensitive,
+            workspace_relative_path: None,
+            resolved_absolute_path: None,
+        };
+    };
+
+    // Inspect only the suffix diverging from canonical_root so an unrelated ancestor
+    // directory (e.g. `/Users/mickey/...`) never triggers a false-positive `*key*` block.
+    if let Some(suffix) = path_suffix_after_common_prefix(&resolved, canonical_root)
+        && is_sensitive_path(&suffix)
+    {
+        sensitive = true;
+    }
+
+    let mut inside_workspace = false;
+    let mut workspace_relative_path = None;
+    if let Ok(rel) = resolved.strip_prefix(canonical_root) {
+        if is_sensitive_path(rel) {
+            sensitive = true;
+        } else if !has_parent_dir(rel) && workspace_files.validate(rel).is_ok() {
+            inside_workspace = true;
+            workspace_relative_path = to_wire_relative(rel);
+        }
+    }
+
+    TargetInspection {
+        inside_workspace,
+        sensitive,
         workspace_relative_path,
-        resolved_absolute_path,
+        resolved_absolute_path: Some(resolved),
+    }
+}
+
+fn path_suffix_after_common_prefix(target: &Path, root: &Path) -> Option<PathBuf> {
+    if !target.is_absolute() {
+        return Some(target.to_path_buf());
+    }
+    let mut target_iter = target.components().peekable();
+    let mut root_iter = root.components().peekable();
+    while let (Some(a), Some(b)) = (target_iter.peek(), root_iter.peek()) {
+        if a == b {
+            target_iter.next();
+            root_iter.next();
+        } else {
+            break;
+        }
+    }
+    let rest: PathBuf = target_iter.collect();
+    if rest.as_os_str().is_empty() {
+        target.file_name().map(PathBuf::from)
+    } else {
+        Some(rest)
     }
 }
 
@@ -120,47 +197,44 @@ fn to_wire_relative(path: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn resolve_canonical_or_ancestor(path: &Path) -> Option<PathBuf> {
+/// Resolves symlinks component-by-component BEFORE applying `..` so a non-existent
+/// path like `outbound_symlink/../missing` can never collapse lexically back inside
+/// the workspace root.
+fn resolve_without_lexical_symlink_collapse(path: &Path) -> Option<PathBuf> {
     if let Ok(canonical) = fs::canonicalize(path) {
         return Some(canonical);
     }
-    // For not-yet-created files (e.g. Write targets), normalize lexical components
-    // first so `..` segments are resolved, then canonicalize the deepest existing ancestor.
-    let normalized = normalize_lexical(path)?;
-    let mut tail = Vec::new();
-    let mut cursor = normalized.as_path();
-    loop {
-        if let Ok(canonical) = fs::canonicalize(cursor) {
-            let mut full = canonical;
-            for part in tail.into_iter().rev() {
-                full.push(part);
-            }
-            return Some(full);
-        }
-        let name = cursor.file_name()?;
-        tail.push(name.to_os_string());
-        cursor = cursor.parent()?;
-    }
-}
-
-fn normalize_lexical(path: &Path) -> Option<PathBuf> {
-    let mut out = PathBuf::new();
+    let mut current = PathBuf::new();
+    let mut entered_missing = false;
     for component in path.components() {
         match component {
-            Component::Prefix(prefix) => out.push(prefix.as_os_str()),
-            Component::RootDir => out.push(component.as_os_str()),
+            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            Component::RootDir => current.push(component.as_os_str()),
             Component::CurDir => {}
             Component::ParentDir => {
-                if !out.pop() {
+                // Never lexically collapse `..` past a non-existent segment.
+                if entered_missing {
+                    return None;
+                }
+                current = fs::canonicalize(&current).ok()?;
+                if !current.pop() {
                     return None;
                 }
             }
-            Component::Normal(part) => out.push(part),
+            Component::Normal(part) => {
+                current.push(part);
+                if !entered_missing {
+                    match fs::canonicalize(&current) {
+                        Ok(canonical) => current = canonical,
+                        Err(_) => entered_missing = true,
+                    }
+                }
+            }
         }
     }
-    if out.as_os_str().is_empty() {
+    if current.as_os_str().is_empty() {
         None
     } else {
-        Some(out)
+        Some(current)
     }
 }
