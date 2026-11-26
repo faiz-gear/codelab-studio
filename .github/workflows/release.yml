@@ -15,6 +15,7 @@ permissions:
 
 concurrency:
   group: desktop-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -115,7 +116,7 @@ jobs:
 
           build_dir="target/$BUILD_TARGET/release"
           if [[ "$BUNDLE" == dmg ]]; then
-            lipo -verify_arch arm64 x86_64 "$build_dir/bundle/macos/CodeLab Studio.app/Contents/MacOS/codelab-studio"
+            lipo "$build_dir/codelab-studio" -verify_arch arm64 x86_64
           fi
           shopt -s nullglob
           installers=("$build_dir/bundle/$BUNDLE/"*."$EXTENSION")
