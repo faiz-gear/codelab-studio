@@ -1,6 +1,6 @@
 mod activation;
 mod verification;
-use crate::execution::verification::{VerificationTask, model::*};
+use crate::execution::verification::model::*;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak, mpsc};
@@ -17,7 +17,7 @@ use crate::course::authoring::{
 use crate::course::git_pack::{self, GitCli, normalize_git_url};
 use crate::course::{
     self, ChapterReferences, CourseSource, CourseSourceChangedEvent, CourseSummary, CourseWatcher,
-    GitFetchAdapter, LoadedCourse, OpenCourseRequest, OpenedCourse, Starter,
+    GitFetchAdapter, LoadedCourse, OpenCourseRequest, Starter,
 };
 use crate::error::{DomainError, ErrorCode};
 use crate::execution::preparation::{CommandPreparation, ConfirmationTarget};
@@ -266,7 +266,8 @@ struct AppState {
     next_workspace_id: u64,
     execution: Execution,
     language_servers: LanguageServers,
-    verification: Option<VerificationTask>,
+    running_verification_chapter: Option<String>,
+    tutor_generation: u64,
     pending_metrics: Vec<LocalMetricRecord>,
     shut_down: bool,
     cleanup_hooks: Vec<(String, CleanupHook)>,
@@ -277,14 +278,13 @@ type Subscribers = Mutex<Vec<mpsc::Sender<AppEvent>>>;
 pub struct App {
     data_dir: PathBuf,
     settings_store: JsonStore<GlobalSettings>,
-    recents_store: JsonStore<Vec<RecentWorkspace>>,
-    trust_store: JsonStore<Vec<TrustEntry>>,
+    recents_store: Arc<JsonStore<Vec<RecentWorkspace>>>,
     state: Arc<Mutex<AppState>>,
+    verification: Arc<verification::VerificationController>,
     subscribers: Arc<Subscribers>,
     runtime: Arc<RuntimeManager>,
     tutor: Arc<TutorManager>,
-    git: Arc<dyn GitFetchAdapter>,
-    activation: activation::CourseWorkspaceActivation,
+    session: activation::SessionLifecycle,
 }
 
 impl App {
@@ -350,7 +350,11 @@ impl App {
         })?;
 
         let settings_store = JsonStore::new(&data_dir, "settings.json", StoreKind::Settings);
-        let recents_store = JsonStore::new(&data_dir, "recents.json", StoreKind::Recents);
+        let recents_store = Arc::new(JsonStore::new(
+            &data_dir,
+            "recents.json",
+            StoreKind::Recents,
+        ));
         let trust_store = JsonStore::new(&data_dir, "trust.json", StoreKind::Trust);
 
         let settings_loaded = settings_store.load_or_recover(is_valid_settings)?;
@@ -432,8 +436,7 @@ impl App {
             },
         ));
 
-        let activation =
-            activation::CourseWorkspaceActivation::new(&data_dir, &subscribers, &tutor);
+        let verification = Arc::new(verification::VerificationController::default());
         let state = Arc::new(Mutex::new(AppState {
             settings: settings_loaded.value,
             recents: recents_loaded.value,
@@ -449,23 +452,33 @@ impl App {
             next_workspace_id: 1,
             execution: Execution::default(),
             language_servers: LanguageServers::default(),
-            verification: None,
+            running_verification_chapter: None,
+            tutor_generation: 0,
             pending_metrics: vec![LocalMetricRecord::now(MetricEventDetail::AppLaunched)],
             shut_down: false,
             cleanup_hooks: Vec::new(),
         }));
         let _ = metric_state.set(Arc::downgrade(&state));
+        let session = activation::SessionLifecycle::new(activation::SessionLifecycleDeps {
+            data_dir: data_dir.clone(),
+            state: Arc::clone(&state),
+            verification: Arc::clone(&verification),
+            recents_store: Arc::clone(&recents_store),
+            trust_store,
+            subscribers: Arc::clone(&subscribers),
+            tutor: Arc::clone(&tutor),
+            git,
+        });
         Ok(Self {
             data_dir,
             settings_store,
             recents_store,
-            trust_store,
             state,
+            verification,
             subscribers,
             runtime,
             tutor,
-            git,
-            activation,
+            session,
         })
     }
 
@@ -500,14 +513,17 @@ impl App {
             AppCommand::ListBuiltinCourses => Ok(AppResponse::BuiltinCourses(
                 self.lock_state().builtin_courses.clone(),
             )),
-            AppCommand::OpenCourse(request) => self.open_course(request),
-            AppCommand::ReloadActiveCourse => self.reload_active_course(),
-            AppCommand::RefreshGitCourse => self.refresh_git_course(),
-            AppCommand::CreateCourseDraft(request) => self
-                .open_draft(|id, workspace| Draft::create(id, request, &self.data_dir, workspace)),
-            AppCommand::OpenCourseDraft { path } => {
-                self.open_draft(|id, workspace| Draft::open(id, &path, &self.data_dir, workspace))
+            AppCommand::OpenCourse(request) => self.session.open_course(request),
+            AppCommand::ReloadActiveCourse => self.session.reload_active_course(),
+            AppCommand::RefreshGitCourse => self.session.refresh_git_course(),
+            AppCommand::CreateCourseDraft(request) => {
+                self.session.open_draft(|id, data_dir, workspace| {
+                    Draft::create(id, request, data_dir, workspace)
+                })
             }
+            AppCommand::OpenCourseDraft { path } => self
+                .session
+                .open_draft(|id, data_dir, workspace| Draft::open(id, &path, data_dir, workspace)),
             AppCommand::ReadCourseDraftFile(target) => self
                 .lock_state()
                 .draft(target.draft_id)?
@@ -532,10 +548,12 @@ impl App {
                 .draft(request.draft_id)?
                 .preview(&request.edits)
                 .map(AppResponse::DraftPreview),
-            AppCommand::StartTrialWorkspace { draft_id } => self.start_trial_workspace(draft_id),
-            AppCommand::CloseActiveCourse => Ok(self.close_active_course()),
-            AppCommand::BindWorkspace { path } => self.bind_workspace(&path),
-            AppCommand::OpenRecentWorkspace { path } => self.open_recent_workspace(&path),
+            AppCommand::StartTrialWorkspace { draft_id } => {
+                self.session.start_trial_workspace(draft_id)
+            }
+            AppCommand::CloseActiveCourse => Ok(self.session.close_active_course()),
+            AppCommand::BindWorkspace { path } => self.session.bind_workspace(&path),
+            AppCommand::OpenRecentWorkspace { path } => self.session.open_recent_workspace(&path),
             AppCommand::ListWorkspaceFiles(target) => self
                 .lock_state()
                 .workspace(target.workspace_id)?
@@ -720,11 +738,7 @@ impl App {
     fn run_command_block(&self, request: RunCommandBlock) -> Result<AppResponse, DomainError> {
         let mut state = self.lock_state();
         let workspace = state.workspace(request.workspace_id)?;
-        if state
-            .verification
-            .as_ref()
-            .is_some_and(|task| task.chapter_id.is_some())
-        {
+        if state.running_verification_chapter.is_some() {
             return Err(DomainError::new(ErrorCode::VerificationBusy));
         }
         let course = &state.course()?.course;
@@ -879,50 +893,7 @@ impl App {
     }
 
     pub fn shutdown(&self) -> Result<ShutdownReport, DomainError> {
-        let (hooks, active_course, active_workspace, trial_workspace) = {
-            let mut state = self.lock_state();
-            if state.shut_down {
-                return Ok(ShutdownReport {
-                    already_shut_down: true,
-                    hooks_executed: 0,
-                });
-            }
-            state.shut_down = true;
-            state.stop_workspace_activity();
-            (
-                std::mem::take(&mut state.cleanup_hooks),
-                state.active_course.take(),
-                state.active_workspace.take(),
-                state.trial_workspace.take(),
-            )
-        };
-
-        drop(active_workspace);
-        drop(active_course);
-        drop(trial_workspace);
-        self.tutor.shutdown();
-
-        let mut hooks_executed = 0;
-        let mut failures = Vec::new();
-        for (name, hook) in hooks.into_iter().rev() {
-            hooks_executed += 1;
-            if let Err(reason) = hook() {
-                failures.push(format!("{name}: {reason}"));
-            }
-        }
-
-        let report = ShutdownReport {
-            already_shut_down: false,
-            hooks_executed,
-        };
-        self.emit(AppEvent::ShutdownCompleted(report.clone()));
-
-        if !failures.is_empty() {
-            return Err(DomainError::new(ErrorCode::ShutdownFailed)
-                .with_detail("failures", failures.join("; ")));
-        }
-
-        Ok(report)
+        self.session.shutdown()
     }
 
     fn update_settings(&self, patch: UpdateSettingsPatch) -> Result<AppResponse, DomainError> {
@@ -1186,54 +1157,25 @@ impl App {
             last_opened_at: Utc::now().to_rfc3339(),
         };
 
-        let mut state = self.lock_state();
-        let updated = self.store_recent(&mut state, entry)?;
+        let (updated, event) = {
+            let mut state = self.lock_state();
+            stage_recent(&mut state, &self.recents_store, entry)?
+        };
+        self.emit(event);
         Ok(AppResponse::Recents(updated))
     }
 
     fn remove_recent_workspace(&self, workspace_path: &str) -> Result<AppResponse, DomainError> {
         let normalized_path = normalize_absolute_path(workspace_path)
             .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-        let mut state = self.lock_state();
-        self.mutate_recents(&mut state, |next| {
-            next.retain(|item| item.workspace_path != normalized_path)
-        })
-        .map(AppResponse::Recents)
-    }
-
-    fn store_recent(
-        &self,
-        state: &mut AppState,
-        mut entry: RecentWorkspace,
-    ) -> Result<Vec<RecentWorkspace>, DomainError> {
-        if entry.course_source.is_none() {
-            entry.course_source = state
-                .recents
-                .iter()
-                .find(|recent| {
-                    recent.workspace_path == entry.workspace_path
-                        && recent.course_id == entry.course_id
-                })
-                .and_then(|recent| recent.course_source.clone());
-        }
-        self.mutate_recents(state, |next| {
-            next.retain(|item| item.workspace_path != entry.workspace_path);
-            next.insert(0, entry);
-            next.truncate(MAX_RECENT_WORKSPACES);
-        })
-    }
-
-    fn mutate_recents(
-        &self,
-        state: &mut AppState,
-        mutate: impl FnOnce(&mut Vec<RecentWorkspace>),
-    ) -> Result<Vec<RecentWorkspace>, DomainError> {
-        let mut next = state.recents.clone();
-        mutate(&mut next);
-        self.recents_store.save_atomic(&next)?;
-        state.recents = next.clone();
-        self.emit(AppEvent::RecentsUpdated(next.clone()));
-        Ok(next)
+        let (updated, event) = {
+            let mut state = self.lock_state();
+            stage_recents_mutation(&mut state, &self.recents_store, |next| {
+                next.retain(|item| item.workspace_path != normalized_path)
+            })?
+        };
+        self.emit(event);
+        Ok(AppResponse::Recents(updated))
     }
 
     fn check_trust(&self, source: &TrustSource) -> Result<AppResponse, DomainError> {
@@ -1263,7 +1205,7 @@ impl App {
             trusted_at: Some(trusted_at.clone()),
         };
 
-        self.mutate_trust(|next| {
+        self.session.mutate_trust(|next| {
             next.retain(|entry| !matches_trust_key(entry, source.source_kind, &normalized_source));
             next.insert(
                 0,
@@ -1281,7 +1223,7 @@ impl App {
     fn revoke_trust(&self, source: &TrustSource) -> Result<AppResponse, DomainError> {
         let normalized_source = normalize_trust_source(source.source_kind, &source.source)
             .ok_or_else(|| DomainError::new(ErrorCode::InvalidTrustSource))?;
-        let updated = self.mutate_trust(|next| {
+        let updated = self.session.mutate_trust(|next| {
             let exact = source.source.trim();
             // The active Course's canonical key can now be an alias to a different source.
             let key = if source.source_kind == TrustSourceKind::LocalPath
@@ -1296,276 +1238,6 @@ impl App {
             next.retain(|entry| !matches_trust_key(entry, source.source_kind, key));
         })?;
         Ok(AppResponse::TrustEntries(updated))
-    }
-
-    fn mutate_trust(
-        &self,
-        mutate: impl FnOnce(&mut Vec<TrustEntry>),
-    ) -> Result<Vec<TrustEntry>, DomainError> {
-        let mut state = self.lock_state();
-        let mut next = state.trust_entries.clone();
-        mutate(&mut next);
-        self.trust_store.save_atomic(&next)?;
-        state.trust_entries = next.clone();
-
-        let scaffolded_trial = state.trial_workspace.is_some()
-            && state.draft.as_ref().is_some_and(|draft| draft.scaffolded);
-        let changed = state.active_course.as_mut().and_then(|active| {
-            if scaffolded_trial {
-                return None;
-            }
-            let trusted = is_course_trusted(&active.course.source, &next);
-            if std::mem::replace(&mut active.course.trusted, trusted) == trusted {
-                return None;
-            }
-            Some(CourseTrustChanged {
-                source: active.course.source.clone(),
-                trusted,
-            })
-        });
-        if let Some(changed) = changed {
-            if let Some(workspace) = &state.active_workspace {
-                workspace.set_trusted(changed.trusted);
-            }
-            if !changed.trusted {
-                state.stop_workspace_activity();
-                self.tutor.stop_process();
-            }
-            self.emit(AppEvent::CourseTrustChanged(changed));
-        }
-        self.emit(AppEvent::TrustUpdated(next.clone()));
-        Ok(next)
-    }
-
-    fn open_course(&self, request: OpenCourseRequest) -> Result<AppResponse, DomainError> {
-        self.load_course(self.lock_state(), &request)
-    }
-
-    fn reload_active_course(&self) -> Result<AppResponse, DomainError> {
-        let state = self.lock_state();
-        let active = state.course()?;
-        if state.trial_workspace.is_some() {
-            return Ok(AppResponse::LoadedCourse(active.course.clone()));
-        }
-        let request = request_from_source(&active.course.source);
-        self.load_course(state, &request)
-    }
-
-    fn refresh_git_course(&self) -> Result<AppResponse, DomainError> {
-        let state = self.lock_state();
-        let CourseSource::GitPack { url } = &state.course()?.course.source else {
-            return Err(DomainError::new(ErrorCode::NoActiveGitCourse));
-        };
-        let request = OpenCourseRequest::GitPack { url: url.clone() };
-        let (mut state, opened) = self.prepare_course(state, &request, true)?;
-        state.verification = None;
-        state.execution.invalidate_confirmation();
-        let recovered = state
-            .active_workspace
-            .as_mut()
-            .map(|workspace| workspace.prepare_progress_for_course(&opened.course))
-            .transpose()?
-            .unwrap_or(false);
-        let course = self.activation.activate_course(&mut state, opened)?;
-        if recovered {
-            self.emit(AppEvent::ProgressUpdated(verification::progress_snapshot(
-                &state,
-            )));
-        }
-        if let Some(workspace) = &state.active_workspace {
-            let recent = workspace_recent(workspace, &course);
-            self.store_recent(&mut state, recent)?;
-        }
-        Ok(AppResponse::LoadedCourse(course))
-    }
-
-    fn load_course(
-        &self,
-        state: MutexGuard<'_, AppState>,
-        request: &OpenCourseRequest,
-    ) -> Result<AppResponse, DomainError> {
-        let (mut state, opened) = self.prepare_course(state, request, false)?;
-        let closed_trial = state.close_trial();
-        let switched_course = state
-            .active_course
-            .as_ref()
-            .is_some_and(|active| active.course.source != opened.course.source);
-        if switched_course {
-            state.deactivate_workspace();
-        }
-        if closed_trial || switched_course {
-            self.tutor.detach_workspace();
-        }
-        Ok(AppResponse::LoadedCourse(
-            self.activation.activate_course(&mut state, opened)?,
-        ))
-    }
-
-    fn prepare_course<'a>(
-        &'a self,
-        mut state: MutexGuard<'a, AppState>,
-        request: &OpenCourseRequest,
-        refresh: bool,
-    ) -> Result<(MutexGuard<'a, AppState>, OpenedCourse), DomainError> {
-        if state.shut_down {
-            return Err(DomainError::new(ErrorCode::NoActiveCourse));
-        }
-        state.course_load_generation += 1;
-        let mut opened = if let OpenCourseRequest::GitPack { url } = request {
-            let generation = state.course_load_generation;
-            drop(state);
-            let prepared = git_pack::prepare(&self.data_dir, url, self.git.as_ref(), refresh);
-            state = self.lock_state();
-            if state.shut_down || generation != state.course_load_generation {
-                drop(state);
-                return Err(DomainError::new(if refresh {
-                    ErrorCode::NoActiveGitCourse
-                } else {
-                    ErrorCode::NoActiveCourse
-                }));
-            }
-            prepared?.publish()?
-        } else {
-            course::open_local_course(request, &self.data_dir)?
-        };
-        opened.course.trusted = is_course_trusted(&opened.course.source, &state.trust_entries);
-        Ok((state, opened))
-    }
-
-    fn close_active_course(&self) -> AppResponse {
-        let mut state = self.lock_state();
-        state.course_load_generation += 1;
-        state.deactivate_workspace();
-        self.tutor.detach_workspace();
-        state.trial_workspace = None;
-        state.active_course = None;
-        AppResponse::CourseClosed
-    }
-
-    fn bind_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
-        let active = state.trusted_course()?;
-        if state.trial_workspace.is_some() {
-            return Err(DomainError::new(ErrorCode::InvalidWorkspacePath));
-        }
-        state.protect_draft_path(path)?;
-        let course = active.course.clone();
-        let workspace = self.activation.prepare_workspace(
-            state.next_workspace_id,
-            path,
-            &course,
-            active.starter.as_ref(),
-        )?;
-        let recent = workspace_recent(&workspace, &course);
-        self.store_recent(&mut state, recent)?;
-        let summary = self
-            .activation
-            .activate_workspace(&mut state, workspace, &course)?;
-        Ok(AppResponse::WorkspaceBound(summary))
-    }
-
-    fn open_recent_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
-        let state = self.lock_state();
-        let normalized = normalize_absolute_path(path)
-            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-        let recent = state
-            .recents
-            .iter()
-            .find(|recent| recent.workspace_path == path || recent.workspace_path == normalized)
-            .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-        let request = match &recent.course_source {
-            Some(source) => request_from_source(source),
-            None => OpenCourseRequest::Builtin {
-                course_id: recent.course_id.clone(),
-            },
-        };
-        let (mut state, opened) = self.prepare_course(state, &request, false)?;
-        let workspace = if opened.course.trusted {
-            state.protect_draft_path(path)?;
-            let workspace = self.activation.prepare_workspace(
-                state.next_workspace_id,
-                path,
-                &opened.course,
-                opened.starter.as_ref(),
-            )?;
-            self.store_recent(&mut state, workspace_recent(&workspace, &opened.course))?;
-            Some(
-                self.activation
-                    .activate_workspace(&mut state, workspace, &opened.course)?,
-            )
-        } else {
-            state.deactivate_workspace();
-            self.tutor.detach_workspace();
-            None
-        };
-        state.trial_workspace = None;
-        let course = self.activation.activate_course(&mut state, opened)?;
-        Ok(AppResponse::RecentWorkspaceOpened(RecentWorkspaceOpened {
-            course,
-            workspace,
-        }))
-    }
-
-    fn open_draft(
-        &self,
-        open: impl FnOnce(u64, Option<&Path>) -> Result<Draft, DomainError>,
-    ) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
-        if state.shut_down {
-            return Err(DomainError::new(ErrorCode::NoActiveDraft));
-        }
-        let workspace = state
-            .active_workspace
-            .as_ref()
-            .map(|workspace| workspace.files.root.as_path());
-        let draft = open(state.next_draft_id, workspace)?;
-        let summary = draft.summary()?;
-        state.course_load_generation += 1;
-        state.next_draft_id += 1;
-        state.deactivate_workspace();
-        self.tutor.detach_workspace();
-        state.trial_workspace = None;
-        state.active_course = None;
-        state.draft = Some(draft);
-        Ok(AppResponse::CourseDraft(summary))
-    }
-
-    fn start_trial_workspace(&self, draft_id: u64) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
-        let draft = state.draft(draft_id)?;
-        let path = draft.paths.root.to_string_lossy().into_owned();
-        let source = CourseSource::LocalPack { path: path.clone() };
-        if !draft.scaffolded && !is_course_trusted(&source, &state.trust_entries) {
-            return Ok(AppResponse::TrialTrustRequired(TrustSource {
-                source_kind: TrustSourceKind::LocalPath,
-                source: path,
-            }));
-        }
-        let mut opened = draft.trial_course()?;
-        if opened.course.source != source {
-            return Err(DomainError::new(ErrorCode::InvalidDraftPath));
-        }
-        opened.course.trusted = true;
-        let trial = tempfile::Builder::new()
-            .prefix("codelab-trial-")
-            .tempdir()
-            .map_err(|_| DomainError::new(ErrorCode::TrialWorkspaceFailed))?;
-        let workspace = self.activation.prepare_workspace(
-            state.next_workspace_id,
-            &trial.path().to_string_lossy(),
-            &opened.course,
-            opened.starter.as_ref(),
-        )?;
-        let workspace =
-            self.activation
-                .activate_workspace(&mut state, workspace, &opened.course)?;
-        state.course_load_generation += 1;
-        state.trial_workspace = Some(trial);
-        let course = self.activation.activate_course(&mut state, opened)?;
-        Ok(AppResponse::TrialWorkspaceOpened(TrialWorkspaceOpened {
-            course,
-            workspace,
-        }))
     }
 
     fn workspace_starter(
@@ -1583,15 +1255,51 @@ impl App {
         Ok(active.starter.clone())
     }
 
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, AppState> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
+    fn lock_state(&self) -> MutexGuard<'_, AppState> {
+        lock_state(&self.state)
     }
 
     fn emit(&self, event: AppEvent) {
         emit_to_subscribers(&self.subscribers, event);
     }
+}
+
+fn lock_state(state: &Mutex<AppState>) -> MutexGuard<'_, AppState> {
+    state.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+fn stage_recent(
+    state: &mut AppState,
+    recents_store: &JsonStore<Vec<RecentWorkspace>>,
+    mut entry: RecentWorkspace,
+) -> Result<(Vec<RecentWorkspace>, AppEvent), DomainError> {
+    if entry.course_source.is_none() {
+        entry.course_source = state
+            .recents
+            .iter()
+            .find(|recent| {
+                recent.workspace_path == entry.workspace_path && recent.course_id == entry.course_id
+            })
+            .and_then(|recent| recent.course_source.clone());
+    }
+    stage_recents_mutation(state, recents_store, |next| {
+        next.retain(|item| item.workspace_path != entry.workspace_path);
+        next.insert(0, entry);
+        next.truncate(MAX_RECENT_WORKSPACES);
+    })
+}
+
+fn stage_recents_mutation(
+    state: &mut AppState,
+    recents_store: &JsonStore<Vec<RecentWorkspace>>,
+    mutate: impl FnOnce(&mut Vec<RecentWorkspace>),
+) -> Result<(Vec<RecentWorkspace>, AppEvent), DomainError> {
+    let mut next = state.recents.clone();
+    mutate(&mut next);
+    recents_store.save_atomic(&next)?;
+    state.recents = next.clone();
+    let event = AppEvent::RecentsUpdated(next.clone());
+    Ok((next, event))
 }
 
 impl AppState {
@@ -1626,7 +1334,7 @@ impl AppState {
     }
 
     fn stop_workspace_activity(&mut self) {
-        self.verification = None;
+        debug_assert!(self.running_verification_chapter.is_none());
         self.execution.clear();
         self.language_servers.suspend();
     }
@@ -1696,44 +1404,6 @@ fn find_block<'a>(
         .flat_map(|chapter| &chapter.commands)
         .find(|block| block.id == id)
         .ok_or_else(|| DomainError::new(ErrorCode::CommandBlockNotFound))
-}
-
-fn is_course_trusted(source: &CourseSource, entries: &[TrustEntry]) -> bool {
-    match source {
-        CourseSource::Builtin { .. } => true,
-        CourseSource::GitPack { url } => entries
-            .iter()
-            .any(|entry| matches_trust_key(entry, TrustSourceKind::GitRepo, url)),
-        CourseSource::LocalMarkdown { path } | CourseSource::LocalPack { path } => entries
-            .iter()
-            .any(|entry| matches_trust_key(entry, TrustSourceKind::LocalPath, path)),
-    }
-}
-
-fn request_from_source(source: &CourseSource) -> OpenCourseRequest {
-    match source {
-        CourseSource::Builtin { course_id } => OpenCourseRequest::Builtin {
-            course_id: course_id.clone(),
-        },
-        CourseSource::LocalMarkdown { path } => {
-            OpenCourseRequest::LocalMarkdown { path: path.clone() }
-        }
-        CourseSource::LocalPack { path } => OpenCourseRequest::LocalPack { path: path.clone() },
-        CourseSource::GitPack { url } => OpenCourseRequest::GitPack { url: url.clone() },
-    }
-}
-
-fn workspace_recent(workspace: &Workspace, course: &LoadedCourse) -> RecentWorkspace {
-    RecentWorkspace {
-        workspace_path: workspace.summary.root.clone(),
-        course_id: course.course_id.clone(),
-        course_title: course.title.clone(),
-        language: course.language,
-        course_source: Some(course.source.clone()),
-        completed_exercises: workspace.completed_exercises(),
-        total_exercises: course.total_exercises,
-        last_opened_at: Utc::now().to_rfc3339(),
-    }
 }
 
 fn emit_to_subscribers(subscribers: &Subscribers, event: AppEvent) {

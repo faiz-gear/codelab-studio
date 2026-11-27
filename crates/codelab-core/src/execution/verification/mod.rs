@@ -20,30 +20,13 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-use std::thread::{self, JoinHandle};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use std::time::{Duration, Instant};
 use suite::TestSuiteAdapter;
 
 const OUTPUT_LIMIT: u64 = 2 * 1024 * 1024;
 const CHECK_SHELL: &str = "sh";
-
-pub(crate) struct VerificationTask {
-    pub chapter_id: Option<String>,
-    pub cancelled: Arc<AtomicBool>,
-    pub handle: Option<JoinHandle<()>>,
-}
-impl Drop for VerificationTask {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Release);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
 
 pub(crate) struct PreparedCheck {
     spec: CourseCheckSpec,

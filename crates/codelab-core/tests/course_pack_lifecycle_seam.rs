@@ -435,6 +435,145 @@ fn a_slow_git_refresh_cannot_block_course_close_or_publish_afterward() {
 }
 
 #[test]
+fn refreshing_a_git_course_recovers_interrupted_checks_with_a_single_progress_event() {
+    use codelab_core::{
+        AppEvent, CheckStatus, ExerciseTarget, RunChecks, WorkspaceTerminalRequest,
+    };
+    use std::time::Instant;
+
+    let temp = TempDir::new().unwrap();
+    let repo = temp.path().join("repo");
+    let data = temp.path().join("data");
+    let learner = temp.path().join("learner");
+    fs::create_dir(&repo).unwrap();
+    fs::create_dir(&learner).unwrap();
+    git(&repo, &["init", "-q"]);
+    commit_pack(&repo, "Exercise 1", "Original", "starter v1");
+    fs::write(
+        repo.join(".codelab-checks.json"),
+        r#"{"schemaVersion":"1.0","chapters":[{"chapterId":"stable","checks":[{"id":"long","title":"Wait","type":"command_test","command":"touch started; while [ ! -f release ]; do sleep 0.01; done","timeoutSec":60}]}]}"#,
+    )
+    .unwrap();
+    git(&repo, &["add", ".codelab-checks.json"]);
+    git(
+        &repo,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "commit",
+            "-qm",
+            "Add long check",
+        ],
+    );
+
+    let app = App::open_with_git_fetcher(
+        AppConfig {
+            data_dir: data.clone(),
+        },
+        Arc::new(LocalGit(repo.clone())),
+    )
+    .unwrap();
+    app.execute(AppCommand::OpenCourse(OpenCourseRequest::GitPack {
+        url: REMOTE.into(),
+    }))
+    .unwrap();
+    app.execute(AppCommand::GrantTrust(TrustSource {
+        source_kind: TrustSourceKind::GitRepo,
+        source: REMOTE.into(),
+    }))
+    .unwrap();
+    let AppResponse::WorkspaceBound(workspace) = app
+        .execute(AppCommand::BindWorkspace {
+            path: learner.to_string_lossy().into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected bound Workspace")
+    };
+
+    assert!(matches!(
+        app.execute(AppCommand::RunChecks(RunChecks {
+            target: ExerciseTarget {
+                workspace_id: workspace.id,
+                chapter_id: "stable".into(),
+            },
+            drafts: Vec::new(),
+            confirmation: None,
+        }))
+        .unwrap(),
+        AppResponse::VerificationStarted(_)
+    ));
+
+    let started = learner.join("started");
+    let until = Instant::now() + Duration::from_secs(10);
+    while !started.exists() {
+        assert!(Instant::now() < until, "check process did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    commit_pack(&repo, "Exercise 1 revised", "Updated", "starter v2");
+
+    let events = app.subscribe();
+    let AppResponse::LoadedCourse(refreshed) = app.execute(AppCommand::RefreshGitCourse).unwrap()
+    else {
+        panic!("expected refreshed Course")
+    };
+    assert_eq!(refreshed.chapters[0].title, "Exercise 1 revised");
+
+    let drained: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+    let progress_events: Vec<_> = drained
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, event)| match event {
+            AppEvent::ProgressUpdated(progress) => Some((idx, progress)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        progress_events.len(),
+        1,
+        "expected a single ProgressUpdated event, saw: {drained:?}"
+    );
+    let course_loaded_idx = drained
+        .iter()
+        .position(|event| matches!(event, AppEvent::CourseLoaded(_)))
+        .unwrap_or_else(|| panic!("expected CourseLoaded event, saw: {drained:?}"));
+    let (progress_idx, recovered) = progress_events[0];
+    assert!(
+        progress_idx < course_loaded_idx,
+        "expected ProgressUpdated before CourseLoaded (matching activate_course), saw: {drained:?}"
+    );
+    assert_eq!(recovered.running_chapter_id, None);
+    let check_result = &recovered.chapters["stable"].last_check_results[0];
+    assert_eq!(check_result.status, CheckStatus::Failed);
+    assert_eq!(
+        check_result
+            .error
+            .as_ref()
+            .and_then(|err| err.details.get("reasonCode"))
+            .map(String::as_str),
+        Some("VERIFICATION_INTERRUPTED")
+    );
+
+    let AppResponse::Progress(progress) = app
+        .execute(AppCommand::GetProgress(WorkspaceTerminalRequest {
+            workspace_id: workspace.id,
+        }))
+        .unwrap()
+    else {
+        panic!("expected progress snapshot")
+    };
+    assert_eq!(progress.running_chapter_id, None);
+    assert_eq!(
+        progress.chapters["stable"].last_check_results[0].status,
+        CheckStatus::Failed
+    );
+    allow_cleanup(&data);
+}
+
+#[test]
 fn author_edits_live_preview_and_starts_an_isolated_trial() {
     use codelab_core::{
         CourseDraftRequest, CourseLanguage, DraftEdit, DraftFilePath, DraftFileWrite,
