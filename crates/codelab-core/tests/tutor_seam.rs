@@ -34,6 +34,7 @@ function readFlag(prefix, envName) {
 const logPath = readFlag("--log=", "FAKE_ACP_LOG");
 const pidPath = readFlag("--pids=", "FAKE_ACP_PIDS");
 const markerPath = readFlag("--marker=", "FAKE_ACP_MARKER");
+const detachGrandchild = process.argv.slice(2).includes("--detach");
 
 if (markerPath) {
   fs.appendFileSync(markerPath, `spawn:${process.pid}\n`);
@@ -41,10 +42,30 @@ if (markerPath) {
 
 let grandchild = null;
 if (pidPath) {
-  grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-    stdio: "ignore",
-  });
-  fs.writeFileSync(pidPath, JSON.stringify({ pid: process.pid, childPid: grandchild.pid }));
+  if (detachGrandchild) {
+    const helper = `
+      const fs = require("node:fs");
+      const net = require("node:net");
+      const target = process.argv[1];
+      const parentPid = Number(process.argv[2]);
+      const server = net.createServer();
+      server.listen(0, "127.0.0.1", () => {
+        const tmp = target + ".tmp";
+        fs.writeFileSync(tmp, JSON.stringify({ pid: parentPid, childPid: process.pid, childPort: server.address().port }));
+        fs.renameSync(tmp, target);
+      });
+    `;
+    grandchild = spawn(process.execPath, ["-e", helper, pidPath, String(process.pid)], {
+      stdio: "ignore",
+      detached: true,
+    });
+    grandchild.unref();
+  } else {
+    grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    fs.writeFileSync(pidPath, JSON.stringify({ pid: process.pid, childPid: grandchild.pid }));
+  }
 }
 
 function logEvent(obj) {
@@ -2188,4 +2209,150 @@ fn chapter_switch_and_style_switch_reuse_workspace_acp_session_with_fresh_contex
     assert!(retry_prompt.contains("[Teaching Style: socratic]"));
     assert!(retry_prompt.contains("RETRY_UPDATED_AFTER_CRASH"));
     app.shutdown().unwrap();
+}
+
+#[test]
+fn detached_acp_grandchild_is_reaped_on_crash_and_shutdown() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let pid_file = temp.path().join("detached-pids.json");
+    let agent_cmd = format!(
+        "{} \"--pids={}\" --detach",
+        node_command(&script),
+        path_str(&pid_file)
+    );
+
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    let (workspace_id, _) = open_trusted_workspace(&temp, &app, "work-detached");
+    configure_agent(
+        &app,
+        &agent_cmd,
+        PermissionPolicy::GuidedReadonly,
+        TeachingStyle::Socratic,
+    );
+
+    // 1. Start session so the detached grandchild is definitely listening, then trigger CMD:CRASH.
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "warm detached".into(),
+        teaching_style: None,
+        context_preamble: None,
+        context: None,
+    }))
+    .unwrap();
+    wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.process_running
+    });
+    let crash_pids = wait_for_pid_file(&pid_file);
+    let crash_port = crash_pids["childPort"].as_u64().unwrap() as u16;
+    assert!(crash_pids["pid"].as_i64().unwrap() > 0);
+    assert!(crash_pids["childPid"].as_i64().unwrap() > 0);
+    assert!(
+        std::net::TcpListener::bind(("127.0.0.1", crash_port)).is_err(),
+        "detached grandchild must hold port {crash_port} before crash"
+    );
+
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "CMD:CRASH".into(),
+        teaching_style: None,
+        context_preamble: None,
+        context: None,
+    }))
+    .unwrap();
+    let crashed = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Error && !s.process_running && s.can_retry
+    });
+    let err = crashed.last_error.as_ref().expect("crash error");
+    assert_eq!(err.code, ErrorCode::AcpProcessExited);
+    assert_eq!(err.details.get("code").map(String::as_str), Some("42"));
+
+    wait_port_released(crash_port);
+    #[cfg(unix)]
+    {
+        wait_process_dead(crash_pids["pid"].as_i64().unwrap() as i32);
+        wait_process_dead(crash_pids["childPid"].as_i64().unwrap() as i32);
+    }
+
+    // 2. Explicit shutdown reaps a fresh detached grandchild on every platform.
+    fs::remove_file(&pid_file).unwrap();
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "hello detached".into(),
+        teaching_style: None,
+        context_preamble: None,
+        context: None,
+    }))
+    .unwrap();
+    wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready && s.process_running
+    });
+    let shutdown_pids = wait_for_pid_file(&pid_file);
+    let shutdown_port = shutdown_pids["childPort"].as_u64().unwrap() as u16;
+    assert!(shutdown_pids["pid"].as_i64().unwrap() > 0);
+    assert!(shutdown_pids["childPid"].as_i64().unwrap() > 0);
+    assert!(
+        std::net::TcpListener::bind(("127.0.0.1", shutdown_port)).is_err(),
+        "detached grandchild must hold port {shutdown_port} before shutdown"
+    );
+
+    app.shutdown().unwrap();
+
+    wait_port_released(shutdown_port);
+    #[cfg(unix)]
+    {
+        wait_process_dead(shutdown_pids["pid"].as_i64().unwrap() as i32);
+        wait_process_dead(shutdown_pids["childPid"].as_i64().unwrap() as i32);
+    }
+}
+
+#[test]
+fn trailing_separator_program_is_not_resolved_from_path() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    let err = app
+        .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+            preset: AcpAgentPreset::Custom,
+            command: format!("node/ \"{}\"", path_str(&script)),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::AcpAgentStartFailed);
+}
+
+fn wait_for_pid_file(path: &Path) -> serde_json::Value {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(text) = fs::read_to_string(path)
+            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+        {
+            return value;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for detached grandchild pid file {}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn wait_port_released(port: u16) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "detached ACP grandchild kept port {port} bound after cleanup"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }

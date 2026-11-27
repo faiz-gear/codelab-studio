@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
+use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -10,6 +11,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::error::{DomainError, ErrorCode};
+use crate::execution::{Directory, Process, spawn_piped};
+use crate::filesystem::open_canonical_dir;
 
 use super::backend::{
     BackendEvent, BackendEventSink, BackendPermissionPrompt, TutorBackend, TutorBackendSession,
@@ -18,17 +21,19 @@ use super::backend::{
 use super::model::{TutorHandshakeResult, TutorPermissionKind};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const EXIT_CODE_GRACE: Duration = Duration::from_millis(250);
 const MAX_RPC_LINE_BYTES: usize = 4 * 1024 * 1024;
 const CLIENT_NAME: &str = "codelab-studio";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+type StdinWriter = Box<dyn Write + Send>;
 
 pub struct AcpStdioBackend;
 
 impl TutorBackend for AcpStdioBackend {
     fn handshake(&self, spec: &TutorLaunchSpec) -> Result<TutorHandshakeResult, DomainError> {
         let (program, args) = split_command_line(&spec.command)?;
-        let (child, stdin, stdout, stderr) = spawn_isolated(&program, &args, &spec.cwd)?;
-        spawn_stderr_drainer(stderr);
+        let (child, stdout, stdin) = spawn_acp_process(&program, &args, &spec.cwd)?;
 
         let child = Arc::new(Mutex::new(Some(child)));
         let stdin = Arc::new(Mutex::new(Some(stdin)));
@@ -111,8 +116,8 @@ struct ActiveTurnState {
 }
 
 struct AcpStdioSession {
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
-    child: Arc<Mutex<Option<IsolatedChild>>>,
+    stdin: Arc<Mutex<Option<StdinWriter>>>,
+    child: Arc<Mutex<Option<Process>>>,
     pending_client: PendingClientMap,
     pending_agent: Arc<Mutex<HashMap<String, PendingAgentRequest>>>,
     active_turn: Arc<Mutex<Option<ActiveTurnState>>>,
@@ -126,8 +131,7 @@ struct AcpStdioSession {
 impl AcpStdioSession {
     fn spawn(spec: &TutorLaunchSpec, sink: BackendEventSink) -> Result<Self, DomainError> {
         let (program, args) = split_command_line(&spec.command)?;
-        let (child, stdin, stdout, stderr) = spawn_isolated(&program, &args, &spec.cwd)?;
-        spawn_stderr_drainer(stderr);
+        let (child, stdout, stdin) = spawn_acp_process(&program, &args, &spec.cwd)?;
 
         let child = Arc::new(Mutex::new(Some(child)));
         let stdin = Arc::new(Mutex::new(Some(stdin)));
@@ -214,7 +218,7 @@ impl AcpStdioSession {
                         .lock()
                         .unwrap_or_else(|p| p.into_inner())
                         .as_mut()
-                        .and_then(IsolatedChild::wait_exit_code);
+                        .and_then(|process| process.wait_and_reap(EXIT_CODE_GRACE));
                     if !shutting_down.load(Ordering::Acquire) {
                         sink(BackendEvent::ProcessExited {
                             exit_code,
@@ -626,7 +630,7 @@ impl Drop for AcpStdioSession {
 }
 
 struct AgentRequestRouter {
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
+    stdin: Arc<Mutex<Option<StdinWriter>>>,
     pending_agent: Arc<Mutex<HashMap<String, PendingAgentRequest>>>,
     active_turn: Arc<Mutex<Option<ActiveTurnState>>>,
     next_agent_req: Arc<AtomicU64>,
@@ -1019,7 +1023,7 @@ fn parse_initialize_result(
     })
 }
 
-fn write_json_line(stdin: &Mutex<Option<ChildStdin>>, payload: &Value) -> io::Result<()> {
+fn write_json_line(stdin: &Mutex<Option<StdinWriter>>, payload: &Value) -> io::Result<()> {
     let mut bytes = serde_json::to_vec(payload)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
     bytes.push(b'\n');
@@ -1058,20 +1062,6 @@ fn read_bounded_line<R: BufRead>(reader: &mut R, cap: usize) -> Option<String> {
         }
         Err(_) => None,
     }
-}
-
-fn spawn_stderr_drainer(stderr: impl Read + Send + 'static) {
-    let _ = thread::Builder::new()
-        .name("codelab-acp-stderr".into())
-        .spawn(move || {
-            let mut reader = stderr;
-            let mut buf = [0u8; 4096];
-            while let Ok(n) = reader.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-            }
-        });
 }
 
 pub(crate) fn split_command_line(input: &str) -> Result<(String, Vec<String>), DomainError> {
@@ -1154,169 +1144,21 @@ pub(crate) fn split_command_line(input: &str) -> Result<(String, Vec<String>), D
     Ok((program.clone(), args.to_vec()))
 }
 
-struct IsolatedChild {
-    child: Child,
-    #[cfg(unix)]
-    pgid: libc::pid_t,
-    #[cfg(windows)]
-    job: std::os::windows::io::OwnedHandle,
-    terminated: bool,
-}
-
-impl IsolatedChild {
-    fn wait_exit_code(&mut self) -> Option<i32> {
-        let status = self.child.wait().ok()?;
-        self.terminated = true;
-        status.code()
-    }
-
-    fn terminate(&mut self) {
-        if self.terminated {
-            return;
-        }
-        self.terminated = true;
-        #[cfg(unix)]
-        {
-            use std::time::Instant;
-            // SAFETY: pgid is the child's own session/process-group id created via setsid().
-            unsafe {
-                libc::kill(-self.pgid, libc::SIGTERM);
-            }
-            let deadline = Instant::now() + Duration::from_millis(150);
-            while Instant::now() < deadline {
-                if let Ok(Some(_)) = self.child.try_wait() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-            unsafe {
-                libc::kill(-self.pgid, libc::SIGKILL);
-            }
-            let _ = self.child.wait();
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle;
-            use windows_sys::Win32::System::JobObjects::TerminateJobObject;
-            unsafe {
-                TerminateJobObject(self.job.as_raw_handle(), 1);
-            }
-            let _ = self.child.wait();
-        }
-    }
-}
-
-impl Drop for IsolatedChild {
-    fn drop(&mut self) {
-        self.terminate();
-    }
-}
-
-fn spawn_isolated(
+fn spawn_acp_process(
     program: &str,
     args: &[String],
     cwd: &Path,
-) -> Result<
-    (
-        IsolatedChild,
-        ChildStdin,
-        std::process::ChildStdout,
-        std::process::ChildStderr,
-    ),
-    DomainError,
-> {
-    #[cfg(windows)]
-    let launch_cwd = dunce::simplified(cwd);
-    #[cfg(not(windows))]
-    let launch_cwd = cwd;
-
-    let mut cmd = Command::new(program);
-    cmd.args(args)
-        .current_dir(launch_cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // SAFETY: setsid() is async-signal-safe and isolates the ACP child + descendants
-        // into their own process group for 100% deterministic cleanup.
-        unsafe {
-            cmd.pre_exec(|| {
-                if libc::setsid() < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
-
-    let mut child = cmd.spawn().map_err(|_| {
-        DomainError::new(ErrorCode::AcpAgentStartFailed).with_detail("command", program)
-    })?;
-
-    #[cfg(windows)]
-    let job =
-        {
-            use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-            use std::ptr::null;
-            use windows_sys::Win32::System::JobObjects::{
-                AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-                SetInformationJobObject,
-            };
-            let raw_job = unsafe { CreateJobObjectW(null(), null()) };
-            if raw_job.is_null() {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(DomainError::new(ErrorCode::AcpAgentStartFailed)
-                    .with_detail("command", program));
-            }
-            let job = unsafe { OwnedHandle::from_raw_handle(raw_job) };
-            let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            let ok = unsafe {
-                SetInformationJobObject(
-                    job.as_raw_handle(),
-                    JobObjectExtendedLimitInformation,
-                    (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                    std::mem::size_of_val(&limits) as u32,
-                )
-            };
-            let assigned = if ok != 0 {
-                unsafe { AssignProcessToJobObject(job.as_raw_handle(), child.as_raw_handle()) }
-            } else {
-                0
-            };
-            if assigned == 0 {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(DomainError::new(ErrorCode::AcpAgentStartFailed)
-                    .with_detail("command", program));
-            }
-            job
+) -> Result<(Process, Box<dyn Read + Send>, StdinWriter), DomainError> {
+    let os_args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    (|| -> io::Result<_> {
+        let canonical_cwd = fs::canonicalize(cwd)?;
+        let handle = open_canonical_dir(&canonical_cwd)?;
+        let directory = Directory {
+            path: canonical_cwd,
+            handle,
         };
-
-    let stdin = child.stdin.take().ok_or_else(|| {
-        DomainError::new(ErrorCode::AcpAgentStartFailed).with_detail("command", program)
-    })?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        DomainError::new(ErrorCode::AcpAgentStartFailed).with_detail("command", program)
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        DomainError::new(ErrorCode::AcpAgentStartFailed).with_detail("command", program)
-    })?;
-    #[cfg(unix)]
-    let pgid = child.id() as libc::pid_t;
-
-    let isolated = IsolatedChild {
-        child,
-        #[cfg(unix)]
-        pgid,
-        #[cfg(windows)]
-        job,
-        terminated: false,
-    };
-    Ok((isolated, stdin, stdout, stderr))
+        let (process, (stdout, stdin)) = spawn_piped(PathBuf::from(program), os_args, directory)?;
+        Ok((process, stdout, stdin))
+    })()
+    .map_err(|_| DomainError::new(ErrorCode::AcpAgentStartFailed).with_detail("command", program))
 }

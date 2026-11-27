@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use super::{Ports, Spawn};
 
 #[cfg(target_os = "linux")]
-const LSP_PROCESS_OWNER: &str = "CODELAB_LSP_PROCESS_OWNER";
+const PROCESS_OWNER: &str = "CODELAB_PROCESS_OWNER";
 
 pub(crate) struct Process {
     child: Child,
@@ -21,9 +21,9 @@ pub(crate) struct Process {
     session: libc::pid_t,
     reaped: bool,
     #[cfg(target_os = "macos")]
-    lsp_identity: Option<u64>,
+    process_identity: Option<u64>,
     #[cfg(target_os = "linux")]
-    lsp_owner: Option<String>,
+    process_owner: Option<String>,
 }
 
 impl Process {
@@ -84,9 +84,9 @@ impl Process {
                 session,
                 reaped: false,
                 #[cfg(target_os = "macos")]
-                lsp_identity: None,
+                process_identity: None,
                 #[cfg(target_os = "linux")]
-                lsp_owner: None,
+                process_owner: None,
             },
             ports,
         ))
@@ -119,17 +119,18 @@ impl Process {
             let mut bytes = [0; 16];
             File::open("/dev/urandom")?.read_exact(&mut bytes)?;
             let owner = URL_SAFE_NO_PAD.encode(bytes);
-            command.env(LSP_PROCESS_OWNER, &owner);
+            command.env(PROCESS_OWNER, &owner);
             owner
         };
         let mut process = Self::spawn_stdio(command, spec.directory)?;
         #[cfg(target_os = "macos")]
         {
-            process.lsp_identity = process_identity(process.session).map(|identity| identity.id);
+            process.process_identity =
+                process_identity(process.session).map(|identity| identity.id);
         }
         #[cfg(target_os = "linux")]
         {
-            process.lsp_owner = Some(owner);
+            process.process_owner = Some(owner);
         }
         let writer = process.child.stdin.take().expect("piped stdin");
         let reader = process.child.stdout.take().expect("piped stdout");
@@ -155,9 +156,9 @@ impl Process {
             session,
             reaped: false,
             #[cfg(target_os = "macos")]
-            lsp_identity: None,
+            process_identity: None,
             #[cfg(target_os = "linux")]
-            lsp_owner: None,
+            process_owner: None,
         })
     }
 
@@ -201,18 +202,45 @@ impl Process {
 
     pub fn interrupt(&mut self) -> u32 {
         self.signal_session(libc::SIGINT);
-        let until = Instant::now() + Duration::from_millis(400);
-        while !self.exited() && Instant::now() < until {
-            thread::sleep(Duration::from_millis(10));
-        }
+        self.wait_until_exited(Duration::from_millis(400));
         self.finish()
     }
 
-    fn finish(&mut self) -> u32 {
+    pub(crate) fn terminate(&mut self) {
+        if self.reaped {
+            return;
+        }
+        self.signal_session(libc::SIGTERM);
+        self.wait_until_exited(Duration::from_millis(150));
+        let _ = self.finish();
+    }
+
+    pub(crate) fn wait_and_reap(&mut self, grace: Duration) -> Option<i32> {
+        if self.reaped {
+            return None;
+        }
+        let exited_naturally = self.wait_until_exited(grace);
+        let status = self.reap_session()?;
+        exited_naturally.then(|| status.code()).flatten()
+    }
+
+    fn wait_until_exited(&self, timeout: Duration) -> bool {
+        let until = Instant::now() + timeout;
+        while !self.exited() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(10));
+        }
+        self.exited()
+    }
+
+    fn reap_session(&mut self) -> Option<std::process::ExitStatus> {
         self.signal_session(libc::SIGSTOP);
         self.signal_session(libc::SIGKILL);
         self.reaped = true;
-        self.child.wait().ok().map_or(1, |status| {
+        self.child.wait().ok()
+    }
+
+    fn finish(&mut self) -> u32 {
+        self.reap_session().map_or(1, |status| {
             use std::os::unix::process::ExitStatusExt;
             status
                 .code()
@@ -259,7 +287,7 @@ fn signal_jobs(process: &Process, signal: libc::c_int) {
     };
     pids.truncate(count.max(0) as usize);
 
-    if let Some(identity) = process.lsp_identity {
+    if let Some(identity) = process.process_identity {
         signal_descendants(identity, &pids, signal);
     }
 
@@ -370,9 +398,9 @@ fn signal_process_identity(pid: libc::pid_t, identity: &ProcessIdentity, signal:
 fn signal_jobs(process: &Process, signal: libc::c_int) {
     let session = process.session;
     let owner = process
-        .lsp_owner
+        .process_owner
         .as_ref()
-        .map(|owner| format!("{LSP_PROCESS_OWNER}={owner}"));
+        .map(|owner| format!("{PROCESS_OWNER}={owner}"));
     let pids = std::fs::read_dir("/proc")
         .into_iter()
         .flatten()
@@ -387,7 +415,7 @@ fn signal_jobs(process: &Process, signal: libc::c_int) {
                 || child_of_session(pid, &handle, session)
                 || owner
                     .as_ref()
-                    .is_some_and(|owner| has_lsp_owner(pid, owner)))
+                    .is_some_and(|owner| has_process_owner(pid, owner)))
             .then_some(handle)
         })
         .collect();
@@ -406,7 +434,7 @@ fn signal_jobs(process: &Process, signal: libc::c_int) {
 }
 
 #[cfg(target_os = "linux")]
-fn has_lsp_owner(pid: libc::pid_t, owner: &str) -> bool {
+fn has_process_owner(pid: libc::pid_t, owner: &str) -> bool {
     use std::io::{BufRead, BufReader, Read};
     const MAX_ENVIRONMENT_BYTES: u64 = 8 * 1024 * 1024;
     let Ok(environment) = File::open(format!("/proc/{pid}/environ")) else {
