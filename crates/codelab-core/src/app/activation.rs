@@ -122,21 +122,21 @@ impl SessionLifecycle {
             }
             (course, events)
         };
-        self.finish_transition(None, events);
+        self.finish_transition(None, None, events);
         Ok(AppResponse::LoadedCourse(course))
     }
 
     pub(super) fn close_active_course(&self) -> AppResponse {
-        let tutor_action = {
+        let (tutor_action, retired_trial) = {
             let (mut verification, state) = self.lock_session();
             let mut state = verification.stop_and_relock(&self.state, state);
             state.course_load_generation += 1;
             state.deactivate_workspace();
-            state.trial_workspace = None;
+            let retired_trial = state.trial_workspace.take();
             state.active_course = None;
-            stamp_tutor(&mut state, TutorAction::Detach)
+            (stamp_tutor(&mut state, TutorAction::Detach), retired_trial)
         };
-        self.finish_transition(Some(tutor_action), Vec::new());
+        self.finish_transition(Some(tutor_action), retired_trial, Vec::new());
         AppResponse::CourseClosed
     }
 
@@ -158,14 +158,14 @@ impl SessionLifecycle {
             )?;
             (summary, tutor_action, recents_event)
         };
-        self.finish_transition(Some(tutor_action), vec![recents_event]);
+        self.finish_transition(Some(tutor_action), None, vec![recents_event]);
         Ok(AppResponse::WorkspaceBound(summary))
     }
 
     pub(super) fn open_recent_workspace(&self, path: &str) -> Result<AppResponse, DomainError> {
         let normalized = normalize_absolute_path(path)
             .ok_or_else(|| DomainError::new(ErrorCode::InvalidWorkspacePath))?;
-        let (result, tutor_action, events) = {
+        let (result, tutor_action, retired_trial, events) = {
             let (verification, state) = self.lock_session();
             let recent = state
                 .recents
@@ -197,17 +197,18 @@ impl SessionLifecycle {
                 let action = stamp_tutor(&mut state, TutorAction::Detach);
                 (state, None, action)
             };
-            state.trial_workspace = None;
+            let retired_trial = state.trial_workspace.take();
             let course = self.activate_course(&mut state, opened, &mut events);
             (
                 course.map(|course| {
                     AppResponse::RecentWorkspaceOpened(RecentWorkspaceOpened { course, workspace })
                 }),
                 tutor_action,
+                retired_trial,
                 events,
             )
         };
-        self.finish_transition(Some(tutor_action), events);
+        self.finish_transition(Some(tutor_action), retired_trial, events);
         result
     }
 
@@ -215,7 +216,7 @@ impl SessionLifecycle {
         &self,
         open: impl FnOnce(u64, &Path, Option<&Path>) -> Result<Draft, DomainError>,
     ) -> Result<AppResponse, DomainError> {
-        let (summary, tutor_action) = {
+        let (summary, tutor_action, retired_trial) = {
             let (mut verification, state) = self.lock_session();
             if state.shut_down {
                 return Err(DomainError::new(ErrorCode::NoActiveDraft));
@@ -230,18 +231,18 @@ impl SessionLifecycle {
             state.course_load_generation += 1;
             state.next_draft_id += 1;
             state.deactivate_workspace();
-            state.trial_workspace = None;
+            let retired_trial = state.trial_workspace.take();
             state.active_course = None;
             state.draft = Some(draft);
             let tutor_action = stamp_tutor(&mut state, TutorAction::Detach);
-            (summary, tutor_action)
+            (summary, tutor_action, retired_trial)
         };
-        self.finish_transition(Some(tutor_action), Vec::new());
+        self.finish_transition(Some(tutor_action), retired_trial, Vec::new());
         Ok(AppResponse::CourseDraft(summary))
     }
 
     pub(super) fn start_trial_workspace(&self, draft_id: u64) -> Result<AppResponse, DomainError> {
-        let (result, tutor_action, events) = {
+        let (result, tutor_action, retired_trial, events) = {
             let (mut verification, state) = self.lock_session();
             let draft = state.draft(draft_id)?;
             let path = draft.paths.root.to_string_lossy().into_owned();
@@ -271,7 +272,7 @@ impl SessionLifecycle {
             let (workspace, tutor_action) =
                 self.activate_workspace(&mut state, workspace, &opened.course)?;
             state.course_load_generation += 1;
-            state.trial_workspace = Some(trial);
+            let retired_trial = state.trial_workspace.replace(trial);
             let mut events = Vec::new();
             let course = self.activate_course(&mut state, opened, &mut events);
             (
@@ -279,10 +280,11 @@ impl SessionLifecycle {
                     AppResponse::TrialWorkspaceOpened(TrialWorkspaceOpened { course, workspace })
                 }),
                 tutor_action,
+                retired_trial,
                 events,
             )
         };
-        self.finish_transition(Some(tutor_action), events);
+        self.finish_transition(Some(tutor_action), retired_trial, events);
         result
     }
 
@@ -328,7 +330,7 @@ impl SessionLifecycle {
             events.push(AppEvent::TrustUpdated(next.clone()));
             (next, tutor_action, events)
         };
-        self.finish_transition(tutor_action, events);
+        self.finish_transition(tutor_action, None, events);
         Ok(next)
     }
 
@@ -356,8 +358,9 @@ impl SessionLifecycle {
 
         drop(active_workspace);
         drop(active_course);
-        drop(trial_workspace);
         self.apply_tutor_action(tutor_action);
+        // Release TutorManager directory handles before removing the Trial TempDir on Windows.
+        drop(trial_workspace);
 
         let mut hooks_executed = 0;
         let mut failures = Vec::new();
@@ -425,10 +428,17 @@ impl SessionLifecycle {
         }
     }
 
-    fn finish_transition(&self, tutor_action: Option<PendingTutorAction>, events: Vec<AppEvent>) {
+    fn finish_transition(
+        &self,
+        tutor_action: Option<PendingTutorAction>,
+        retired_trial: Option<tempfile::TempDir>,
+        events: Vec<AppEvent>,
+    ) {
         if let Some(action) = tutor_action {
             self.apply_tutor_action(action);
         }
+        // Release TutorManager directory handles before removing a retired Trial TempDir on Windows.
+        drop(retired_trial);
         for event in events {
             emit_to_subscribers(&self.subscribers, event);
         }
@@ -440,11 +450,11 @@ impl SessionLifecycle {
         state: MutexGuard<'_, AppState>,
         request: &OpenCourseRequest,
     ) -> Result<AppResponse, DomainError> {
-        let (result, tutor_action, events) = {
+        let (result, tutor_action, retired_trial, events) = {
             let (mut verification, state, opened) =
                 self.prepare_course(verification, state, request, false)?;
             let mut state = verification.stop_and_relock(&self.state, state);
-            let closed_trial = state.close_trial();
+            let retired_trial = state.close_trial();
             let switched_course = state
                 .active_course
                 .as_ref()
@@ -452,13 +462,18 @@ impl SessionLifecycle {
             if switched_course {
                 state.deactivate_workspace();
             }
-            let tutor_action = (closed_trial || switched_course)
+            let tutor_action = (retired_trial.is_some() || switched_course)
                 .then(|| stamp_tutor(&mut state, TutorAction::Detach));
             let mut events = Vec::new();
             let course = self.activate_course(&mut state, opened, &mut events);
-            (course.map(AppResponse::LoadedCourse), tutor_action, events)
+            (
+                course.map(AppResponse::LoadedCourse),
+                tutor_action,
+                retired_trial,
+                events,
+            )
         };
-        self.finish_transition(tutor_action, events);
+        self.finish_transition(tutor_action, retired_trial, events);
         result
     }
 
