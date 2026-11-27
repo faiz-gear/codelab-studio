@@ -293,13 +293,13 @@ impl Process {
             // Pass paths as quoted environment expansions to avoid interpreting
             // characters in the host executable path or the arguments as cmd syntax.
             spec.env.insert(
-                "CODELAB_LSP_PROGRAM".into(),
+                "CODELAB_PIPED_PROGRAM".into(),
                 dunce::simplified(&spec.program).as_os_str().into(),
             );
             spec.program = super::windows_command_shell();
-            let mut args = String::from(r#"cmd.exe /D /V:OFF /S /C ""%CODELAB_LSP_PROGRAM%""#);
+            let mut args = String::from(r#"cmd.exe /D /V:OFF /S /C ""%CODELAB_PIPED_PROGRAM%""#);
             for (index, argument) in spec.args.into_iter().enumerate() {
-                let name = format!("CODELAB_LSP_ARG_{index}");
+                let name = format!("CODELAB_PIPED_ARG_{index}");
                 args.push_str(&format!(r#" "%{name}%""#));
                 spec.env.insert(name.into(), argument);
             }
@@ -409,10 +409,7 @@ impl Process {
         }
         // The caller sends Ctrl-C through ConPTY before waiting. Windows delivers
         // a console interrupt to console programs that support it.
-        let until = Instant::now() + Duration::from_millis(400);
-        while !self.exited() && Instant::now() < until {
-            thread::sleep(Duration::from_millis(10));
-        }
+        self.wait_until_exited(Duration::from_millis(400));
         if attached {
             unsafe {
                 FreeConsole();
@@ -420,6 +417,36 @@ impl Process {
             }
         }
         self.finish()
+    }
+
+    pub(crate) fn terminate(&mut self) {
+        if !self.finished {
+            let _ = self.finish();
+        }
+    }
+
+    pub(crate) fn wait_and_reap(&mut self, grace: Duration) -> Option<i32> {
+        if self.finished {
+            return None;
+        }
+        if self.wait_until_exited(grace) {
+            let mut code = 0u32;
+            let got_code =
+                unsafe { GetExitCodeProcess(self.child.as_raw_handle(), &mut code) != 0 };
+            let _ = self.finish();
+            got_code.then_some(code as i32)
+        } else {
+            let _ = self.finish();
+            None
+        }
+    }
+
+    fn wait_until_exited(&self, timeout: Duration) -> bool {
+        let until = Instant::now() + timeout;
+        while !self.exited() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(10));
+        }
+        self.exited()
     }
 
     fn finish(&mut self) -> u32 {

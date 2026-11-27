@@ -44,12 +44,31 @@ pub(crate) fn spawn_piped(
     args: Vec<OsString>,
     directory: Directory,
 ) -> io::Result<(Process, Ports)> {
+    let program = resolve_piped_program(program);
     Process::spawn_piped(Spawn {
         program,
         args,
         env: BTreeMap::new(),
         directory,
     })
+}
+
+fn resolve_piped_program(program: PathBuf) -> PathBuf {
+    let Some(name) = program.to_str() else {
+        return program;
+    };
+    if name.chars().any(std::path::is_separator) {
+        return program;
+    }
+    let mut components = program.components();
+    let is_bare = matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    );
+    if !is_bare {
+        return program;
+    }
+    crate::runtime::find_host_executable(name).unwrap_or(program)
 }
 
 #[derive(PartialEq, Eq)]

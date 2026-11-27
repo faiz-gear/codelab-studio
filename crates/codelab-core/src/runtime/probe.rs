@@ -197,7 +197,19 @@ fn find_on_path_command(name: &str) -> impl Iterator<Item = PathBuf> {
     }
 
     let extensions: &[&str] = if cfg!(windows) {
-        &[".exe", ".cmd", ".bat"]
+        let has_executable_ext = Path::new(name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("exe")
+                    || ext.eq_ignore_ascii_case("cmd")
+                    || ext.eq_ignore_ascii_case("bat")
+            });
+        if has_executable_ext {
+            &[""]
+        } else {
+            &[".exe", ".cmd", ".bat"]
+        }
     } else {
         &[""]
     };
