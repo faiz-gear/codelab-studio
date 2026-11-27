@@ -1344,14 +1344,10 @@ impl AppState {
         self.active_workspace = None;
     }
 
-    fn close_trial(&mut self) -> bool {
-        if self.trial_workspace.is_some() {
-            self.deactivate_workspace();
-            self.trial_workspace = None;
-            true
-        } else {
-            false
-        }
+    fn close_trial(&mut self) -> Option<tempfile::TempDir> {
+        let trial = self.trial_workspace.take()?;
+        self.deactivate_workspace();
+        Some(trial)
     }
 
     fn draft(&self, id: u64) -> Result<&Draft, DomainError> {
