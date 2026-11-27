@@ -1,10 +1,100 @@
 use super::*;
 use crate::execution::preparation::{CommandPreparation, ConfirmationTarget};
-use crate::execution::verification::{VerificationTask, model::*};
+use crate::execution::verification::model::*;
 use crate::{Chapter, ChapterKind};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
 
 mod run;
+
+struct VerificationTask {
+    cancelled: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl VerificationTask {
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+
+    fn is_finished(&self) -> bool {
+        self.handle.as_ref().is_none_or(JoinHandle::is_finished)
+    }
+}
+
+impl Drop for VerificationTask {
+    fn drop(&mut self) {
+        self.cancel();
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// Owns the active Check worker handle outside `Mutex<AppState>`.
+///
+/// Lock order is strictly `VerificationController` (outer) -> `AppState` (inner).
+/// The Check worker thread never locks `VerificationController`; callers stopping
+/// an active run signal cancellation, drop `AppState`, and join the worker while
+/// still holding the outer `VerificationController` lock.
+#[derive(Default)]
+pub(super) struct VerificationController {
+    task: Mutex<Option<VerificationTask>>,
+}
+
+pub(super) struct VerificationGuard<'a> {
+    slot: MutexGuard<'a, Option<VerificationTask>>,
+}
+
+impl VerificationController {
+    pub(super) fn lock(&self) -> VerificationGuard<'_> {
+        VerificationGuard {
+            slot: self
+                .task
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()),
+        }
+    }
+}
+
+impl VerificationGuard<'_> {
+    pub(super) fn stop_and_relock<'s>(
+        &mut self,
+        state_lock: &'s Mutex<AppState>,
+        mut state: MutexGuard<'s, AppState>,
+    ) -> MutexGuard<'s, AppState> {
+        if let Some(task) = self.slot.take() {
+            task.cancel();
+            if task.is_finished() {
+                drop(task);
+            } else {
+                drop(state);
+                drop(task);
+                state = lock_state(state_lock);
+            }
+        }
+        state.running_verification_chapter = None;
+        state
+    }
+
+    fn reap_finished(&mut self) {
+        if self
+            .slot
+            .as_ref()
+            .is_some_and(VerificationTask::is_finished)
+        {
+            drop(self.slot.take());
+        }
+    }
+
+    fn is_idle(&self) -> bool {
+        self.slot.is_none()
+    }
+
+    fn replace(&mut self, task: VerificationTask) -> Option<VerificationTask> {
+        self.slot.replace(task)
+    }
+}
 
 impl App {
     pub(super) fn get_progress(&self, id: u64) -> Result<AppResponse, DomainError> {
@@ -13,14 +103,15 @@ impl App {
         Ok(AppResponse::Progress(progress_snapshot(&state)))
     }
     pub(super) fn run_checks(&self, request: RunChecks) -> Result<AppResponse, DomainError> {
+        let mut verification = self.verification.lock();
+        verification.reap_finished();
         let mut state = self.lock_state();
+        if verification.is_idle() {
+            state.running_verification_chapter = None;
+        }
         let id = request.target.workspace_id;
         let workspace = state.workspace(id)?;
-        if state
-            .verification
-            .as_ref()
-            .is_some_and(|task| task.chapter_id.is_some())
-        {
+        if state.running_verification_chapter.is_some() {
             return Err(DomainError::new(ErrorCode::VerificationBusy));
         }
         let chapter = exercise(&state, &request.target)?.clone();
@@ -80,22 +171,23 @@ impl App {
             return Ok(AppResponse::CommandFailed(CommandFailed { error, saved }));
         }
         let cancelled = Arc::new(AtomicBool::new(false));
-        state.verification = Some(VerificationTask {
-            chapter_id: Some(plan.chapter().chapter_id.clone()),
-            cancelled: Arc::clone(&cancelled),
-            handle: None,
-        });
+        state.running_verification_chapter = Some(plan.chapter().chapter_id.clone());
         let initial = progress_snapshot(&state);
         let shared = Arc::clone(&self.state);
         let subscribers = Arc::clone(&self.subscribers);
-        let recents_dir = self.data_dir.clone();
+        let recents_store = Arc::clone(&self.recents_store);
         let report = self.runtime.snapshot();
-        let handle = run::VerificationRun::new(plan, report, cancelled).spawn(
+        let handle = run::VerificationRun::new(plan, report, Arc::clone(&cancelled)).spawn(
             shared,
             subscribers,
-            recents_dir,
+            recents_store,
         );
-        state.verification.as_mut().unwrap().handle = Some(handle);
+        let previous = verification.replace(VerificationTask {
+            cancelled,
+            handle: Some(handle),
+        });
+        drop(state);
+        drop(previous);
         Ok(AppResponse::VerificationStarted(VerificationStarted {
             progress: initial,
             saved,
@@ -137,9 +229,11 @@ impl App {
         self.publish_progress(&mut state)
     }
     pub(super) fn reset_progress(&self, id: u64) -> Result<AppResponse, DomainError> {
-        let mut state = self.lock_state();
+        let mut verification = self.verification.lock();
+        let state = self.lock_state();
         state.workspace(id)?;
-        state.verification = None;
+        let mut state = verification.stop_and_relock(&self.state, state);
+        state.workspace(id)?;
         state.active_workspace.as_mut().unwrap().reset_progress()?;
         self.publish_progress(&mut state)
     }
@@ -172,10 +266,7 @@ pub(super) fn progress_snapshot(state: &AppState) -> LearningProgress {
         chapters: workspace.progress_chapters(),
         completed_exercises: workspace.completed_exercises(),
         total_exercises: state.active_course.as_ref().unwrap().course.total_exercises,
-        running_chapter_id: state
-            .verification
-            .as_ref()
-            .and_then(|task| task.chapter_id.clone()),
+        running_chapter_id: state.running_verification_chapter.clone(),
     }
 }
 fn publish_progress_snapshot(

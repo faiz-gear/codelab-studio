@@ -4,18 +4,17 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
 
 use crate::course::{Chapter, CommandBlock, DaemonRequirement, LoadedCourse};
 use crate::execution::preparation::{CommandInvocation, ConfirmationTarget};
 use crate::execution::verification::{PreparedCheck, model::CheckResult};
 use crate::execution::{CommandLaunch, Directory};
-use crate::model::StoreKind;
+use crate::model::RecentWorkspace;
 use crate::storage::JsonStore;
 use crate::workspace::{self, MetricCompletionTrigger, MetricEventDetail, Workspace};
 use crate::{CheckKind, CheckStatus, DomainError, ErrorCode};
 
-use super::super::{AppEvent, AppState, Subscribers, emit_to_subscribers};
+use super::super::{AppEvent, AppState, Subscribers, emit_to_subscribers, lock_state};
 use super::{progress_snapshot, publish_progress_snapshot};
 
 type PreparedChecks = Vec<(String, Result<(PreparedCheck, Directory), DomainError>)>;
@@ -193,7 +192,7 @@ impl VerificationRun {
         self,
         shared: Arc<Mutex<AppState>>,
         subscribers: Arc<Subscribers>,
-        recents_dir: PathBuf,
+        recents_store: Arc<JsonStore<Vec<RecentWorkspace>>>,
     ) -> JoinHandle<()> {
         let VerificationPlan {
             chapter,
@@ -308,11 +307,8 @@ impl VerificationRun {
                         );
                     }
                 }
-                if let Some(task) = &mut state.verification {
-                    task.chapter_id = None;
-                }
-                let store = JsonStore::new(&recents_dir, "recents.json", StoreKind::Recents);
-                if let Err(error) = publish_progress_snapshot(state, &store, &subscribers) {
+                state.running_verification_chapter = None;
+                if let Err(error) = publish_progress_snapshot(state, &recents_store, &subscribers) {
                     state
                         .active_workspace
                         .as_mut()
@@ -345,13 +341,12 @@ fn with_state<T>(
     cancelled: &AtomicBool,
     action: impl FnOnce(&mut AppState) -> T,
 ) -> Option<T> {
-    loop {
-        if cancelled.load(Ordering::Acquire) {
-            return None;
-        }
-        if let Ok(mut state) = state.try_lock() {
-            return Some(action(&mut state));
-        }
-        thread::sleep(Duration::from_millis(5));
+    if cancelled.load(Ordering::Acquire) {
+        return None;
     }
+    let mut state = lock_state(state);
+    if cancelled.load(Ordering::Acquire) {
+        return None;
+    }
+    Some(action(&mut state))
 }

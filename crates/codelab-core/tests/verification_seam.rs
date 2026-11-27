@@ -208,6 +208,98 @@ fn running_checks_blocks_command_blocks_until_verification_finishes() {
 }
 
 #[test]
+fn failed_transitions_do_not_cancel_running_checks_and_reset_progress_cancels_cleanly() {
+    let (temp, app, id) = fixture(
+        json!([{"chapterId":"ex-1","checks":[
+            {"id":"slow","title":"wait for signal","type":"command_test","command":"touch started; while [ ! -f release ]; do sleep 0.01; done"}
+        ]}]),
+        "# Course\n\n## Exercise 1\n",
+    );
+    let work = temp.path().join("work");
+    let wait_started = || {
+        let until = Instant::now() + Duration::from_secs(10);
+        while !work.join("started").exists() {
+            assert!(Instant::now() < until, "check process did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    assert_eq!(
+        send(
+            &app,
+            "runChecks",
+            json!({"workspaceId":id,"chapterId":"ex-1"}),
+        )["type"],
+        "verificationStarted"
+    );
+    wait_started();
+
+    let bad_bind = app
+        .execute(AppCommand::BindWorkspace {
+            path: temp.path().join("missing").to_string_lossy().into(),
+        })
+        .unwrap_err();
+    assert_eq!(bad_bind.code, ErrorCode::InvalidWorkspacePath);
+
+    let parent_escape_bind = app
+        .execute(AppCommand::BindWorkspace {
+            path: work.join("../work").to_string_lossy().into(),
+        })
+        .unwrap_err();
+    assert_eq!(parent_escape_bind.code, ErrorCode::InvalidWorkspacePath);
+
+    let bad_open = app
+        .execute(AppCommand::OpenCourse(
+            codelab_core::OpenCourseRequest::LocalPack {
+                path: temp.path().join("missing-pack").to_string_lossy().into(),
+            },
+        ))
+        .unwrap_err();
+    assert_eq!(bad_open.code, ErrorCode::CourseNotFound);
+
+    let bad_reset = app
+        .execute(AppCommand::ResetProgress(
+            codelab_core::WorkspaceTerminalRequest {
+                workspace_id: id + 99,
+            },
+        ))
+        .unwrap_err();
+    assert_eq!(bad_reset.code, ErrorCode::NoActiveWorkspace);
+
+    let running = send(&app, "getProgress", json!({"workspaceId":id}))["payload"].clone();
+    assert_eq!(running["runningChapterId"], "ex-1");
+
+    fs::write(work.join("release"), "done").unwrap();
+    let passed = wait(&app, id);
+    assert_eq!(passed["completedExercises"], 1);
+    assert_eq!(
+        passed["chapters"]["ex-1"]["lastCheckResults"][0]["status"],
+        "passed"
+    );
+
+    fs::remove_file(work.join("started")).unwrap();
+    fs::remove_file(work.join("release")).unwrap();
+    assert_eq!(
+        send(
+            &app,
+            "runChecks",
+            json!({"workspaceId":id,"chapterId":"ex-1"}),
+        )["type"],
+        "verificationStarted"
+    );
+    wait_started();
+
+    let reset = send(&app, "resetProgress", json!({"workspaceId":id}))["payload"].clone();
+    assert_eq!(reset["runningChapterId"], Value::Null);
+    assert_eq!(reset["completedExercises"], 0);
+    assert_eq!(reset["chapters"], json!({}));
+
+    let after = send(&app, "getProgress", json!({"workspaceId":id}))["payload"].clone();
+    assert_eq!(after["runningChapterId"], Value::Null);
+    assert_eq!(after["chapters"], json!({}));
+}
+
+#[test]
 fn http_contract_checks_request_and_response_then_reports_expected_actual() {
     use std::io::{Read, Write};
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
