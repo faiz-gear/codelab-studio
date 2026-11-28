@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useState } from "react";
+import { Select } from "../components/Select";
 import type { GlobalSettings } from "../core/contracts";
 import { formatDomainError, type Messages } from "../i18n";
 import { domainError, type ComparisonReview, type WorkspaceEditorSession } from "./editorSession";
@@ -37,6 +38,7 @@ function ComparisonDialog({ session, settings, messages, chapterId, activePath, 
   const [readyPath, setReadyPath] = useState("");
   const [stale, setStale] = useState(false);
   const [applying, setApplying] = useState(false);
+  const pickerId = useId();
   const starter = chapterId === undefined;
   const { comparison: t, workspace: w } = messages;
 
@@ -107,20 +109,26 @@ function ComparisonDialog({ session, settings, messages, chapterId, activePath, 
       body={
         <div className="workspace-snapshot-body">
           {paths && paths.length > 0 && (
-            <label className="workspace-snapshot-picker">
-              {t.chooseFile}
-              <select className="workspace-snapshot-select mono" value={path} disabled={applying}
-                onChange={(event) => {
+            <div className="workspace-snapshot-picker">
+              <label htmlFor={pickerId}>{t.chooseFile}</label>
+              <Select
+                id={pickerId}
+                size="sm"
+                mono
+                className="workspace-snapshot-select"
+                value={path}
+                disabled={applying}
+                placeholder={starter ? t.selectFile : undefined}
+                options={paths.map((item) => ({ value: item, label: item }))}
+                onChange={(nextPath) => {
                   setReadyPath("");
-                  setPath(event.target.value);
+                  setPath(nextPath);
                   setStarterReview(undefined);
                   setError(undefined);
                   setStale(false);
-                }}>
-                {starter && <option value="">{t.selectFile}</option>}
-                {paths.map((path) => <option key={path} value={path}>{path}</option>)}
-              </select>
-            </label>
+                }}
+              />
+            </div>
           )}
           {error && <p className="workspace-error" role="alert">{error}</p>}
           {stale && <p className="workspace-error" role="alert">{t.stale}</p>}

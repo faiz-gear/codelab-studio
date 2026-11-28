@@ -1,5 +1,21 @@
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import { CloseIcon, FolderIcon } from "../components/Icons";
+import { Select } from "../components/Select";
+import {
+  clamp,
+  computeTreeBounds,
+  DEFAULT_TREE_WIDTH_PX,
+} from "../components/workbenchLayout";
 import {
   EXTERNAL_IDES,
   type ExternalIde,
@@ -60,6 +76,68 @@ export function WorkspaceEditor({
     if (executionConflict > 0) conflictBanner.current?.focus();
   }, [executionConflict]);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [treeWidthPx, setTreeWidthPx] = useState<number | null>(null);
+  const [treeDragging, setTreeDragging] = useState(false);
+  const [contentWidth, setContentWidth] = useState(900);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = contentRef.current;
+    if (!node) return;
+    const sync = () => {
+      const width = node.getBoundingClientRect().width;
+      if (width > 0) setContentWidth(width);
+    };
+    sync();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const treeBounds = computeTreeBounds(contentWidth);
+  const effectiveTreeWidthPx =
+    treeWidthPx !== null
+      ? clamp(treeWidthPx, treeBounds.minPx, treeBounds.maxPx)
+      : DEFAULT_TREE_WIDTH_PX;
+
+  const clampTreeWidth = useCallback((clientX: number): number | null => {
+    const node = contentRef.current;
+    if (!node) return null;
+    const rect = node.getBoundingClientRect();
+    const bounds = computeTreeBounds(rect.width || 900);
+    return clamp(Math.round(clientX - rect.left), bounds.minPx, bounds.maxPx);
+  }, []);
+
+  const handleTreeSplitterMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setTreeDragging(true);
+    const handleMove = (moveEvent: MouseEvent) => {
+      const next = clampTreeWidth(moveEvent.clientX);
+      if (next !== null) setTreeWidthPx(next);
+    };
+    const handleUp = () => {
+      setTreeDragging(false);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  };
+
+  const handleTreeSplitterKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const bounds = computeTreeBounds(contentRef.current?.getBoundingClientRect().width || contentWidth);
+    const current = treeWidthPx ?? DEFAULT_TREE_WIDTH_PX;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setTreeWidthPx(clamp(current - 16, bounds.minPx, bounds.maxPx));
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setTreeWidthPx(clamp(current + 16, bounds.minPx, bounds.maxPx));
+    } else if (event.key === "Home" || event.key === "Enter") {
+      event.preventDefault();
+      setTreeWidthPx(null);
+    }
+  };
   const [lastTutorOpen, setLastTutorOpen] = useState(tutorOpen);
   if (tutorOpen !== lastTutorOpen) {
     setLastTutorOpen(tutorOpen);
@@ -231,17 +309,17 @@ export function WorkspaceEditor({
           activePath={path} disabled={busy} />
         <div className="workspace-controls-spacer" />
         <div className="workspace-ide">
-          <select
+          <Select<ExternalIde>
+            size="sm"
+            className="workspace-ide-select"
             aria-label={t.chooseIde}
             value={ide}
-            onChange={(event) => {
-              const nextIde = event.target.value as ExternalIde;
+            options={EXTERNAL_IDES.map((item) => ({ value: item.id, label: item.label }))}
+            onChange={(nextIde) => {
               setIde(nextIde);
               onUpdateSettings?.({ preferredIde: nextIde });
             }}
-          >
-            {EXTERNAL_IDES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-          </select>
+          />
           <button type="button" className="btn btn--ghost btn--xs" disabled={busy || active?.file.kind === "missing" || !!active?.unavailable}
             onClick={() => void session.openIde(path ?? "", ide)}>{t.openIde}</button>
         </div>
@@ -260,7 +338,7 @@ export function WorkspaceEditor({
             setComparison(null);
           }
         }}>
-          <input aria-label={t.filePath} placeholder={t.filePath} className="mono" required value={fileForm.value}
+          <input aria-label={t.filePath} placeholder={t.filePath} className="text-input text-input--sm mono" required value={fileForm.value}
             onChange={(event) => setFileForm({ ...fileForm, value: event.target.value })} />
           <button className="btn btn--primary btn--xs" disabled={busy} type="submit">{fileForm.rename ? t.rename : t.newFile}</button>
           <button className="btn btn--ghost btn--xs" type="button" disabled={busy} onClick={() => setFileForm(null)}>{t.cancel}</button>
@@ -280,9 +358,36 @@ export function WorkspaceEditor({
         </div>
       )}
 
-      <div className="workspace-content">
-        {treeOpen && <WorkspaceTree session={session} version={state.treeVersion} activePath={path}
-          onFile={(filePath) => void openFile(filePath)} messages={t} locale={settings.locale} />}
+      <div
+        ref={contentRef}
+        className={`workspace-content${treeDragging ? " is-resizing" : ""}`}
+        style={
+          treeWidthPx !== null
+            ? ({ "--tree-width": `${effectiveTreeWidthPx}px` } as CSSProperties)
+            : undefined
+        }
+      >
+        {treeOpen && (
+          <>
+            <WorkspaceTree session={session} version={state.treeVersion} activePath={path}
+              onFile={(filePath) => void openFile(filePath)} messages={t} locale={settings.locale} />
+            <div
+              className={`split-x split-x--tree${treeDragging ? " is-drag" : ""}`}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={messages.workbench.treeSplitterAriaLabel}
+              aria-valuenow={effectiveTreeWidthPx}
+              aria-valuemin={treeBounds.minPx}
+              aria-valuemax={treeBounds.maxPx}
+              tabIndex={0}
+              title={messages.workbench.treeSplitterTitle}
+              data-testid="file-tree-splitter"
+              onMouseDown={handleTreeSplitterMouseDown}
+              onDoubleClick={() => setTreeWidthPx(null)}
+              onKeyDown={handleTreeSplitterKeyDown}
+            />
+          </>
+        )}
         <div className="workspace-code">
           {state.tabs.length > 0 && (
             <div className="workspace-tabs" role="tablist" aria-label={t.tabs}>

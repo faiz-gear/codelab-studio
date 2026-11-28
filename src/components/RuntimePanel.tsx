@@ -201,6 +201,7 @@ function RuntimeRow({
         <label className="runtime-preference">
           <input
             type="checkbox"
+            className="arc-checkbox"
             checked={row.preferManaged}
             aria-label={interpolate(copy.preferFor, { language: row.language })}
             onChange={(event) =>
@@ -213,7 +214,7 @@ function RuntimeRow({
               })
             }
           />
-          {copy.preferManaged}
+          <span>{copy.preferManaged}</span>
         </label>
       )}
     </li>

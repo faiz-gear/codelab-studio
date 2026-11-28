@@ -83,6 +83,8 @@ describe("Unified 4-Tab Settings, Local Metrics, Keyboard A11y & Bilingual Error
 
     // ADR-0004: Zero BYOK / API Key / Keychain surfaces across the Settings dialog
     expect(dialog.textContent).not.toMatch(/BYOK|API Key|Keychain/i);
+    // On Welcome Home (no active Workspace), Return to Workspace button is not shown
+    expect(within(dialog).queryByRole("button", { name: "Return to Workspace" })).toBeNull();
 
     await user.keyboard("{Escape}");
     await waitFor(() =>
@@ -112,7 +114,8 @@ describe("Unified 4-Tab Settings, Local Metrics, Keyboard A11y & Bilingual Error
     await user.click(within(dialog).getByRole("button", { name: "深色 Dark" }));
     await user.click(within(dialog).getByRole("button", { name: "紫罗兰 Violet" }));
     await user.click(within(dialog).getByRole("button", { name: "大字 15" }));
-    await user.selectOptions(within(dialog).getByLabelText("默认外部 IDE"), "cursor");
+    await user.click(within(dialog).getByRole("combobox", { name: "默认外部 IDE" }));
+    await user.click(within(dialog).getByRole("option", { name: "Cursor" }));
     await user.click(within(dialog).getByRole("button", { name: "English" }));
 
     await waitFor(() => {
@@ -129,14 +132,17 @@ describe("Unified 4-Tab Settings, Local Metrics, Keyboard A11y & Bilingual Error
     await user.click(within(dialog).getByRole("tab", { name: "ACP Tutor" }));
     await user.click(within(dialog).getByRole("button", { name: "Direct Answer" }));
 
-    // Close Settings and check WorkspaceEditor + AppearanceDrawer + TutorDrawer reflect changes
-    await user.keyboard("{Escape}");
-    const workspaceIdeSelect = screen.getByLabelText("External IDE") as HTMLSelectElement;
-    expect(workspaceIdeSelect.value).toBe("cursor");
+    // Return directly to the active Workspace via explicit Settings action
+    await user.click(within(dialog).getByRole("button", { name: "Return to Workspace" }));
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+
+    const workspaceIdeSelect = screen.getByRole("combobox", { name: "External IDE" });
+    expect(workspaceIdeSelect).toHaveTextContent("Cursor");
 
     // Change IDE in WorkspaceEditor -> must sync back to Settings
-    await user.selectOptions(workspaceIdeSelect, "goLand");
-    expect(workspaceIdeSelect.value).toBe("goLand");
+    await user.click(workspaceIdeSelect);
+    await user.click(screen.getByRole("option", { name: "GoLand" }));
+    expect(workspaceIdeSelect).toHaveTextContent("GoLand");
 
     // Change accent via AppearanceDrawer -> must sync back to Settings
     await user.click(screen.getByRole("button", { name: "Appearance" }));
@@ -156,7 +162,7 @@ describe("Unified 4-Tab Settings, Local Metrics, Keyboard A11y & Bilingual Error
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const reopened = screen.getByRole("dialog", { name: "Settings" });
     await user.click(within(reopened).getByRole("tab", { name: "Editor & Desktop" }));
-    expect((within(reopened).getByLabelText("Preferred external IDE") as HTMLSelectElement).value).toBe("goLand");
+    expect(within(reopened).getByRole("combobox", { name: "Preferred external IDE" })).toHaveTextContent("GoLand");
     expect(within(reopened).getByRole("button", { name: "Green" })).toHaveAttribute("aria-pressed", "true");
 
     await user.click(within(reopened).getByRole("tab", { name: "ACP Tutor" }));

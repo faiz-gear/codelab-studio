@@ -12,6 +12,7 @@ import {
 import type { Messages } from "../i18n";
 import { ACCENT_SWATCH_COLOR } from "../theme/applyTheme";
 import { CheckIcon, CopyIcon } from "./Icons";
+import { Select } from "./Select";
 
 export interface EditorSettingsPanelProps {
   settings: GlobalSettings;
@@ -138,20 +139,12 @@ export function EditorSettingsPanel({
 
       <div className="field">
         <label htmlFor={`${id}-ide`}>{e.externalIdeLabel}</label>
-        <select
+        <Select<ExternalIde>
           id={`${id}-ide`}
-          className="text-input"
           value={settings.preferredIde}
-          onChange={(event) =>
-            void onUpdateSettings({ preferredIde: event.target.value as ExternalIde })
-          }
-        >
-          {EXTERNAL_IDES.map((ide) => (
-            <option key={ide.id} value={ide.id}>
-              {ide.label}
-            </option>
-          ))}
-        </select>
+          options={EXTERNAL_IDES.map((ide) => ({ value: ide.id, label: ide.label }))}
+          onChange={(preferredIde) => void onUpdateSettings({ preferredIde })}
+        />
         <p className="field-hint">{e.externalIdeHint}</p>
       </div>
 

@@ -243,6 +243,12 @@ export const enUS: Messages = {
     guideHeaderBadge: "Guide",
     splitterTitle: "Drag to resize manual pane; double-click to reset",
     splitterAriaLabel: "Resize manual and right workbench panes",
+    terminalSplitterTitle: "Drag to resize terminal height; double-click to reset",
+    terminalSplitterAriaLabel: "Resize terminal and upper workspace height",
+    treeSplitterTitle: "Drag to resize file tree width; double-click to reset",
+    treeSplitterAriaLabel: "Resize file tree and editor width",
+    tutorSplitterTitle: "Drag to resize AI Tutor width; double-click to reset",
+    tutorSplitterAriaLabel: "Resize editor and docked AI Tutor width",
     reloadTitle: "Local Markdown source changed externally",
     reloadDetail:
       "Detected changes in {file}. Reload to sync updated manual content while preserving your Chapter position.",
@@ -357,6 +363,15 @@ export const enUS: Messages = {
     protocolBadge: "ACP · JSON-RPC 2.0 / stdio",
     settingsIntro:
       "Connect directly to your locally authenticated ACP coding agent. Processes start lazily on your first prompt or handshake test.",
+    connectionSectionTitle: "ACP Agent setup",
+    handshakeSectionTitle: "Handshake test & live feedback",
+    handshakeIdleHint: "Run a lightweight ACP initialize handshake to verify your local CLI responds.",
+    handshakeStatusIdle: "Not tested",
+    handshakeStatusTesting: "Testing…",
+    handshakeStatusOk: "Connected",
+    handshakeStatusFailed: "Failed",
+    policySectionHint: "Defaults to Guided Read-Only for smooth debugging while blocking sensitive files and guarding writes or commands.",
+    styleSectionHint: "Controls how the Tutor guides your answers; can also be switched anytime in the AI Tutor drawer.",
     presetLabel: "Local ACP Agent preset",
     presets: {
       claudeCode: "Claude Code (claude --acp)",
@@ -507,6 +522,9 @@ export const enUS: Messages = {
     trust: "trust registry",
   },
   settings: {
+    returnToWorkspace: "Return to Workspace",
+    activeWorkspaceLabel: "Active Workspace",
+    categoriesLabel: "Settings categories",
     tabs: {
       tutor: "ACP Tutor",
       runtime: "4-Language Runtimes",

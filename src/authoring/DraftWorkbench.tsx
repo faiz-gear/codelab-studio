@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { CourseWorkbench } from "../components/CourseWorkbench";
+import { Select } from "../components/Select";
 import { expectResponse, type CoreClient } from "../core/client";
 import type { CourseDraft, DraftPreview, GlobalSettings, WorkspaceFile } from "../core/contracts";
 import { formatDomainError, type Messages } from "../i18n";
@@ -125,10 +126,19 @@ export function DraftWorkbench({
       </div>
       <div className="workspace-controls draft-controls">
         <label htmlFor={fileId}>{t.sourceFile}</label>
-        <select className="text-input mono" id={fileId} value={path} disabled={disabled}
-          onChange={(event) => { setPath(event.target.value); setError(null); }}>
-          {draft.files.map((file) => <option key={file}>{file}</option>)}
-        </select>
+        <Select
+          id={fileId}
+          size="sm"
+          mono
+          className="draft-file-select"
+          value={path}
+          disabled={disabled}
+          options={draft.files.map((file) => ({ value: file, label: file }))}
+          onChange={(nextPath) => {
+            setPath(nextPath);
+            setError(null);
+          }}
+        />
         <button type="button" className="btn btn--secondary btn--sm"
           disabled={disabled || edits.length === 0 || conflict !== null} onClick={() => void save()}>
           {messages.workspace.save}

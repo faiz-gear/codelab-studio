@@ -46,8 +46,8 @@ export function CommandCwdDialog({ command, override, messages, locale, onCancel
     <WorkspaceDialog title={t.changeCwd} detail={<>
       {t.cwdHint}
       <label className="terminal-cwd-field">
-        {t.cwd}
-        <input className="mono" value={value} disabled={saving} onChange={(event) => setValue(event.target.value)}
+        <span>{t.cwd}</span>
+        <input className="text-input mono" value={value} disabled={saving} onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter" && value.trim()) save(value.trim()); }} />
       </label>
       {error && <p className="terminal-cwd-error" role="alert">{error}</p>}
