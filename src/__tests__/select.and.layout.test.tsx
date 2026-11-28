@@ -154,6 +154,61 @@ describe("Workbench splitter layout bounds", () => {
     expect(1320 - mid.effectiveManualWidthPx! - mid.effectiveTutorWidthPx).toBeGreaterThanOrEqual(520);
   });
 
+  it("matches docked CSS default manual widths (32% at >=1440, 28% at 1280..1439) and clamps auto display width to manualBounds", () => {
+    const dockedWide = resolveHorizontalWorkbenchWidths({
+      containerWidth: 1440,
+      focusMode: false,
+      isTutorDocked: true,
+      manualWidthPx: null,
+      tutorWidthPx: null,
+    });
+    expect(dockedWide.effectiveManualWidthPx).toBeNull();
+    expect(dockedWide.manualBounds).toEqual({ minPx: 300, maxPx: 520 });
+    expect(dockedWide.displayManualWidthPx).toBe(461);
+
+    const dockedNarrow = resolveHorizontalWorkbenchWidths({
+      containerWidth: 1280,
+      focusMode: false,
+      isTutorDocked: true,
+      manualWidthPx: null,
+      tutorWidthPx: null,
+    });
+    expect(dockedNarrow.effectiveManualWidthPx).toBeNull();
+    expect(dockedNarrow.manualBounds).toEqual({ minPx: 300, maxPx: 400 });
+    expect(dockedNarrow.displayManualWidthPx).toBe(358);
+
+    // When a widened docked tutor reduces manualBounds.maxPx below 32%, CSS max-width clamps .pane-left to maxPx.
+    const dockedWideWithWideTutor = resolveHorizontalWorkbenchWidths({
+      containerWidth: 1440,
+      focusMode: false,
+      isTutorDocked: true,
+      manualWidthPx: null,
+      tutorWidthPx: 480,
+    });
+    expect(dockedWideWithWideTutor.manualBounds).toEqual({ minPx: 300, maxPx: 400 });
+    expect(dockedWideWithWideTutor.displayManualWidthPx).toBe(400);
+
+    // Undocked default uses 38% and clamps to manualBounds.minPx on narrow viewports.
+    const undockedWide = resolveHorizontalWorkbenchWidths({
+      containerWidth: 1440,
+      focusMode: false,
+      isTutorDocked: false,
+      manualWidthPx: null,
+      tutorWidthPx: null,
+    });
+    expect(undockedWide.displayManualWidthPx).toBe(547);
+
+    const undockedNarrow = resolveHorizontalWorkbenchWidths({
+      containerWidth: 800,
+      focusMode: false,
+      isTutorDocked: false,
+      manualWidthPx: null,
+      tutorWidthPx: null,
+    });
+    expect(undockedNarrow.manualBounds.minPx).toBe(320);
+    expect(undockedNarrow.displayManualWidthPx).toBe(320);
+  });
+
   it("computes usable terminal and file-tree bounds at 1024x720 and 1440x900", () => {
     const smallBottom = computeBottomBounds(672, 38);
     expect(smallBottom.minPx).toBe(120);

@@ -55,7 +55,6 @@ import {
   computeBottomBounds,
   computeDockedTutorBounds,
   computeManualBounds,
-  DEFAULT_MANUAL_WIDTH_PCT,
   DEFAULT_TERMINAL_HEIGHT_PX,
   DEFAULT_VERIFICATION_HEIGHT_PX,
   resolveHorizontalWorkbenchWidths,
@@ -415,14 +414,15 @@ export function CourseWorkbench({
   const handleSplitterKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (focusMode) return;
     const containerWidth = wbRef.current?.getBoundingClientRect().width || wbWidth || 1280;
-    const currentPx =
-      horizontalLayout.effectiveManualWidthPx ??
-      Math.round((containerWidth * DEFAULT_MANUAL_WIDTH_PCT) / 100);
-    const { minPx, maxPx } = computeManualBounds(
+    const liveLayout = resolveHorizontalWorkbenchWidths({
       containerWidth,
+      focusMode,
       isTutorDocked,
-      horizontalLayout.effectiveTutorWidthPx
-    );
+      manualWidthPx,
+      tutorWidthPx,
+    });
+    const currentPx = liveLayout.displayManualWidthPx;
+    const { minPx, maxPx } = liveLayout.manualBounds;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       setManualWidthPx(clamp(currentPx - 24, minPx, maxPx));
@@ -587,9 +587,7 @@ export function CourseWorkbench({
   }, [activeChapter]);
 
   const effectiveManualWidthPx = horizontalLayout.effectiveManualWidthPx;
-  const currentManualDisplayPx =
-    effectiveManualWidthPx ??
-    Math.round((wbWidth * DEFAULT_MANUAL_WIDTH_PCT) / 100);
+  const currentManualDisplayPx = horizontalLayout.displayManualWidthPx;
 
   const paneLeftStyle =
     !focusMode && effectiveManualWidthPx !== null

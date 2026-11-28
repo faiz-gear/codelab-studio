@@ -1,4 +1,6 @@
 export const DEFAULT_MANUAL_WIDTH_PCT = 38;
+export const DOCKED_TUTOR_MANUAL_WIDTH_PCT_WIDE = 32;
+export const DOCKED_TUTOR_MANUAL_WIDTH_PCT_NARROW = 28;
 export const MIN_MANUAL_WIDTH_PX = 320;
 export const DOCKED_TUTOR_MIN_MANUAL_PX = 300;
 export const MAX_MANUAL_WIDTH_PCT = 54;
@@ -54,6 +56,28 @@ export function computeManualBounds(
   return { minPx: MIN_MANUAL_WIDTH_PX, maxPx };
 }
 
+export function defaultManualWidthPct(
+  containerWidth: number,
+  isTutorDocked: boolean
+): number {
+  if (!isTutorDocked) return DEFAULT_MANUAL_WIDTH_PCT;
+  return containerWidth >= 1440
+    ? DOCKED_TUTOR_MANUAL_WIDTH_PCT_WIDE
+    : DOCKED_TUTOR_MANUAL_WIDTH_PCT_NARROW;
+}
+
+export function computeDefaultManualWidthPx(
+  containerWidth: number,
+  isTutorDocked: boolean,
+  tutorWidthPx: number
+): number {
+  const bounds = computeManualBounds(containerWidth, isTutorDocked, tutorWidthPx);
+  const rawDefaultPx = Math.round(
+    (containerWidth * defaultManualWidthPct(containerWidth, isTutorDocked)) / 100
+  );
+  return clamp(rawDefaultPx, bounds.minPx, bounds.maxPx);
+}
+
 export function computeDockedTutorBounds(
   containerWidth: number,
   focusMode: boolean,
@@ -88,6 +112,7 @@ export function resolveHorizontalWorkbenchWidths({
 }): {
   effectiveTutorWidthPx: number;
   effectiveManualWidthPx: number | null;
+  displayManualWidthPx: number;
   manualBounds: PaneBounds;
   tutorBounds: PaneBounds;
 } {
@@ -112,6 +137,13 @@ export function resolveHorizontalWorkbenchWidths({
     manualWidthPx !== null
       ? clamp(manualWidthPx, manualBounds.minPx, manualBounds.maxPx)
       : null;
+  const displayManualWidthPx =
+    effectiveManualWidthPx ??
+    computeDefaultManualWidthPx(
+      containerWidth,
+      isTutorDocked,
+      effectiveTutorWidthPx
+    );
 
   const tutorBounds = computeDockedTutorBounds(
     containerWidth,
@@ -122,6 +154,7 @@ export function resolveHorizontalWorkbenchWidths({
   return {
     effectiveTutorWidthPx,
     effectiveManualWidthPx,
+    displayManualWidthPx,
     manualBounds,
     tutorBounds,
   };

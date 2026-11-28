@@ -212,3 +212,96 @@ test("supports resizable workbench splitters (terminal, file tree, manual, and d
 
   expect(errors).toEqual([]);
 });
+
+test("docked AI Tutor keeps manual splitter aria-valuenow within bounds and ArrowLeft shrinks the manual pane at 1440x900 and 1280x800", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  const readManualSplitterAria = () =>
+    page.getByTestId("workbench-splitter").evaluate((el) => ({
+      min: Number(el.getAttribute("aria-valuemin")),
+      now: Number(el.getAttribute("aria-valuenow")),
+      max: Number(el.getAttribute("aria-valuemax")),
+    }));
+
+  const measureManualWidth = () =>
+    page.locator(".pane-left").evaluate((el) => Math.round(el.getBoundingClientRect().width));
+
+  for (const vp of [
+    { name: "1440x900", width: 1440, height: 900, expectedDefaultWidth: 461, expectedMax: 520 },
+    { name: "1280x800", width: 1280, height: 800, expectedDefaultWidth: 358, expectedMax: 400 },
+  ]) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto("/src/__tests__/browser/workspace.html");
+    await page.getByRole("button", { name: "Start Built-in Go / GoFrame Lab" }).click();
+    await page.getByRole("button", { name: "Choose Workspace" }).click();
+
+    await page.getByRole("button", { name: "AI Tutor" }).click();
+    const tutorDrawer = page.getByTestId("tutor-drawer");
+    await expect(tutorDrawer).toHaveAttribute("data-layout", "docked");
+
+    // Wait for the docked CSS width transition on .pane-left to settle.
+    await expect
+      .poll(measureManualWidth)
+      .toBe(vp.expectedDefaultWidth);
+
+    const beforeWidth = await measureManualWidth();
+    const beforeAria = await readManualSplitterAria();
+    expect(beforeAria.max, `${vp.name} aria-valuemax`).toBe(vp.expectedMax);
+    expect(beforeAria.now, `${vp.name} aria-valuenow >= aria-valuemin`).toBeGreaterThanOrEqual(beforeAria.min);
+    expect(beforeAria.now, `${vp.name} aria-valuenow <= aria-valuemax`).toBeLessThanOrEqual(beforeAria.max);
+    expect(Math.abs(beforeAria.now - beforeWidth), `${vp.name} aria-valuenow matches rendered width`).toBeLessThanOrEqual(1);
+
+    const manualSplitter = page.getByTestId("workbench-splitter");
+    await manualSplitter.focus();
+    await page.keyboard.press("ArrowLeft");
+
+    await expect
+      .poll(measureManualWidth)
+      .toBe(vp.expectedDefaultWidth - 24);
+
+    const afterWidth = await measureManualWidth();
+    expect(afterWidth, `${vp.name} ArrowLeft shrinks .pane-left`).toBeLessThan(beforeWidth);
+
+    const afterAria = await readManualSplitterAria();
+    expect(afterAria.now, `${vp.name} post-ArrowLeft aria-valuenow >= min`).toBeGreaterThanOrEqual(afterAria.min);
+    expect(afterAria.now, `${vp.name} post-ArrowLeft aria-valuenow <= max`).toBeLessThanOrEqual(afterAria.max);
+    expect(Math.abs(afterAria.now - afterWidth), `${vp.name} post-ArrowLeft aria-valuenow matches width`).toBeLessThanOrEqual(1);
+
+    // Home resets manual width to auto docked default and keeps aria-valuenow valid.
+    await page.keyboard.press("Home");
+    await expect
+      .poll(measureManualWidth)
+      .toBe(vp.expectedDefaultWidth);
+    const resetAria = await readManualSplitterAria();
+    expect(resetAria.now).toBe(vp.expectedDefaultWidth);
+  }
+
+  // At 1440x900, widening docked AI Tutor past the point where manual max-width < 32% still keeps
+  // aria-valuenow <= aria-valuemax and lets ArrowLeft shrink .pane-left on the first keypress.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/src/__tests__/browser/workspace.html");
+  await page.getByRole("button", { name: "Start Built-in Go / GoFrame Lab" }).click();
+  await page.getByRole("button", { name: "Choose Workspace" }).click();
+  await page.getByRole("button", { name: "AI Tutor" }).click();
+  await expect(page.getByTestId("tutor-drawer")).toHaveAttribute("data-layout", "docked");
+
+  const tutorSplitter = page.getByTestId("tutor-splitter");
+  await tutorSplitter.focus();
+  // 360 + 4 * 24 = 456px tutor width -> manualBounds.maxPx = 1440 - 560 - 456 = 424px (< 32% = 461px)
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press("ArrowLeft");
+  }
+  await expect.poll(measureManualWidth).toBe(424);
+  const clampedAria = await readManualSplitterAria();
+  expect(clampedAria.max).toBe(424);
+  expect(clampedAria.now).toBe(424);
+
+  await page.getByTestId("workbench-splitter").focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(measureManualWidth).toBe(400);
+
+  expect(errors).toEqual([]);
+});
