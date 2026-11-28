@@ -1041,6 +1041,10 @@ p {
   overflow-y: auto;
 }
 
+.modal-body[hidden] {
+  display: none;
+}
+
 .modal-foot {
   display: flex;
   align-items: center;
