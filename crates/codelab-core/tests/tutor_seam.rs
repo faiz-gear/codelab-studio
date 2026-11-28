@@ -2493,6 +2493,297 @@ fn desktop_launch_discovers_acp_adapters_under_node_version_managers_while_prior
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn unset_or_empty_path_prevents_workspace_cwd_hijacking_and_resolves_nvm_node() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    if let Some(data_dir) = std::env::var_os("CODELAB_EMPTY_PATH_HIJACK_TEST_DATA") {
+        let ws_root = PathBuf::from(
+            std::env::var_os("CODELAB_EMPTY_PATH_HIJACK_TEST_WS").expect("workspace env"),
+        );
+        let hijack_marker = PathBuf::from(
+            std::env::var_os("CODELAB_EMPTY_PATH_HIJACK_TEST_MARKER").expect("marker env"),
+        );
+        let app = App::open(AppConfig {
+            data_dir: PathBuf::from(data_dir),
+        })
+        .unwrap();
+        let AppResponse::LoadedCourse(_) = app
+            .execute(AppCommand::OpenCourse(OpenCourseRequest::Builtin {
+                course_id: "go-goframe-practice".into(),
+            }))
+            .unwrap()
+        else {
+            panic!("expected LoadedCourse");
+        };
+        let AppResponse::WorkspaceBound(summary) = app
+            .execute(AppCommand::BindWorkspace {
+                path: path_str(&ws_root),
+            })
+            .unwrap()
+        else {
+            panic!("expected WorkspaceBound");
+        };
+
+        // 1. Bare missing adapter must NOT execute Workspace ./missing-global-acp.
+        let handshake_missing = app
+            .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+                preset: AcpAgentPreset::Custom,
+                command: "missing-global-acp".into(),
+            }))
+            .unwrap_err();
+        assert_eq!(handshake_missing.code, ErrorCode::AcpAdapterNotFound);
+
+        configure_agent(
+            &app,
+            "missing-global-acp",
+            PermissionPolicy::GuidedReadonly,
+            TeachingStyle::Socratic,
+        );
+        let prompt_missing = app
+            .execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+                workspace_id: summary.id,
+                prompt: "hello".into(),
+                teaching_style: None,
+                context_preamble: None,
+                context: None,
+            }))
+            .unwrap_err();
+        assert_eq!(prompt_missing.code, ErrorCode::AcpAdapterNotFound);
+
+        // 2. NVM adapter using `#!/usr/bin/env node` must resolve NVM node, NOT Workspace ./node,
+        //    and must receive a clean PATH with no empty or relative segments.
+        let AppResponse::TutorHandshake(res) = app
+            .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+                preset: AcpAgentPreset::Custom,
+                command: "fake-nvm-acp".into(),
+            }))
+            .unwrap_or_else(|err| panic!("expected NVM handshake to succeed, got {err:?}"))
+        else {
+            panic!("expected TutorHandshake");
+        };
+        assert_eq!(res.agent_name.as_deref(), Some("NVM Adapter:nvm"));
+        assert!(
+            !hijack_marker.exists(),
+            "workspace CWD binary was hijacked: {:?}",
+            fs::read_to_string(&hijack_marker)
+        );
+        return;
+    }
+
+    let node_path = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join("node"))
+        .find(|p| p.is_file())
+        .expect("node executable on PATH for test");
+
+    for case in ["unset", "empty"] {
+        let temp = TempDir::new().unwrap();
+        let fake_home = temp.path().join("home");
+        let ws_root = temp.path().join("workspace");
+        let nvm_v22_bin = fake_home.join(".nvm/versions/node/v22.14.0/bin");
+        let nvm_alias_dir = fake_home.join(".nvm/alias");
+        let hijack_marker = temp.path().join("hijack-marker.txt");
+        for dir in [&ws_root, &nvm_v22_bin, &nvm_alias_dir] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(nvm_alias_dir.join("default"), "22\n").unwrap();
+
+        let shell_quote = |p: &Path| format!("'{}'", path_str(p).replace('\'', "'\\''"));
+
+        // Malicious Workspace ./node and ./missing-global-acp executables.
+        let ws_node = ws_root.join("node");
+        fs::write(
+            &ws_node,
+            format!(
+                "#!/bin/sh\nprintf 'hijacked-node\\n' >> {}\nexit 99\n",
+                shell_quote(&hijack_marker)
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&ws_node, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let ws_missing = ws_root.join("missing-global-acp");
+        fs::write(
+            &ws_missing,
+            format!(
+                "#!/bin/sh\n\
+                 printf 'hijacked-missing-adapter\\n' >> {}\n\
+                 while IFS= read -r line; do\n\
+                   printf '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"protocolVersion\":1,\"agentInfo\":{{\"name\":\"Hijacked Workspace Adapter\",\"version\":\"1.0.0\"}}}}}}\\n'\n\
+                   exit 0\n\
+                 done\n",
+                shell_quote(&hijack_marker)
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&ws_missing, fs::Permissions::from_mode(0o755)).unwrap();
+
+        // Real NVM node wrapper that tags its origin before exec'ing the real node binary.
+        let nvm_node = nvm_v22_bin.join("node");
+        fs::write(
+            &nvm_node,
+            format!(
+                "#!/bin/sh\nCODELAB_TEST_NODE_ORIGIN=nvm exec {} \"$@\"\n",
+                shell_quote(&node_path)
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&nvm_node, fs::Permissions::from_mode(0o755)).unwrap();
+
+        // NVM adapter verifies PATH contains no empty/leading-colon or relative segments.
+        let nvm_adapter = nvm_v22_bin.join("fake-nvm-acp");
+        fs::write(
+            &nvm_adapter,
+            "#!/usr/bin/env node\n\
+             const rl = require('node:readline').createInterface({ input: process.stdin });\n\
+             rl.on('line', (line) => {\n\
+               if (!line.trim()) return;\n\
+               const msg = JSON.parse(line);\n\
+               if (msg.method === 'initialize') {\n\
+                 const rawPath = process.env.PATH || '';\n\
+                 const parts = rawPath.split(':');\n\
+                 const hasBadSegment = !rawPath || parts.some((p) => !p || !p.startsWith('/'));\n\
+                 const origin = process.env.CODELAB_TEST_NODE_ORIGIN || 'unknown';\n\
+                 const name = hasBadSegment ? `BAD_PATH:${rawPath}` : `NVM Adapter:${origin}`;\n\
+                 process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, agentInfo: { name, version: '1.0.0' } } }) + '\\n');\n\
+               }\n\
+             });\n",
+        )
+        .unwrap();
+        fs::set_permissions(&nvm_adapter, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut cmd = Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "--exact",
+            "unset_or_empty_path_prevents_workspace_cwd_hijacking_and_resolves_nvm_node",
+        ])
+        .env(
+            "CODELAB_EMPTY_PATH_HIJACK_TEST_DATA",
+            temp.path().join("data"),
+        )
+        .env("CODELAB_EMPTY_PATH_HIJACK_TEST_WS", &ws_root)
+        .env("CODELAB_EMPTY_PATH_HIJACK_TEST_MARKER", &hijack_marker)
+        .env("HOME", &fake_home)
+        .env_remove("NVM_DIR")
+        .env_remove("NVM_BIN")
+        .env_remove("FNM_DIR")
+        .env_remove("VOLTA_HOME")
+        .env_remove("NPM_CONFIG_PREFIX")
+        .env_remove("PNPM_HOME")
+        .env_remove("XDG_DATA_HOME");
+        if case == "unset" {
+            cmd.env_remove("PATH");
+        } else {
+            cmd.env("PATH", "");
+        }
+        let child = cmd.output().unwrap();
+        assert!(
+            child.status.success(),
+            "case={case} failed:\n{}\n{}",
+            String::from_utf8_lossy(&child.stdout),
+            String::from_utf8_lossy(&child.stderr)
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unjoinable_discovery_dir_with_colon_does_not_break_nvm_adapter_path_augmentation() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::process::Command;
+
+    if let Some(data_dir) = std::env::var_os("CODELAB_UNJOINABLE_DIR_TEST_DATA") {
+        let app = App::open(AppConfig {
+            data_dir: PathBuf::from(data_dir),
+        })
+        .unwrap();
+        let AppResponse::TutorHandshake(res) = app
+            .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+                preset: AcpAgentPreset::Custom,
+                command: "fake-nvm-acp".into(),
+            }))
+            .unwrap_or_else(|err| {
+                panic!("expected NVM handshake to survive unjoinable VOLTA_HOME, got {err:?}")
+            })
+        else {
+            panic!("expected TutorHandshake");
+        };
+        assert_eq!(res.agent_name.as_deref(), Some("NVM Adapter"));
+        return;
+    }
+
+    let node_path = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join("node"))
+        .find(|p| p.is_file())
+        .expect("node executable on PATH for test");
+
+    let temp = TempDir::new().unwrap();
+    let fake_home = temp.path().join("home");
+    let minimal_path_bin = temp.path().join("minimal-path");
+    let bad_volta_home = temp.path().join("volta:with-colon");
+    let bad_volta_bin = bad_volta_home.join("bin");
+    let nvm_v22_bin = fake_home.join(".nvm/versions/node/v22.14.0/bin");
+    let nvm_alias_dir = fake_home.join(".nvm/alias");
+    for dir in [
+        &minimal_path_bin,
+        &bad_volta_bin,
+        &nvm_v22_bin,
+        &nvm_alias_dir,
+    ] {
+        fs::create_dir_all(dir).unwrap();
+    }
+    fs::write(nvm_alias_dir.join("default"), "22\n").unwrap();
+    symlink(&node_path, nvm_v22_bin.join("node")).unwrap();
+
+    let nvm_adapter = nvm_v22_bin.join("fake-nvm-acp");
+    fs::write(
+        &nvm_adapter,
+        format!(
+            "#!/usr/bin/env node\n\
+             const rl = require('node:readline').createInterface({{ input: process.stdin }});\n\
+             rl.on('line', (line) => {{\n\
+               if (!line.trim()) return;\n\
+               const msg = JSON.parse(line);\n\
+               if (msg.method === 'initialize') {{\n\
+                 const parts = (process.env.PATH || '').split(':');\n\
+                 const expectedBin = {};\n\
+                 const name = parts.includes(expectedBin) ? 'NVM Adapter' : `MISSING_BIN:${{process.env.PATH}}`;\n\
+                 process.stdout.write(JSON.stringify({{ jsonrpc: '2.0', id: msg.id, result: {{ protocolVersion: 1, agentInfo: {{ name, version: '1.0.0' }} }} }}) + '\\n');\n\
+               }}\n\
+             }});\n",
+            serde_json::to_string(&path_str(&nvm_v22_bin)).unwrap()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&nvm_adapter, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "unjoinable_discovery_dir_with_colon_does_not_break_nvm_adapter_path_augmentation",
+        ])
+        .env("CODELAB_UNJOINABLE_DIR_TEST_DATA", temp.path().join("data"))
+        .env("HOME", &fake_home)
+        .env("PATH", &minimal_path_bin)
+        .env("VOLTA_HOME", &bad_volta_home)
+        .env_remove("NVM_DIR")
+        .env_remove("NVM_BIN")
+        .env_remove("FNM_DIR")
+        .env_remove("NPM_CONFIG_PREFIX")
+        .env_remove("PNPM_HOME")
+        .env_remove("XDG_DATA_HOME")
+        .output()
+        .unwrap();
+    assert!(
+        child.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&child.stdout),
+        String::from_utf8_lossy(&child.stderr)
+    );
+}
+
 #[test]
 fn missing_acp_adapter_returns_structured_not_found_error_with_preset_and_command() {
     let temp = TempDir::new().unwrap();
