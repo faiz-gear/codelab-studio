@@ -42,9 +42,11 @@ it("reviews a draft and applies only the selected Reference Solution file after 
   await user.click(trigger);
   dialog = within(await screen.findByRole("dialog", { name: "Reference Solution" }));
   const files = await dialog.findByRole("combobox", { name: "File to compare" });
-  await user.selectOptions(files, "nested/extra.go");
+  await user.click(files);
+  await user.click(dialog.getByRole("option", { name: "nested/extra.go" }));
   expect(dialog.getByText("// extra")).toBeInTheDocument();
-  await user.selectOptions(files, "main.go");
+  await user.click(files);
+  await user.click(dialog.getByRole("option", { name: "main.go" }));
   await user.click(dialog.getByRole("button", { name: "Apply Reference Solution" }));
   await waitFor(() => expect(editor).toHaveValue("// reference"));
   expect(client.readDiskFile(root, "main.go")).toMatchObject({ text: "// reference" });
@@ -55,7 +57,9 @@ it("restores a deleted test file from Starter and opens the restored text in the
   const { client, user } = await openWorkspace();
   await user.click(screen.getByRole("button", { name: "Compare with Starter" }));
   const dialog = within(await screen.findByRole("dialog", { name: "Restore from Starter" }));
-  await user.selectOptions(await dialog.findByRole("combobox", { name: "File to compare" }), "main_test.go");
+  const picker = await dialog.findByRole("combobox", { name: "File to compare" });
+  await user.click(picker);
+  await user.click(dialog.getByRole("option", { name: "main_test.go" }));
   expect(await dialog.findByText("File is missing")).toBeInTheDocument();
   expect(dialog.getByText("// visible tests")).toBeInTheDocument();
   expect(client.readDiskFile(root, "main_test.go")).toBeUndefined();

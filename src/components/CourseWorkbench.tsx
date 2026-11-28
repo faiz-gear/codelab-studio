@@ -1,7 +1,7 @@
 import { useVerification } from "../verification/useVerification";
 import { CheckResults } from "../verification/CheckResults";
 import { WorkspaceDialog } from "../workspace/WorkspaceDialog";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import {
   courseSourceLocation,
   type Chapter,
@@ -50,15 +50,19 @@ import {
 import { WorkspaceComparisonTrigger } from "../workspace/WorkspaceComparison";
 import { WorkspaceEditor } from "../workspace/WorkspaceEditor";
 import type { WorkspaceEditorSession } from "../workspace/editorSession";
+import {
+  clamp,
+  computeBottomBounds,
+  computeDockedTutorBounds,
+  computeManualBounds,
+  DEFAULT_TERMINAL_HEIGHT_PX,
+  DEFAULT_VERIFICATION_HEIGHT_PX,
+  resolveHorizontalWorkbenchWidths,
+} from "./workbenchLayout";
 
-const DEFAULT_MANUAL_WIDTH_PCT = 38;
 const ignoreExecutionError = () => {};
 const staticSnapshot = () => emptyWorkbench;
 const staticSubscribe = () => () => {};
-const MIN_MANUAL_WIDTH_PX = 320;
-const DOCKED_TUTOR_MIN_MANUAL_PX = 300;
-const DOCKED_TUTOR_WIDTH_PX = 360;
-const MAX_MANUAL_WIDTH_PCT = 54;
 
 export interface CourseWorkbenchProps {
   course: LoadedCourse;
@@ -136,16 +140,46 @@ export function CourseWorkbench({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const handleCloseOutline = useCallback(() => setOutlineOpen(false), []);
   const [manualWidthPx, setManualWidthPx] = useState<number | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [tutorWidthPx, setTutorWidthPx] = useState<number | null>(null);
+  const [bottomHeightPx, setBottomHeightPx] = useState<number | null>(null);
+  const [terminalMaximized, setTerminalMaximized] = useState(false);
+  const [dragAxis, setDragAxis] = useState<"manual" | "tutor" | "terminal" | null>(null);
+  const [wbWidth, setWbWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+  const [paneCenterHeight, setPaneCenterHeight] = useState(() =>
+    typeof window !== "undefined" ? Math.max(400, window.innerHeight - 48) : 720
+  );
+  const [stripHeight, setStripHeight] = useState(38);
   const [isTutorOverlay, setIsTutorOverlay] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 1280
   );
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const syncLayout = () => setIsTutorOverlay(window.innerWidth < 1280);
+    const syncLayout = () => {
+      setIsTutorOverlay(window.innerWidth < 1280);
+      const wbRect = wbRef.current?.getBoundingClientRect();
+      if (wbRect && wbRect.width > 0) setWbWidth(wbRect.width);
+      else setWbWidth(window.innerWidth);
+      const centerRect = paneCenterRef.current?.getBoundingClientRect();
+      if (centerRect && centerRect.height > 0) setPaneCenterHeight(centerRect.height);
+      else setPaneCenterHeight(Math.max(400, window.innerHeight - 48));
+      const measuredStrip = stripRef.current?.getBoundingClientRect().height;
+      if (measuredStrip && measuredStrip > 0) setStripHeight(measuredStrip);
+    };
     syncLayout();
     window.addEventListener("resize", syncLayout);
-    return () => window.removeEventListener("resize", syncLayout);
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(syncLayout);
+      if (wbRef.current) observer.observe(wbRef.current);
+      if (paneCenterRef.current) observer.observe(paneCenterRef.current);
+      if (stripRef.current) observer.observe(stripRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", syncLayout);
+      observer?.disconnect();
+    };
   }, []);
   const [cwdDialog, setCwdDialog] = useState<{ workbench: CommandWorkbench; command: CommandBlock } | null>(null);
   const workbench = useMemo(() => client && session && course.trusted ? new CommandWorkbench(client, session) : null,
@@ -163,6 +197,8 @@ export function CourseWorkbench({
   }
 
   const wbRef = useRef<HTMLDivElement | null>(null);
+  const paneCenterRef = useRef<HTMLElement | null>(null);
+  const stripRef = useRef<HTMLDivElement | null>(null);
   const manualScrollRef = useRef<HTMLDivElement | null>(null);
   const manualInnerRef = useRef<HTMLDivElement | null>(null);
   const selectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -309,45 +345,50 @@ export function CourseWorkbench({
   const isOutlineVisible = outlineOpen && !focusMode;
 
   const isTutorDocked = tutorOpen && !isTutorOverlay;
+  const hasOpenTerminal = execution.terminals.some(({ id }) => id === execution.active);
+  const effectiveTerminalMaximized = terminalMaximized && hasOpenTerminal;
 
-  const manualWidthBounds = useCallback(
-    (containerWidth: number) => {
-      if (isTutorDocked) {
-        const editorFloor = containerWidth >= 1440 ? 560 : 520;
-        const maxPx = Math.max(
-          DOCKED_TUTOR_MIN_MANUAL_PX,
-          Math.min(
-            Math.round((containerWidth * MAX_MANUAL_WIDTH_PCT) / 100),
-            containerWidth - editorFloor - DOCKED_TUTOR_WIDTH_PX
-          )
-        );
-        return { minPx: DOCKED_TUTOR_MIN_MANUAL_PX, maxPx };
-      }
-      const maxPx = Math.max(
-        MIN_MANUAL_WIDTH_PX,
-        Math.round((containerWidth * MAX_MANUAL_WIDTH_PCT) / 100)
-      );
-      return { minPx: MIN_MANUAL_WIDTH_PX, maxPx };
-    },
-    [isTutorDocked]
+  const horizontalLayout = resolveHorizontalWorkbenchWidths({
+    containerWidth: wbWidth,
+    focusMode,
+    isTutorDocked,
+    manualWidthPx,
+    tutorWidthPx,
+  });
+
+  const bottomBounds = computeBottomBounds(paneCenterHeight, stripHeight);
+  const defaultBottomHeight = resultsOpen
+    ? DEFAULT_VERIFICATION_HEIGHT_PX
+    : DEFAULT_TERMINAL_HEIGHT_PX;
+  const restoredBottomHeightPx = clamp(
+    bottomHeightPx ?? defaultBottomHeight,
+    bottomBounds.minPx,
+    bottomBounds.maxPx
   );
+  const effectiveTerminalHeightPx = effectiveTerminalMaximized
+    ? bottomBounds.maximizedPx
+    : restoredBottomHeightPx;
 
   const clampManualWidth = useCallback((clientX: number): number | null => {
     const container = wbRef.current;
     if (!container) return null;
     const rect = container.getBoundingClientRect();
     const containerWidth = rect.width || window.innerWidth || 1280;
-    const { minPx, maxPx } = manualWidthBounds(containerWidth);
+    const { minPx, maxPx } = computeManualBounds(
+      containerWidth,
+      isTutorDocked,
+      horizontalLayout.effectiveTutorWidthPx
+    );
     const rawPx = Math.round(clientX - rect.left);
-    return Math.min(maxPx, Math.max(minPx, rawPx));
-  }, [manualWidthBounds]);
+    return clamp(rawPx, minPx, maxPx);
+  }, [horizontalLayout.effectiveTutorWidthPx, isTutorDocked]);
 
   const handleSplitterMouseDown = (
     event: React.MouseEvent<HTMLDivElement>
   ) => {
     if (focusMode) return;
     event.preventDefault();
-    setIsDragging(true);
+    setDragAxis("manual");
 
     const handleMove = (moveEvent: MouseEvent) => {
       const clamped = clampManualWidth(moveEvent.clientX);
@@ -357,7 +398,7 @@ export function CourseWorkbench({
     };
 
     const handleUp = () => {
-      setIsDragging(false);
+      setDragAxis(null);
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
@@ -372,19 +413,150 @@ export function CourseWorkbench({
 
   const handleSplitterKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (focusMode) return;
-    const containerWidth = wbRef.current?.getBoundingClientRect().width || 1280;
-    const currentPx =
-      manualWidthPx ?? Math.round((containerWidth * DEFAULT_MANUAL_WIDTH_PCT) / 100);
-    const { minPx, maxPx } = manualWidthBounds(containerWidth);
+    const containerWidth = wbRef.current?.getBoundingClientRect().width || wbWidth || 1280;
+    const liveLayout = resolveHorizontalWorkbenchWidths({
+      containerWidth,
+      focusMode,
+      isTutorDocked,
+      manualWidthPx,
+      tutorWidthPx,
+    });
+    const currentPx = liveLayout.displayManualWidthPx;
+    const { minPx, maxPx } = liveLayout.manualBounds;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      setManualWidthPx(Math.max(minPx, currentPx - 24));
+      setManualWidthPx(clamp(currentPx - 24, minPx, maxPx));
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      setManualWidthPx(Math.min(maxPx, currentPx + 24));
+      setManualWidthPx(clamp(currentPx + 24, minPx, maxPx));
     } else if (event.key === "Home" || event.key === "Enter") {
       event.preventDefault();
       setManualWidthPx(null);
+    }
+  };
+
+  const clampTutorWidth = useCallback(
+    (clientX: number): number | null => {
+      const container = wbRef.current;
+      if (!container) return null;
+      const rect = container.getBoundingClientRect();
+      const containerWidth = rect.width || window.innerWidth || 1280;
+      const { minPx, maxPx } = computeDockedTutorBounds(
+        containerWidth,
+        focusMode,
+        horizontalLayout.effectiveManualWidthPx
+      );
+      const rawPx = Math.round(rect.right - clientX);
+      return clamp(rawPx, minPx, maxPx);
+    },
+    [focusMode, horizontalLayout.effectiveManualWidthPx]
+  );
+
+  const handleTutorSplitterMouseDown = (
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    if (!isTutorDocked) return;
+    event.preventDefault();
+    setDragAxis("tutor");
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const clamped = clampTutorWidth(moveEvent.clientX);
+      if (clamped !== null) {
+        setTutorWidthPx(clamped);
+      }
+    };
+
+    const handleUp = () => {
+      setDragAxis(null);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  };
+
+  const handleTutorSplitterKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isTutorDocked) return;
+    const containerWidth = wbRef.current?.getBoundingClientRect().width || wbWidth || 1280;
+    const { minPx, maxPx } = computeDockedTutorBounds(
+      containerWidth,
+      focusMode,
+      horizontalLayout.effectiveManualWidthPx
+    );
+    const currentPx = horizontalLayout.effectiveTutorWidthPx;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setTutorWidthPx(clamp(currentPx + 24, minPx, maxPx));
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setTutorWidthPx(clamp(currentPx - 24, minPx, maxPx));
+    } else if (event.key === "Home" || event.key === "Enter") {
+      event.preventDefault();
+      setTutorWidthPx(null);
+    }
+  };
+
+  const clampBottomHeight = useCallback((clientY: number): number | null => {
+    const center = paneCenterRef.current;
+    if (!center) return null;
+    const rect = center.getBoundingClientRect();
+    const measuredHeight = rect.height || paneCenterHeight || 720;
+    const measuredStrip = stripRef.current?.getBoundingClientRect().height || 38;
+    const { minPx, maxPx } = computeBottomBounds(measuredHeight, measuredStrip);
+    const rawPx = Math.round(rect.bottom - clientY - measuredStrip);
+    return clamp(rawPx, minPx, maxPx);
+  }, [paneCenterHeight]);
+
+  const handleBottomSplitterMouseDown = (
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault();
+    setDragAxis("terminal");
+    if (effectiveTerminalMaximized) {
+      setTerminalMaximized(false);
+    }
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const clamped = clampBottomHeight(moveEvent.clientY);
+      if (clamped !== null) {
+        setTerminalMaximized(false);
+        setBottomHeightPx(clamped);
+      }
+    };
+
+    const handleUp = () => {
+      setDragAxis(null);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  };
+
+  const handleBottomSplitterDoubleClick = () => {
+    setTerminalMaximized(false);
+    setBottomHeightPx(null);
+  };
+
+  const handleBottomSplitterKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const measuredHeight = paneCenterRef.current?.getBoundingClientRect().height || paneCenterHeight || 720;
+    const measuredStrip = stripRef.current?.getBoundingClientRect().height || 38;
+    const { minPx, maxPx } = computeBottomBounds(measuredHeight, measuredStrip);
+    const currentPx = resultsOpen ? restoredBottomHeightPx : effectiveTerminalHeightPx;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setTerminalMaximized(false);
+      setBottomHeightPx(clamp(currentPx + 24, minPx, maxPx));
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setTerminalMaximized(false);
+      setBottomHeightPx(clamp(currentPx - 24, minPx, maxPx));
+    } else if (event.key === "Home" || event.key === "Enter") {
+      event.preventDefault();
+      setTerminalMaximized(false);
+      setBottomHeightPx(null);
     }
   };
 
@@ -414,14 +586,17 @@ export function CourseWorkbench({
     return map;
   }, [activeChapter]);
 
-  const effectiveManualWidthPx =
-    manualWidthPx !== null && isTutorDocked && typeof window !== "undefined"
-      ? Math.min(manualWidthPx, manualWidthBounds(window.innerWidth || 1280).maxPx)
-      : manualWidthPx;
+  const effectiveManualWidthPx = horizontalLayout.effectiveManualWidthPx;
+  const currentManualDisplayPx = horizontalLayout.displayManualWidthPx;
 
   const paneLeftStyle =
     !focusMode && effectiveManualWidthPx !== null
       ? { width: `${effectiveManualWidthPx}px` }
+      : undefined;
+
+  const wbStyle: CSSProperties | undefined =
+    isTutorDocked && tutorWidthPx !== null
+      ? ({ "--ai-w": `${horizontalLayout.effectiveTutorWidthPx}px` } as CSSProperties)
       : undefined;
 
   const sourceBadge =
@@ -479,10 +654,14 @@ export function CourseWorkbench({
     : course.title;
 
   const pendingConfirmation = execution.confirmation;
+  const isResizingX = dragAxis === "manual" || dragAxis === "tutor";
+  const isResizingY = dragAxis === "terminal";
+
   return (
     <section
       ref={wbRef}
-      className={`wb${focusMode ? " is-focus" : ""}${isDragging ? " is-resizing" : ""}${tutorOpen && !isTutorOverlay ? " has-tutor-docked" : ""}`}
+      className={`wb${focusMode ? " is-focus" : ""}${isResizingX ? " is-resizing" : ""}${isResizingY ? " is-resizing-y" : ""}${isTutorDocked ? " has-tutor-docked" : ""}`}
+      style={wbStyle}
       aria-label={t.ariaLabel}
       data-testid="course-workbench"
     >
@@ -777,7 +956,7 @@ export function CourseWorkbench({
                           const result = checkResults.find(r=>r.checkId===check.id);
                           const isFailed = result?.status === "failed" || result?.status === "timedOut";
                           return <div key={check.id} className="v-item"><div className="v-row">
-                            {check.kind === "selfCheck" ? <input type="checkbox" aria-label={check.title}
+                            {check.kind === "selfCheck" ? <input type="checkbox" className="arc-checkbox" aria-label={check.title}
                               disabled={!session || switching || verification.busy}
                               checked={chapterProgress?.selfChecks[check.id] ?? false}
                               onChange={event=>session && void verification.update({type:"setSelfCheck",payload:{workspaceId:session.workspace.id,chapterId:activeChapter.chapterId,checkId:check.id,checked:event.target.checked}})} />
@@ -947,12 +1126,15 @@ export function CourseWorkbench({
         </div>
       </aside>
 
-      {/* Draggable Vertical Splitter (double-click resets width) */}
+      {/* Draggable Vertical Splitter: Manual <-> Right Workbench */}
       <div
-        className={`split-x${isDragging ? " is-drag" : ""}`}
+        className={`split-x split-x--manual${dragAxis === "manual" ? " is-drag" : ""}`}
         role="separator"
         aria-orientation="vertical"
         aria-label={t.splitterAriaLabel}
+        aria-valuenow={currentManualDisplayPx}
+        aria-valuemin={horizontalLayout.manualBounds.minPx}
+        aria-valuemax={horizontalLayout.manualBounds.maxPx}
         tabIndex={focusMode ? -1 : 0}
         title={t.splitterTitle}
         data-testid="workbench-splitter"
@@ -961,7 +1143,7 @@ export function CourseWorkbench({
         onKeyDown={handleSplitterKeyDown}
       />
 
-      <section className="pane-center" aria-label={t.stageAriaLabel}>
+      <section ref={paneCenterRef} className="pane-center" aria-label={t.stageAriaLabel}>
         {stage ?? (session && workbench ? (
           <>
             <WorkspaceEditor
@@ -970,7 +1152,7 @@ export function CourseWorkbench({
               settings={settings}
               messages={messages}
               switching={switching}
-              tutorOpen={tutorOpen && !isTutorOverlay}
+              tutorOpen={isTutorDocked}
               onChangeWorkspace={onReturnToDraft ?? onChooseWorkspace}
               workspaceActionLabel={onReturnToDraft ? messages.coursePack.returnDraft : undefined}
               workspaceLabel={onReturnToDraft ? messages.coursePack.trialTitle : undefined}
@@ -981,7 +1163,24 @@ export function CourseWorkbench({
               onSelectionChange={handleSelectionChange}
               onCursorContextChange={setEditorCursor}
             />
-            <div className="verification-strip">
+            {(hasOpenTerminal || resultsOpen) && (
+              <div
+                className={`split-y${dragAxis === "terminal" ? " is-drag" : ""}`}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={t.terminalSplitterAriaLabel}
+                aria-valuenow={resultsOpen ? restoredBottomHeightPx : effectiveTerminalHeightPx}
+                aria-valuemin={bottomBounds.minPx}
+                aria-valuemax={bottomBounds.maxPx}
+                tabIndex={0}
+                title={t.terminalSplitterTitle}
+                data-testid="terminal-splitter"
+                onMouseDown={handleBottomSplitterMouseDown}
+                onDoubleClick={handleBottomSplitterDoubleClick}
+                onKeyDown={handleBottomSplitterKeyDown}
+              />
+            )}
+            <div ref={stripRef} className="verification-strip">
               <div className="verification-tabs" role="tablist" aria-label={messages.verification.results} onKeyDown={event=>{
                 if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key) || (event.target as HTMLElement).getAttribute("role") !== "tab") return;
                 event.preventDefault(); const next = event.key === "Home" ? false : event.key === "End" ? true : !resultsOpen;
@@ -995,7 +1194,14 @@ export function CourseWorkbench({
                 <button className="btn btn--ghost btn--xs" type="button" onClick={()=>setResetOpen(true)}>{messages.verification.reset}</button>
               </div>
             </div>
-            <div role="tabpanel" id="verification-results-panel" aria-labelledby="verification-results-tab" hidden={!resultsOpen} className="verification-panel">
+            <div
+              role="tabpanel"
+              id="verification-results-panel"
+              aria-labelledby="verification-results-tab"
+              hidden={!resultsOpen}
+              className="verification-panel"
+              style={bottomHeightPx !== null ? { height: `${restoredBottomHeightPx}px` } : undefined}
+            >
               <CheckResults
                 checks={activeChapter?.threeStep?.step3Checks ?? []}
                 results={checkResults}
@@ -1040,7 +1246,14 @@ export function CourseWorkbench({
                 }}
               />
             </div>
-            <div role="tabpanel" className="execution-terminal-container" id="execution-terminal-panel" aria-labelledby="execution-terminal-tab" hidden={resultsOpen}>
+            <div
+              role="tabpanel"
+              className={`execution-terminal-container${effectiveTerminalMaximized ? " execution-terminal-container--maximized" : ""}`}
+              id="execution-terminal-panel"
+              aria-labelledby="execution-terminal-tab"
+              hidden={resultsOpen}
+              style={hasOpenTerminal ? { height: `${effectiveTerminalHeightPx}px` } : undefined}
+            >
             <TerminalPanel
               key={`terminal-${session.workspace.id}`}
               workbench={workbench}
@@ -1048,6 +1261,9 @@ export function CourseWorkbench({
               messages={messages}
               settings={settings}
               disabled={switching}
+              maximized={effectiveTerminalMaximized}
+              onToggleMaximize={() => setTerminalMaximized((value) => !value)}
+              onCloseLastTerminal={() => setTerminalMaximized(false)}
               onError={onExecutionError}
               onSelectionChange={handleSelectionChange}
               onAskAI={({ port, text }) =>
@@ -1099,6 +1315,23 @@ export function CourseWorkbench({
           </>
         ))}
       </section>
+      {isTutorDocked && onCloseTutor && onTutorSnapshotChange && onUpdateSettings && onOpenTutorSettings && (
+        <div
+          className={`split-x split-x--tutor${dragAxis === "tutor" ? " is-drag" : ""}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t.tutorSplitterAriaLabel}
+          aria-valuenow={horizontalLayout.effectiveTutorWidthPx}
+          aria-valuemin={horizontalLayout.tutorBounds.minPx}
+          aria-valuemax={horizontalLayout.tutorBounds.maxPx}
+          tabIndex={0}
+          title={t.tutorSplitterTitle}
+          data-testid="tutor-splitter"
+          onMouseDown={handleTutorSplitterMouseDown}
+          onDoubleClick={() => setTutorWidthPx(null)}
+          onKeyDown={handleTutorSplitterKeyDown}
+        />
+      )}
       {tutorOpen && onCloseTutor && onTutorSnapshotChange && onUpdateSettings && onOpenTutorSettings && (
         <TutorDrawer
           open={tutorOpen}

@@ -42,8 +42,8 @@
 
 .runtime-settings {
   position: static;
-  width: min(840px, calc(100vw - 32px));
-  max-height: min(84vh, 720px);
+  width: min(900px, calc(100vw - 32px));
+  max-height: min(86vh, 740px);
   margin: 0;
   padding: 0;
   color: var(--foreground);
@@ -53,29 +53,67 @@
   display: none;
 }
 
+.settings-dialog-head {
+  align-items: center;
+  padding: 14px 18px;
+}
+
+.settings-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-active-category {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-dialog-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
 .settings-layout {
   display: grid;
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--sidebar-fill);
 }
 
 .runtime-settings-tabs {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 12px;
-  border-right: 1px solid var(--border-subtle);
-  background: var(--surface-subtle);
+  padding: 14px 10px;
 }
 
 .settings-nav-btn {
+  position: relative;
   display: flex;
   align-items: center;
+  gap: 9px;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 7px 11px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
@@ -84,9 +122,39 @@
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
+  transition:
+    background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.settings-nav-btn::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.settings-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.settings-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-nav-btn:hover {
@@ -94,11 +162,50 @@
   color: var(--foreground);
 }
 
+.settings-nav-btn:hover .settings-nav-icon {
+  color: var(--foreground);
+}
+
 .settings-nav-btn[aria-selected="true"] {
-  background: var(--accent-subtle);
-  border-color: color-mix(in oklab, var(--accent) 28%, var(--border-subtle));
-  color: var(--accent-strong);
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-resting);
+  color: var(--foreground);
   font-weight: 500;
+}
+
+.settings-nav-btn[aria-selected="true"]::before {
+  background: var(--accent);
+}
+
+.settings-nav-btn[aria-selected="true"] .settings-nav-icon {
+  color: var(--accent-strong);
+}
+
+.settings-nav-btn[aria-selected="true"]:focus-visible {
+  box-shadow: var(--focus-outline);
+}
+
+.settings-sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.settings-sidebar-foot-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.settings-sidebar-foot-path {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-panel-host {
@@ -107,11 +214,13 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  background: var(--background);
 }
 
 .runtime-settings .modal-body {
   min-height: 0;
   flex: 1;
+  padding: 18px 22px 24px;
   overflow-y: auto;
 }
 
@@ -389,18 +498,31 @@
     grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .runtime-settings-tabs {
-    flex-flow: row wrap;
-    padding: 10px 16px;
+  .settings-sidebar {
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
   }
 
+  .settings-sidebar-foot {
+    display: none;
+  }
+
+  .runtime-settings-tabs {
+    flex-flow: row wrap;
+    padding: 10px 14px;
+  }
+
   .settings-nav-btn {
     width: auto;
-    min-height: 30px;
-    padding: 4px 10px;
+    min-height: 32px;
+    padding: 5px 10px;
     font-size: 12px;
+  }
+
+  .settings-nav-btn::before {
+    inset: auto 8px -1px;
+    width: auto;
+    height: 2px;
   }
 
   .settings-two-col,
@@ -519,16 +641,12 @@
 .runtime-preference {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   justify-self: start;
   padding-block: 4px;
+  font-size: 12.5px;
+  color: var(--foreground);
   cursor: pointer;
-}
-
-.runtime-preference input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--control-on);
 }
 
 .runtime-download p {

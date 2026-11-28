@@ -44,7 +44,7 @@
 .tutor-settings {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .tutor-settings-banner {
@@ -53,9 +53,16 @@
   align-items: flex-start;
   gap: 8px;
   padding: 12px 14px;
-  border-radius: var(--radius-control-lg);
+  border-radius: var(--radius-card);
   background: var(--surface-muted);
   border: 1px solid var(--border);
+}
+
+.tutor-settings-banner-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .tutor-settings-intro {
@@ -67,14 +74,29 @@
 .tutor-settings-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+}
+
+.tutor-cmd-preview {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tutor-command-row {
+  flex-wrap: wrap;
 }
 
 .tutor-handshake-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 10px 12px;
+}
+
+.tutor-handshake-hint {
+  flex: 1;
+  min-width: 200px;
 }
 
 .tutor-handshake-ok {
@@ -99,7 +121,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
+  gap: 6px;
   padding: 12px 14px;
   border-radius: var(--radius-control-lg);
   border: 1px solid var(--border);
@@ -107,7 +129,8 @@
   text-align: left;
   transition:
     border-color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .tutor-policy-option:hover {
@@ -125,13 +148,49 @@
   box-shadow: var(--focus-outline);
 }
 
+.tutor-policy-option-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tutor-radio-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.tutor-radio-dot::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--control-on);
+  transform: scale(0);
+  transition: transform var(--duration-instant) var(--ease-standard);
+}
+
+.tutor-policy-option.is-active .tutor-radio-dot {
+  border-color: var(--control-on);
+}
+
+.tutor-policy-option.is-active .tutor-radio-dot::after {
+  transform: scale(1);
+}
+
 .tutor-policy-option strong {
   font-size: 13px;
   font-weight: 500;
   color: var(--foreground);
 }
 
-.tutor-policy-option span {
+.tutor-policy-option-desc {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-secondary);
@@ -139,6 +198,12 @@
 
 .tutor-style-segmented {
   align-self: flex-start;
+}
+
+.tutor-style-segmented button {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 12.5px;
 }
 
 /* ---------- Right Pane: AI Tutor Drawer ---------- */
@@ -165,7 +230,7 @@
 
 .tutor-drawer {
   width: var(--ai-w);
-  min-width: 320px;
+  min-width: 300px;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -173,6 +238,10 @@
   background: var(--surface);
   border-left: 1px solid var(--border);
   animation: slide-in-right var(--duration-standard) var(--ease-drawer);
+}
+
+.wb.is-resizing .tutor-drawer {
+  transition: none;
 }
 
 .tutor-drawer--overlay {

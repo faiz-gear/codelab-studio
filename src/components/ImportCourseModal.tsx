@@ -4,6 +4,7 @@ import {
 } from "../core/contracts";
 import type { Messages } from "../i18n";
 import { CloseIcon, FolderDownIcon, FolderIcon } from "./Icons";
+import { Select } from "./Select";
 import { trapFocusOnTab } from "./focusTrap";
 
 export type ImportMode = "localMarkdown" | "localPack" | "gitPack" | "author";
@@ -42,6 +43,8 @@ export function ImportCourseModal({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputId = useId();
   const titleId = useId();
+  const courseNameId = useId();
+  const languageId = useId();
 
   const handleClose = useCallback(() => {
     if (!submitting) onClose();
@@ -172,18 +175,21 @@ export function ImportCourseModal({
 
             {author && (
               <>
-                <label className="field">
-                  <span>{p.courseName}</span>
-                  <input className="text-input" value={title} required disabled={submitting}
+                <div className="field">
+                  <label htmlFor={courseNameId}>{p.courseName}</label>
+                  <input id={courseNameId} className="text-input" value={title} required disabled={submitting}
                     onChange={(event) => setTitle(event.target.value)} />
-                </label>
-                <label className="field">
-                  <span>{p.language}</span>
-                  <select className="text-input" value={language} disabled={submitting}
-                    onChange={(event) => setLanguage(event.target.value as CourseLanguage)}>
-                    {COURSE_LANGUAGES.map((value) => <option key={value}>{value}</option>)}
-                  </select>
-                </label>
+                </div>
+                <div className="field">
+                  <label htmlFor={languageId}>{p.language}</label>
+                  <Select
+                    id={languageId}
+                    value={language}
+                    disabled={submitting}
+                    options={COURSE_LANGUAGES.map((value) => ({ value, label: value }))}
+                    onChange={setLanguage}
+                  />
+                </div>
               </>
             )}
 
@@ -213,9 +219,9 @@ export function ImportCourseModal({
             </div>
             {author && (
               <label className="draft-checkbox">
-                <input type="checkbox" checked={referenceSolution} disabled={submitting}
+                <input type="checkbox" className="arc-checkbox" checked={referenceSolution} disabled={submitting}
                   onChange={(event) => setReferenceSolution(event.target.checked)} />
-                {p.referenceSolution}
+                <span>{p.referenceSolution}</span>
               </label>
             )}
 

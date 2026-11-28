@@ -132,14 +132,16 @@ it("creates a draft, previews unsaved Markdown and Schema errors, and saves befo
   await user.click(await screen.findByRole("button", { name: /Import Local Markdown/ }));
   await user.click(screen.getByRole("button", { name: "Author Course Pack" }));
   await user.type(screen.getByLabelText("Course name"), "Draft Course");
-  await user.selectOptions(screen.getByLabelText("Language"), "Python");
+  await user.click(screen.getByRole("combobox", { name: "Language" }));
+  await user.click(screen.getByRole("option", { name: "Python" }));
   await user.click(screen.getByRole("button", { name: "Browse folder" }));
   await user.click(screen.getByRole("button", { name: "Create draft" }));
   const manual = await screen.findByRole("textbox", { name: "Source editor" });
   fireEvent.change(manual, { target: { value: "Revised exercise" } });
   expect(await screen.findByRole("heading", { name: "Revised exercise" })).toBeVisible();
 
-  await user.selectOptions(screen.getByLabelText("Source file"), ".codelab-checks.json");
+  await user.click(screen.getByRole("combobox", { name: "Source file" }));
+  await user.click(screen.getByRole("option", { name: ".codelab-checks.json" }));
   const checks = await screen.findByRole("textbox", { name: "Source editor" });
   fireEvent.change(checks, { target: { value: "invalid" } });
   expect(await screen.findByText("chapters[0].checks[0].type")).toBeVisible();

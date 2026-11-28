@@ -246,6 +246,12 @@ export interface Messages {
     guideHeaderBadge: string;
     splitterTitle: string;
     splitterAriaLabel: string;
+    terminalSplitterTitle: string;
+    terminalSplitterAriaLabel: string;
+    treeSplitterTitle: string;
+    treeSplitterAriaLabel: string;
+    tutorSplitterTitle: string;
+    tutorSplitterAriaLabel: string;
     reloadTitle: string;
     reloadDetail: string;
     reloadAction: string;
@@ -326,6 +332,15 @@ export interface Messages {
     settingsTab: string;
     protocolBadge: string;
     settingsIntro: string;
+    connectionSectionTitle: string;
+    handshakeSectionTitle: string;
+    handshakeIdleHint: string;
+    handshakeStatusIdle: string;
+    handshakeStatusTesting: string;
+    handshakeStatusOk: string;
+    handshakeStatusFailed: string;
+    policySectionHint: string;
+    styleSectionHint: string;
     presetLabel: string;
     presets: Record<AcpAgentPreset, string>;
     commandLabel: string;
@@ -421,6 +436,9 @@ export interface Messages {
   };
   stores: Record<StoreKind, string>;
   settings: {
+    returnToWorkspace: string;
+    activeWorkspaceLabel: string;
+    categoriesLabel: string;
     tabs: {
       tutor: string;
       runtime: string;
@@ -720,6 +738,12 @@ export const zhCN: Messages = {
     guideHeaderBadge: "导读",
     splitterTitle: "拖拽调整手册宽度，双击复原默认分栏",
     splitterAriaLabel: "调整手册与右侧工作区宽度",
+    terminalSplitterTitle: "拖拽调整终端与上方工作区高度，双击复原默认高度",
+    terminalSplitterAriaLabel: "调整终端与上方工作区高度",
+    treeSplitterTitle: "拖拽调整文件树宽度，双击复原默认宽度",
+    treeSplitterAriaLabel: "调整文件树与编辑器宽度",
+    tutorSplitterTitle: "拖拽调整 AI 助教宽度，双击复原默认宽度",
+    tutorSplitterAriaLabel: "调整编辑器与 AI 助教宽度",
     reloadTitle: "本地 Markdown 源文件已被外部修改",
     reloadDetail: "已检测到变更：{file}。点击刷新以同步最新手册内容并保留当前章节定位。",
     reloadAction: "立即刷新",
@@ -832,6 +856,15 @@ export const zhCN: Messages = {
     protocolBadge: "ACP · JSON-RPC 2.0 / stdio",
     settingsIntro:
       "直接复用你本机已认证的 ACP 编码 Agent，仅在首次提问或握手测试时按需启动进程。",
+    connectionSectionTitle: "ACP Agent 配置",
+    handshakeSectionTitle: "握手测试与连接反馈",
+    handshakeIdleHint: "点击下方按钮执行轻量 ACP initialize 握手，验证本机 CLI 可正常响应。",
+    handshakeStatusIdle: "未测试",
+    handshakeStatusTesting: "测试中…",
+    handshakeStatusOk: "已连接",
+    handshakeStatusFailed: "握手失败",
+    policySectionHint: "默认采用引导只读策略，排查流畅无打断，同时拦截敏感文件与未授权写入/执行。",
+    styleSectionHint: "控制助教回答问题的引导方式，也可在 AI 助教抽屉顶部随时切换。",
     presetLabel: "本机 ACP Agent 预设",
     presets: {
       claudeCode: "Claude Code（claude --acp）",
@@ -981,6 +1014,9 @@ export const zhCN: Messages = {
     trust: "信任列表（trust）",
   },
   settings: {
+    returnToWorkspace: "返回 Workspace",
+    activeWorkspaceLabel: "当前 Workspace",
+    categoriesLabel: "设置分类",
     tabs: {
       tutor: "ACP 助教",
       runtime: "四语言运行时",

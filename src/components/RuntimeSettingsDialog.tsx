@@ -9,7 +9,14 @@ import type {
 } from "../core/contracts";
 import { TutorSettingsPanel } from "../tutor/TutorSettingsPanel";
 import { EditorSettingsPanel } from "./EditorSettingsPanel";
-import { CloseIcon } from "./Icons";
+import {
+  ChevronLeftIcon,
+  CloseIcon,
+  ShieldCheckIcon,
+  SlidersIcon,
+  SparklesIcon,
+  TerminalIcon,
+} from "./Icons";
 import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
 import { RuntimePanel, type RuntimePanelProps } from "./RuntimePanel";
 import { trapFocusOnTab } from "./focusTrap";
@@ -109,6 +116,19 @@ export function RuntimeSettingsDialog({
     tabRefs.current[next]?.focus();
   };
 
+  const renderTabIcon = (tab: SettingsTab) => {
+    switch (tab) {
+      case "tutor":
+        return <SparklesIcon size={15} />;
+      case "runtime":
+        return <TerminalIcon size={15} />;
+      case "editor":
+        return <SlidersIcon size={15} />;
+      case "privacy":
+        return <ShieldCheckIcon size={15} />;
+    }
+  };
+
   return (
     <div
       className="modal-scrim"
@@ -128,46 +148,78 @@ export function RuntimeSettingsDialog({
           onClose();
         }}
       >
-      <header className="modal-head">
-        <h2 id={`${id}-title`}>{messages.topbar.settingsLabel}</h2>
-        <button
-          type="button"
-          className="btn btn--ghost btn--icon btn--xs"
-          aria-label={messages.runtime.close}
-          onClick={onClose}
-        >
-          <CloseIcon size={14} />
-        </button>
+      <header className="modal-head settings-dialog-head">
+        <div className="settings-dialog-title">
+          <h2 id={`${id}-title`}>{messages.topbar.settingsLabel}</h2>
+          <span className="settings-active-category" aria-hidden="true">
+            {messages.settings.tabs[activeTab]}
+          </span>
+        </div>
+        <div className="settings-dialog-actions">
+          {activeWorkspace && (
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm settings-return-btn"
+              onClick={onClose}
+            >
+              <ChevronLeftIcon size={13} />
+              <span>{messages.settings.returnToWorkspace}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn--ghost btn--icon btn--xs"
+            aria-label={messages.runtime.close}
+            onClick={onClose}
+          >
+            <CloseIcon size={14} />
+          </button>
+        </div>
       </header>
       <div className="settings-layout">
-        <div
-          className="runtime-settings-tabs"
-          role="tablist"
-          aria-label={messages.topbar.settingsLabel}
-          onKeyDown={handleTabKeyDown}
-        >
-          {SETTINGS_TABS.map((tab) => {
-            const selected = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                ref={(el) => {
-                  tabRefs.current[tab] = el;
-                }}
-                id={`${id}-tab-${tab}`}
-                type="button"
-                className="settings-nav-btn"
-                role="tab"
-                aria-selected={selected}
-                tabIndex={selected ? 0 : -1}
-                aria-controls={`${id}-panel-${tab}`}
-                onClick={() => setActiveTab(tab)}
-              >
-                {messages.settings.tabs[tab]}
-              </button>
-            );
-          })}
-        </div>
+        <nav className="settings-sidebar" aria-label={messages.settings.categoriesLabel}>
+          <div
+            className="runtime-settings-tabs"
+            role="tablist"
+            aria-label={messages.topbar.settingsLabel}
+            onKeyDown={handleTabKeyDown}
+          >
+            {SETTINGS_TABS.map((tab) => {
+              const selected = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  ref={(el) => {
+                    tabRefs.current[tab] = el;
+                  }}
+                  id={`${id}-tab-${tab}`}
+                  type="button"
+                  className="settings-nav-btn"
+                  role="tab"
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  aria-controls={`${id}-panel-${tab}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  <span className="settings-nav-icon" aria-hidden="true">
+                    {renderTabIcon(tab)}
+                  </span>
+                  <span className="settings-nav-label">{messages.settings.tabs[tab]}</span>
+                </button>
+              );
+            })}
+          </div>
+          {activeWorkspace && (
+            <div className="settings-sidebar-foot">
+              <span className="settings-sidebar-foot-label">
+                {messages.settings.activeWorkspaceLabel}
+              </span>
+              <span className="mono settings-sidebar-foot-path" title={activeWorkspace.root}>
+                {activeWorkspace.root}
+              </span>
+            </div>
+          )}
+        </nav>
 
         <div className="settings-panel-host">
           <div

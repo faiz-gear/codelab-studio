@@ -101,27 +101,16 @@
 .workspace-ide {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
-.workspace-ide select,
-.workspace-file-form input {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--foreground);
-  font: inherit;
-  font-size: 12px;
-}
-
-.workspace-ide select {
-  padding: 3px 4px;
+.workspace-ide-select {
+  min-width: 108px;
 }
 
 .workspace-file-form input {
   flex: 1;
   min-width: 80px;
-  padding: 6px 8px;
 }
 
 .workspace-error,
@@ -164,8 +153,14 @@
   min-height: 0;
 }
 
+.workspace-content.is-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
 .workspace-tree {
-  flex: 0 0 204px;
+  flex: 0 0 var(--tree-width, 204px);
+  min-width: 148px;
   overflow: auto;
   background: var(--sidebar-fill);
   border-inline-end: 1px solid var(--border);
@@ -365,8 +360,6 @@
 
 .workspace-tree-row:focus-visible,
 .workspace-tab > [role="tab"]:focus-visible,
-.workspace-ide select:focus-visible,
-.workspace-file-form input:focus-visible,
 .workspace-chapter-file:focus-visible {
   outline: none;
   box-shadow: var(--focus-outline);
@@ -377,8 +370,13 @@
     position: absolute;
     z-index: 10;
     inset: 0 auto 0 0;
-    width: min(204px, 45%);
+    width: min(var(--tree-width, 204px), 45%);
+    min-width: 0;
     background: var(--surface);
+  }
+
+  .split-x--tree {
+    display: none;
   }
 }
 
@@ -388,19 +386,23 @@
 }
 
 .draft-checkbox {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  font-size: 12.5px;
+  color: var(--foreground);
+  cursor: pointer;
 }
 
 .draft-controls label {
   flex: none;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.draft-controls .text-input {
+.draft-file-select {
   flex: 1;
-  min-width: 0;
+  min-width: 160px;
 }
 
 .draft-diagnostics {
@@ -420,8 +422,8 @@
 
 .workspace-snapshot-body {
   display: grid;
-  gap: 8px;
-  padding: 0 16px 16px;
+  gap: 10px;
+  padding: 14px 18px 16px;
   overflow: auto;
 }
 
@@ -429,21 +431,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.workspace-snapshot-picker label {
+  flex: none;
+  font-weight: 500;
 }
 
 .workspace-snapshot-select {
+  flex: 1;
   min-width: 0;
-  background: var(--background);
-  color: var(--foreground);
-  padding: 4px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-}
-
-.workspace-snapshot-select:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-outline);
+  max-width: 380px;
 }
 
 .workspace-snapshot-diff {

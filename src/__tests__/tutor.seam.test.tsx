@@ -47,17 +47,20 @@ describe("Pure ACP Tutor Session frontend seam (CoreClient)", () => {
     expect(panel.queryByText(/BYOK|API Key|Keychain/i)).toBeNull();
     expect(dialog.queryByRole("tab", { name: /BYOK/i })).toBeNull();
 
-    const presetSelect = panel.getByLabelText("Local ACP Agent preset");
-    expect(within(presetSelect).getAllByRole("option")).toHaveLength(5);
+    const presetSelect = panel.getByRole("combobox", { name: "Local ACP Agent preset" });
+    await user.click(presetSelect);
+    expect(panel.getAllByRole("option")).toHaveLength(5);
 
-    await user.selectOptions(presetSelect, "geminiCli");
+    await user.click(panel.getByRole("option", { name: /Gemini CLI/ }));
+    expect(presetSelect).toHaveTextContent(/Gemini CLI/);
     expect(panel.getByLabelText("Launch command")).toHaveValue("gemini --acp");
     expect(client.commandLog).toContainEqual({
       type: "updateSettings",
       payload: { tutor: { preset: "geminiCli", command: "gemini --acp" } },
     });
 
-    await user.selectOptions(presetSelect, "custom");
+    await user.click(presetSelect);
+    await user.click(panel.getByRole("option", { name: /Custom --acp launch command/ }));
     const cmdInput = panel.getByLabelText("Launch command");
     await user.clear(cmdInput);
     await user.type(cmdInput, "my-acp-cli --acp");

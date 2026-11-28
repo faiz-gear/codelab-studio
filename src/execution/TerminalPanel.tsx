@@ -29,6 +29,9 @@ export function TerminalPanel({
   messages,
   settings,
   disabled,
+  maximized: controlledMaximized,
+  onToggleMaximize,
+  onCloseLastTerminal,
   onError,
   onSelectionChange,
   onAskAI,
@@ -38,12 +41,17 @@ export function TerminalPanel({
   messages: Messages;
   settings: GlobalSettings;
   disabled: boolean;
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
+  onCloseLastTerminal?: () => void;
   onError: (error: unknown) => void;
   onSelectionChange?: (selection: ActiveSelection | null) => void;
   onAskAI?: (payload: { port: number | null; text: string }) => void;
 }) {
   const t = messages.execution;
-  const [maximized, setMaximized] = useState(false);
+  const [uncontrolledMaximized, setUncontrolledMaximized] = useState(false);
+  const maximized = controlledMaximized ?? uncontrolledMaximized;
+  const toggleMaximize = onToggleMaximize ?? (() => setUncontrolledMaximized((value) => !value));
   const [clearCount, setClearCount] = useState(0);
   const [errorContext, setErrorContext] = useState<string | null>(null);
   const [fallbackOutputs, setFallbackOutputs] = useState<Record<number, string>>({});
@@ -160,9 +168,12 @@ export function TerminalPanel({
             }
           }}>{t.clear}</button>
           <button className="btn btn--ghost btn--xs" type="button" aria-pressed={maximized}
-            onClick={() => setMaximized((value) => !value)}>{maximized ? t.restore : t.maximize}</button>
+            onClick={toggleMaximize}>{maximized ? t.restore : t.maximize}</button>
           <button className="btn btn--ghost btn--xs" type="button" disabled={busy} aria-label={t.close} title={t.close}
-            onClick={() => void workbench.updateTerminal({ type: "closeTerminal", payload: workbench.target(active.id) }).catch(onError)}>
+            onClick={() => {
+              if (state.terminals.length <= 1) onCloseLastTerminal?.();
+              void workbench.updateTerminal({ type: "closeTerminal", payload: workbench.target(active.id) }).catch(onError);
+            }}>
             <CloseIcon size={14} />
           </button>
         </>}

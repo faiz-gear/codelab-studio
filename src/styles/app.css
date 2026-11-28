@@ -1041,6 +1041,10 @@ p {
   overflow-y: auto;
 }
 
+.modal-body[hidden] {
+  display: none;
+}
+
 .modal-foot {
   display: flex;
   align-items: center;
@@ -1081,7 +1085,24 @@ p {
   font-size: 13px;
   transition:
     border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
     box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.text-input--sm {
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.text-input::placeholder {
+  color: var(--text-muted);
+}
+
+.text-input:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .text-input:focus {
@@ -1092,6 +1113,249 @@ p {
 
 .text-input:focus-visible {
   box-shadow: var(--focus-outline);
+}
+
+.text-input:hover:not(:disabled, :focus) {
+  border-color: var(--border-strong);
+}
+
+/* ---------- Unified Arc UI Select ---------- */
+.arc-select {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.arc-select--sm {
+  width: auto;
+}
+
+.arc-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: var(--input-h);
+  padding: 0 10px 0 11px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  box-shadow: var(--shadow-resting);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.arc-select-trigger--sm {
+  height: var(--btn-h-xs);
+  padding: 0 7px 0 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.arc-select-trigger:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.arc-select-trigger[aria-expanded="true"] {
+  border-color: var(--foreground);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.arc-select-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
+}
+
+.arc-select-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.arc-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arc-select-value.is-placeholder {
+  color: var(--text-muted);
+}
+
+.arc-select-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.arc-select-trigger[aria-expanded="true"] .arc-select-chevron {
+  transform: rotate(180deg);
+  color: var(--foreground);
+}
+
+.arc-select-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 140;
+  padding: 5px;
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-floating);
+  color: var(--foreground);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: pop-in var(--duration-fast) var(--ease-enter);
+}
+
+.arc-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--foreground);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.arc-select-menu--sm .arc-select-option {
+  padding: 6px 9px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.arc-select-option:hover:not(.is-disabled),
+.arc-select-option.is-active:not(.is-disabled) {
+  background: var(--hover-fill);
+}
+
+.arc-select-option.is-selected {
+  background: var(--surface-muted);
+  font-weight: 500;
+}
+
+.arc-select-option.is-selected.is-active:not(.is-disabled) {
+  background: var(--active-fill);
+}
+
+.arc-select-option.is-disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.arc-select-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.arc-select-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arc-select-option-desc {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arc-select-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: none;
+  color: var(--accent-strong);
+}
+
+/* ---------- Unified Arc UI Checkbox ---------- */
+.arc-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.arc-checkbox::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 1.8px solid var(--control-glyph);
+  border-bottom: 1.8px solid var(--control-glyph);
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  opacity: 0;
+  transition:
+    transform var(--duration-instant) var(--ease-standard),
+    opacity var(--duration-instant) var(--ease-standard);
+}
+
+.arc-checkbox:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.arc-checkbox:checked {
+  background: var(--control-on);
+  border-color: var(--control-on);
+}
+
+.arc-checkbox:checked::after {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+  opacity: 1;
+}
+
+.arc-checkbox:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-outline);
+  border-radius: 5px;
+}
+
+.arc-checkbox:hover:not(:disabled, :checked) {
+  border-color: var(--foreground);
 }
 
 .field-hint {
@@ -1777,7 +2041,7 @@ p {
   white-space: nowrap;
 }
 
-/* Splitter */
+/* Splitters */
 .split-x {
   width: 5px;
   flex: none;
@@ -1801,11 +2065,39 @@ p {
   background: var(--accent);
 }
 
+.split-y {
+  height: 5px;
+  flex: none;
+  cursor: row-resize;
+  position: relative;
+  z-index: 10;
+  margin: -2.5px 0;
+}
+
+.split-y::after {
+  content: "";
+  position: absolute;
+  inset: 2px 0;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.split-y:hover::after,
+.split-y.is-drag::after,
+.split-y:focus-visible::after {
+  background: var(--accent);
+}
+
+.wb.is-resizing-y {
+  user-select: none;
+  cursor: row-resize;
+}
+
 .wb.is-focus .manual-head-full,
 .wb.is-focus .manual-scroll,
 .wb.is-focus .outline-drawer,
 .wb.is-focus .reload-banner,
-.wb.is-focus .split-x {
+.wb.is-focus .split-x--manual {
   display: none;
 }
 
