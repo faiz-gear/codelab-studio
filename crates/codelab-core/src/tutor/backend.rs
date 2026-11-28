@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::error::{DomainError, ErrorCode};
+use crate::error::DomainError;
 
 use super::model::{AcpAgentPreset, TeachingStyle, TutorHandshakeResult, TutorPermissionKind};
 
@@ -54,7 +54,7 @@ pub enum BackendEvent {
     },
     TurnFailed {
         turn_id: String,
-        code: ErrorCode,
+        error: DomainError,
     },
     ProcessExited {
         exit_code: Option<i32>,

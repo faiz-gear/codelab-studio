@@ -35,6 +35,14 @@ const logPath = readFlag("--log=", "FAKE_ACP_LOG");
 const pidPath = readFlag("--pids=", "FAKE_ACP_PIDS");
 const markerPath = readFlag("--marker=", "FAKE_ACP_MARKER");
 const detachGrandchild = process.argv.slice(2).includes("--detach");
+const authStatusCap = process.argv.slice(2).includes("--auth-status-cap");
+const authStatusMode = readFlag("--auth-status=", "FAKE_ACP_AUTH_STATUS");
+const authFailOn = readFlag("--auth-fail-on=", "FAKE_ACP_AUTH_FAIL_ON");
+const authFilePath = readFlag("--auth-file=", "FAKE_ACP_AUTH_FILE");
+
+function isAuthedByFile() {
+  return !authFilePath || fs.existsSync(authFilePath);
+}
 
 if (markerPath) {
   fs.appendFileSync(markerPath, `spawn:${process.pid}\n`);
@@ -126,19 +134,53 @@ rl.on("line", async (line) => {
 
   if (msg.method === "initialize") {
     logEvent({ method: "initialize", pid: process.pid });
+    const capabilities = authStatusCap
+      ? { loadSession: false, auth: { status: true } }
+      : { loadSession: false };
     send({
       jsonrpc: "2.0",
       id: msg.id,
       result: {
         protocolVersion: 1,
         agentInfo: { name: "Fake ACP Agent", version: "1.0.0" },
-        agentCapabilities: { loadSession: false },
+        agentCapabilities: capabilities,
       },
     });
     return;
   }
 
+  if (msg.method === "auth/status") {
+    logEvent({ method: "auth/status", mode: authStatusMode });
+    if (authStatusMode === "unauthenticated") {
+      send({ jsonrpc: "2.0", id: msg.id, result: { authenticated: false } });
+    } else if (authStatusMode === "rpc_error") {
+      send({
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32000, message: "Authentication required" },
+      });
+    } else if (authStatusMode === "unsupported") {
+      send({
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32601, message: "Method not found" },
+      });
+    } else {
+      send({ jsonrpc: "2.0", id: msg.id, result: { authenticated: true } });
+    }
+    return;
+  }
+
   if (msg.method === "session/new") {
+    if (authFailOn === "session_new" && !isAuthedByFile()) {
+      logEvent({ method: "session/new", authRequired: true });
+      send({
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32000, message: "Authentication required" },
+      });
+      return;
+    }
     sessionSeq += 1;
     const sessionId = `sess-${process.pid}-${sessionSeq}`;
     logEvent({ method: "session/new", sessionId, cwd: msg.params?.cwd });
@@ -161,6 +203,15 @@ rl.on("line", async (line) => {
   if (msg.method === "session/prompt") {
     const promptText = msg.params?.prompt?.[0]?.text || "";
     logEvent({ method: "session/prompt", sessionId: msg.params?.sessionId, text: promptText });
+
+    if (authFailOn === "session_prompt" && !isAuthedByFile()) {
+      send({
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32000, message: "Authentication required" },
+      });
+      return;
+    }
 
     if (promptText.includes("CMD:CRASH")) {
       sendChunk("partial-before-crash");
@@ -2324,6 +2375,457 @@ fn trailing_separator_program_is_not_resolved_from_path() {
         }))
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::AcpAgentStartFailed);
+}
+
+#[cfg(unix)]
+#[test]
+fn desktop_launch_discovers_acp_adapters_under_node_version_managers_while_prioritizing_path() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::process::Command;
+
+    if let Some(data_dir) = std::env::var_os("CODELAB_DESKTOP_DISCOVERY_TEST_DATA") {
+        let app = App::open(AppConfig {
+            data_dir: PathBuf::from(data_dir),
+        })
+        .unwrap();
+
+        for (command, expected_name) in [
+            ("fake-nvm-acp", "NVM Adapter"),
+            ("fake-fnm-acp", "FNM Adapter"),
+            ("fake-volta-acp", "Volta Adapter"),
+            ("fake-npm-global-acp", "NPM Global Adapter"),
+            ("fake-priority-acp", "PATH Winner"),
+        ] {
+            let AppResponse::TutorHandshake(res) = app
+                .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+                    preset: AcpAgentPreset::Custom,
+                    command: command.to_owned(),
+                }))
+                .unwrap_or_else(|err| panic!("expected handshake for {command}, got {err:?}"))
+            else {
+                panic!("expected TutorHandshake for {command}");
+            };
+            assert_eq!(
+                res.agent_name.as_deref(),
+                Some(expected_name),
+                "unexpected agent resolved for {command}"
+            );
+        }
+        return;
+    }
+
+    let node_path = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join("node"))
+        .find(|p| p.is_file())
+        .expect("node executable on PATH for test");
+
+    let temp = TempDir::new().unwrap();
+    let fake_home = temp.path().join("home");
+    let path_bin = temp.path().join("path-bin");
+    let nvm_v20_bin = fake_home.join(".nvm/versions/node/v20.11.0/bin");
+    let nvm_v22_bin = fake_home.join(".nvm/versions/node/v22.14.0/bin");
+    let nvm_alias_dir = fake_home.join(".nvm/alias");
+    let fnm_bin = fake_home.join(".local/share/fnm/aliases/default/bin");
+    let volta_bin = fake_home.join(".volta/bin");
+    let npm_global_bin = fake_home.join(".npm-global/bin");
+    for dir in [
+        &path_bin,
+        &nvm_v20_bin,
+        &nvm_v22_bin,
+        &nvm_alias_dir,
+        &fnm_bin,
+        &volta_bin,
+        &npm_global_bin,
+    ] {
+        fs::create_dir_all(dir).unwrap();
+    }
+    fs::write(nvm_alias_dir.join("default"), "22\n").unwrap();
+    symlink(&node_path, nvm_v22_bin.join("node")).unwrap();
+
+    let write_adapter = |dir: &Path, name: &str, agent_label: &str| {
+        let script = format!(
+            "#!/usr/bin/env node\n\
+             const rl = require('node:readline').createInterface({{ input: process.stdin }});\n\
+             rl.on('line', (line) => {{\n\
+               if (!line.trim()) return;\n\
+               const msg = JSON.parse(line);\n\
+               if (msg.method === 'initialize') {{\n\
+                 process.stdout.write(JSON.stringify({{ jsonrpc: '2.0', id: msg.id, result: {{ protocolVersion: 1, agentInfo: {{ name: '{agent_label}', version: '1.0.0' }} }} }}) + '\\n');\n\
+               }}\n\
+             }});\n"
+        );
+        let file = dir.join(name);
+        fs::write(&file, script).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).unwrap();
+    };
+
+    write_adapter(&nvm_v20_bin, "fake-nvm-acp", "NVM Old Adapter");
+    write_adapter(&nvm_v22_bin, "fake-nvm-acp", "NVM Adapter");
+    write_adapter(&fnm_bin, "fake-fnm-acp", "FNM Adapter");
+    write_adapter(&volta_bin, "fake-volta-acp", "Volta Adapter");
+    write_adapter(&npm_global_bin, "fake-npm-global-acp", "NPM Global Adapter");
+    write_adapter(&path_bin, "fake-priority-acp", "PATH Winner");
+    write_adapter(&npm_global_bin, "fake-priority-acp", "Fallback Loser");
+
+    let minimal_gui_path = format!("{}:/usr/bin:/bin", path_bin.display());
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "desktop_launch_discovers_acp_adapters_under_node_version_managers_while_prioritizing_path",
+        ])
+        .env("CODELAB_DESKTOP_DISCOVERY_TEST_DATA", temp.path().join("data"))
+        .env("HOME", &fake_home)
+        .env("PATH", &minimal_gui_path)
+        .env_remove("NVM_DIR")
+        .env_remove("NVM_BIN")
+        .env_remove("FNM_DIR")
+        .env_remove("VOLTA_HOME")
+        .env_remove("NPM_CONFIG_PREFIX")
+        .env_remove("PNPM_HOME")
+        .env_remove("XDG_DATA_HOME")
+        .output()
+        .unwrap();
+    assert!(
+        child.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&child.stdout),
+        String::from_utf8_lossy(&child.stderr)
+    );
+}
+
+#[test]
+fn missing_acp_adapter_returns_structured_not_found_error_with_preset_and_command() {
+    let temp = TempDir::new().unwrap();
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    let (workspace_id, _) = open_trusted_workspace(&temp, &app, "work-missing");
+
+    // 1. Handshake reports AcpAdapterNotFound with preset & command details.
+    let handshake_err = app
+        .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+            preset: AcpAgentPreset::ClaudeCode,
+            command: "codelab-missing-claude-agent-acp-bin".into(),
+        }))
+        .unwrap_err();
+    assert_eq!(handshake_err.code, ErrorCode::AcpAdapterNotFound);
+    assert_eq!(
+        handshake_err.details.get("preset").map(String::as_str),
+        Some("claudeCode")
+    );
+    assert_eq!(
+        handshake_err.details.get("command").map(String::as_str),
+        Some("codelab-missing-claude-agent-acp-bin")
+    );
+
+    // 2. Prompt turn reports AcpAdapterNotFound in both return error and TutorSessionSnapshot.
+    app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        tutor: Some(TutorSettingsPatch {
+            preset: Some(AcpAgentPreset::CodexCli),
+            command: Some("codelab-missing-codex-acp-bin".into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+    .unwrap();
+    let prompt_err = app
+        .execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+            workspace_id,
+            prompt: "hello".into(),
+            teaching_style: None,
+            context_preamble: None,
+            context: None,
+        }))
+        .unwrap_err();
+    assert_eq!(prompt_err.code, ErrorCode::AcpAdapterNotFound);
+    assert_eq!(
+        prompt_err.details.get("preset").map(String::as_str),
+        Some("codexCli")
+    );
+    assert_eq!(
+        prompt_err.details.get("command").map(String::as_str),
+        Some("codelab-missing-codex-acp-bin")
+    );
+
+    let AppResponse::TutorSession(snapshot) = app
+        .execute(AppCommand::GetTutorSession(WorkspaceTutorRequest {
+            workspace_id,
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorSession");
+    };
+    assert_eq!(snapshot.status, TutorSessionStatus::Error);
+    assert!(snapshot.can_retry);
+    let last_err = snapshot.last_error.as_ref().expect("last error");
+    assert_eq!(last_err.code, ErrorCode::AcpAdapterNotFound);
+    assert_eq!(
+        last_err.details.get("preset").map(String::as_str),
+        Some("codexCli")
+    );
+    let failed_msg = snapshot.messages.last().expect("assistant message");
+    assert_eq!(failed_msg.status, TutorMessageStatus::Failed);
+    assert_eq!(
+        failed_msg.error.as_ref().map(|e| e.code),
+        Some(ErrorCode::AcpAdapterNotFound)
+    );
+}
+
+#[test]
+fn acp_auth_required_on_session_new_and_session_prompt_surfaces_structured_error_and_recovers_on_retry()
+ {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+    let (workspace_id, _) = open_trusted_workspace(&temp, &app, "work-auth");
+
+    // Case A: codex-acp pattern — JSON-RPC -32000 on session/new.
+    let codex_auth_marker = temp.path().join("codex-logged-in");
+    let codex_cmd = format!(
+        "{} --auth-fail-on=session_new \"--auth-file={}\"",
+        node_command(&script),
+        path_str(&codex_auth_marker)
+    );
+    app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        tutor: Some(TutorSettingsPatch {
+            preset: Some(AcpAgentPreset::CodexCli),
+            command: Some(codex_cmd.clone()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+    .unwrap();
+    let err = app
+        .execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+            workspace_id,
+            prompt: "explain channels".into(),
+            teaching_style: None,
+            context_preamble: None,
+            context: None,
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::AcpAuthRequired);
+    assert_eq!(
+        err.details.get("preset").map(String::as_str),
+        Some("codexCli")
+    );
+    assert_eq!(
+        err.details.get("command").map(String::as_str),
+        Some(codex_cmd.as_str())
+    );
+    let AppResponse::TutorSession(codex_snap) = app
+        .execute(AppCommand::GetTutorSession(WorkspaceTutorRequest {
+            workspace_id,
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorSession");
+    };
+    assert!(codex_snap.can_retry);
+    assert_eq!(
+        codex_snap.last_error.as_ref().map(|e| e.code),
+        Some(ErrorCode::AcpAuthRequired)
+    );
+
+    // After learner runs `codex login`, Retry succeeds.
+    fs::write(&codex_auth_marker, "ok").unwrap();
+    app.execute(AppCommand::RetryTutorTurn(WorkspaceTutorRequest {
+        workspace_id,
+    }))
+    .unwrap();
+    let codex_ok = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready
+            && s.messages
+                .last()
+                .is_some_and(|m| m.status == TutorMessageStatus::Completed)
+    });
+    assert!(
+        codex_ok
+            .messages
+            .last()
+            .unwrap()
+            .content
+            .contains("style=socratic")
+    );
+
+    // Case B: claude-agent-acp pattern — JSON-RPC -32000 on session/prompt.
+    let claude_auth_marker = temp.path().join("claude-logged-in");
+    let claude_cmd = format!(
+        "{} --auth-fail-on=session_prompt \"--auth-file={}\"",
+        node_command(&script),
+        path_str(&claude_auth_marker)
+    );
+    app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+        tutor: Some(TutorSettingsPatch {
+            preset: Some(AcpAgentPreset::ClaudeCode),
+            command: Some(claude_cmd.clone()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+    .unwrap();
+    app.execute(AppCommand::SendTutorPrompt(SendTutorPrompt {
+        workspace_id,
+        prompt: "explain goroutines".into(),
+        teaching_style: None,
+        context_preamble: None,
+        context: None,
+    }))
+    .unwrap();
+    let claude_failed = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Error
+            && !s.process_running
+            && s.can_retry
+            && s.messages
+                .last()
+                .is_some_and(|m| m.status == TutorMessageStatus::Failed)
+    });
+    let prompt_auth_err = claude_failed.last_error.as_ref().expect("auth error");
+    assert_eq!(prompt_auth_err.code, ErrorCode::AcpAuthRequired);
+    assert_eq!(
+        prompt_auth_err.details.get("preset").map(String::as_str),
+        Some("claudeCode")
+    );
+    assert_eq!(
+        prompt_auth_err.details.get("command").map(String::as_str),
+        Some(claude_cmd.as_str())
+    );
+    assert_eq!(
+        claude_failed
+            .messages
+            .last()
+            .unwrap()
+            .error
+            .as_ref()
+            .map(|e| e.code),
+        Some(ErrorCode::AcpAuthRequired)
+    );
+
+    // After learner runs `claude auth login`, Retry spawns a fresh process and succeeds.
+    fs::write(&claude_auth_marker, "ok").unwrap();
+    app.execute(AppCommand::RetryTutorTurn(WorkspaceTutorRequest {
+        workspace_id,
+    }))
+    .unwrap();
+    let claude_ok = wait_for_snapshot(&app, workspace_id, Duration::from_secs(5), |s| {
+        s.status == TutorSessionStatus::Ready
+            && s.messages
+                .last()
+                .is_some_and(|m| m.status == TutorMessageStatus::Completed)
+    });
+    assert!(
+        claude_ok
+            .messages
+            .last()
+            .unwrap()
+            .content
+            .contains("style=socratic")
+    );
+    app.shutdown().unwrap();
+}
+
+#[test]
+fn handshake_checks_auth_status_when_advertised_and_skips_when_absent() {
+    let temp = TempDir::new().unwrap();
+    let script = write_fake_agent(temp.path());
+    let app = App::open(AppConfig {
+        data_dir: temp.path().join("data"),
+    })
+    .unwrap();
+
+    // 1. Advertised auth.status + unauthenticated -> AcpAuthRequired with preset/command.
+    let unauth_cmd = format!(
+        "{} --auth-status-cap --auth-status=unauthenticated",
+        node_command(&script)
+    );
+    let err = app
+        .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+            preset: AcpAgentPreset::CodexCli,
+            command: unauth_cmd.clone(),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::AcpAuthRequired);
+    assert_eq!(
+        err.details.get("preset").map(String::as_str),
+        Some("codexCli")
+    );
+    assert_eq!(
+        err.details.get("command").map(String::as_str),
+        Some(unauth_cmd.as_str())
+    );
+
+    // 2. Advertised auth.status + JSON-RPC -32000 -> AcpAuthRequired.
+    let rpc_err_cmd = format!(
+        "{} --auth-status-cap --auth-status=rpc_error",
+        node_command(&script)
+    );
+    let rpc_err = app
+        .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+            preset: AcpAgentPreset::ClaudeCode,
+            command: rpc_err_cmd,
+        }))
+        .unwrap_err();
+    assert_eq!(rpc_err.code, ErrorCode::AcpAuthRequired);
+    assert_eq!(
+        rpc_err.details.get("preset").map(String::as_str),
+        Some("claudeCode")
+    );
+
+    // 3. Advertised auth.status + authenticated -> succeeds and calls auth/status.
+    let authed_log = temp.path().join("authed.log");
+    let authed_cmd = format!(
+        "{} --auth-status-cap --auth-status=authenticated \"--log={}\"",
+        node_command(&script),
+        path_str(&authed_log)
+    );
+    let AppResponse::TutorHandshake(ok_res) = app
+        .execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+            preset: AcpAgentPreset::ClaudeCode,
+            command: authed_cmd,
+        }))
+        .unwrap()
+    else {
+        panic!("expected TutorHandshake");
+    };
+    assert_eq!(ok_res.agent_name.as_deref(), Some("Fake ACP Agent"));
+    assert!(
+        fs::read_to_string(&authed_log)
+            .unwrap()
+            .contains("\"method\":\"auth/status\"")
+    );
+
+    // 4. Not advertised -> skips auth/status and succeeds.
+    let no_cap_log = temp.path().join("nocap.log");
+    let no_cap_cmd = format!(
+        "{} \"--log={}\"",
+        node_command(&script),
+        path_str(&no_cap_log)
+    );
+    app.execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+        preset: AcpAgentPreset::ClaudeCode,
+        command: no_cap_cmd,
+    }))
+    .unwrap();
+    assert!(
+        !fs::read_to_string(&no_cap_log)
+            .unwrap()
+            .contains("\"method\":\"auth/status\"")
+    );
+
+    // 5. Advertised auth.status returning -32601 -> gracefully skips and succeeds.
+    let unsupported_cmd = format!(
+        "{} --auth-status-cap --auth-status=unsupported",
+        node_command(&script)
+    );
+    app.execute(AppCommand::TestTutorHandshake(TutorHandshakeRequest {
+        preset: AcpAgentPreset::CodexCli,
+        command: unsupported_cmd,
+    }))
+    .unwrap();
 }
 
 fn wait_for_pid_file(path: &Path) -> serde_json::Value {

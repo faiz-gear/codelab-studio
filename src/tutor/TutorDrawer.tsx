@@ -32,6 +32,7 @@ import {
   type EditorTab,
   type WorkspaceEditorSession,
 } from "../workspace/editorSession";
+import { TutorErrorNotice } from "./TutorErrorNotice";
 import { TutorFileDiffDialog } from "./TutorFileDiffDialog";
 import { TutorPermissionCard } from "./TutorPermissionCard";
 import type { EditorCursorContext, TutorAskRequest } from "./contextRequest";
@@ -650,9 +651,13 @@ export function TutorDrawer({
                     )}
 
                     {message.status === "failed" && message.error && (
-                      <div className="inline-alert inline-alert--danger" role="alert">
-                        {formatDomainError(message.error, settings.locale)}
-                      </div>
+                      <TutorErrorNotice
+                        error={message.error}
+                        fallbackPreset={snapshot?.preset ?? settings.tutor.preset}
+                        locale={settings.locale}
+                        messages={messages}
+                        onOpenSettings={(trigger) => onOpenTutorSettings(trigger)}
+                      />
                     )}
                   </article>
                 );

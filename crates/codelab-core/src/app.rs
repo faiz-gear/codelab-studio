@@ -357,7 +357,10 @@ impl App {
         ));
         let trust_store = JsonStore::new(&data_dir, "trust.json", StoreKind::Trust);
 
-        let settings_loaded = settings_store.load_or_recover(is_valid_settings)?;
+        let mut settings_loaded = settings_store.load_or_recover(is_valid_settings)?;
+        if settings_loaded.value.tutor.migrate_legacy_defaults() {
+            settings_store.save_atomic(&settings_loaded.value)?;
+        }
         let recents_loaded = recents_store.load_or_recover(|entries: &Vec<RecentWorkspace>| {
             entries.iter().all(|item| {
                 !item.workspace_path.trim().is_empty()

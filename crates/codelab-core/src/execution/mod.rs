@@ -45,12 +45,33 @@ pub(crate) fn spawn_piped(
     directory: Directory,
 ) -> io::Result<(Process, Ports)> {
     let program = resolve_piped_program(program);
+    let env = piped_environment(&program);
     Process::spawn_piped(Spawn {
         program,
         args,
-        env: BTreeMap::new(),
+        env,
         directory,
     })
+}
+
+fn piped_environment(program: &Path) -> BTreeMap<OsString, OsString> {
+    let mut dirs: Vec<PathBuf> =
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
+    if let Some(parent) = program.parent().filter(|p| p.is_absolute() && p.is_dir())
+        && !dirs.iter().any(|existing| existing == parent)
+    {
+        dirs.push(parent.to_path_buf());
+    }
+    for dir in crate::runtime::host_search_directories() {
+        if dir.is_dir() && !dirs.iter().any(|existing| existing == &dir) {
+            dirs.push(dir);
+        }
+    }
+    let mut env = BTreeMap::new();
+    if let Ok(joined) = std::env::join_paths(dirs) {
+        env.insert(OsString::from("PATH"), joined);
+    }
+    env
 }
 
 fn resolve_piped_program(program: PathBuf) -> PathBuf {

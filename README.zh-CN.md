@@ -16,7 +16,7 @@ CodeLab Studio 将只读的 Course 内容与可写的本地代码目录分离。
 - **原生终端与 Managed Daemon。** 交互终端在 Unix 上基于 `openpty`，在 Windows 上基于 ConPTY。CodeLab Studio 会把 `daemon` 类型的 Command Block 路由到具名服务终端，把 `oneshot` 类型的 Command Block 路由到空闲终端。Managed Daemon 是由工作台启动并追踪生命周期的常驻服务。验收运行前，如果章节声明了所需服务且尚未启动或源码已更新，工作台会自动启动或重启该 Managed Daemon。如果目标端口已被外部进程占用，工作台会报告 `DAEMON_PORT_CONFLICT`，不会终止外部进程。
 - **无头 Exercise 验收。** 自动 Check 运行在 Unix 独立进程组或 Windows Job Object 中，不污染交互终端。支持的 Check 类型包括 `http_assert`、`command_test`、`test_suite` 和 `self_check`。语言适配器调用真实本地测试框架，包括 `go test -json -race`、`bun test` 或 Node、`pytest --json-report` 以及 `javac` 与 JUnit 5，并输出结构化的预期与实际 Diff。所有必选 Check 通过后，Exercise 标记为完成，且该完成态在后续修改中保持粘性，直到你显式重置进度。完整的 Check 规则与超时说明见 [`docs/verification.md`](docs/verification.md)。
 - **隔离的 Managed Runtime。** **环境体检** 会并行探测本机工具链。当系统工具链缺失或版本过低时，CodeLab Studio 可以按需安装 Managed Runtime，你也可以在 **设置** 中开启 **优先托管版**。每个归档包均经过 SHA-256 校验并解压到隔离的 `runtimes/` 目录，不改动系统 `PATH`。支持的 Managed Runtime 包括 Bun `1.3.13`、Go `1.23.12`、Eclipse Temurin JDK `21.0.13.1+2` 与 JUnit `1.13.4`，以及 `uv` `0.11.6`、Python `3.12.13` 与 `pytest` `8.4.2`。
-- **本机 ACP 助教。** **AI 助教** 通过 ACP 连接你本机已认证的编码 Agent CLI，ACP 即基于 stdio 的 JSON-RPC 2.0 Agent Client Protocol。内置预设包括 Claude Code 的 `claude --acp`、Gemini CLI 的 `gemini --acp`、Codex CLI 的 `codex --acp`、OpenCode 的 `opencode acp` 以及自定义命令。每个 Workspace 复用一个 Tutor Session。每次提问附带可逐项移除的 Context Snapshot，输入上限为 6,000 tokens，涵盖当前章节、活跃文件、近期终端报错和验收状态，并在装配前过滤 `.env`、`*secret*` 和 `*key*` 文件。助教支持苏格拉底式引导与直接解答两种风格。默认 Permission Policy 为 `guided_readonly`，自动放行 Workspace 内非敏感文件只读，对写入、命令执行和越界读取弹出审批卡。你可以在 **设置** 中切换为 `strict_ask_all`。v1 仅支持本机 ACP 助教，不包含外部 LLM API Key 配置，范围决策见 [ADR-0004](docs/adr/0004-v1-acp-only-ai-tutor.md)。
+- **本机 ACP 助教。** **AI 助教** 通过 ACP 连接你本机已认证的编码 Agent CLI，ACP 即基于 stdio 的 JSON-RPC 2.0 Agent Client Protocol。内置预设包括 Claude Code 的 `claude-agent-acp`、Gemini CLI 的 `gemini --acp`、Codex CLI 的 `codex-acp`、OpenCode 的 `opencode acp` 以及自定义命令。每个 Workspace 复用一个 Tutor Session。每次提问附带可逐项移除的 Context Snapshot，输入上限为 6,000 tokens，涵盖当前章节、活跃文件、近期终端报错和验收状态，并在装配前过滤 `.env`、`*secret*` 和 `*key*` 文件。助教支持苏格拉底式引导与直接解答两种风格。默认 Permission Policy 为 `guided_readonly`，自动放行 Workspace 内非敏感文件只读，对写入、命令执行和越界读取弹出审批卡。你可以在 **设置** 中切换为 `strict_ask_all`。v1 仅支持本机 ACP 助教，不包含外部 LLM API Key 配置，范围决策见 [ADR-0004](docs/adr/0004-v1-acp-only-ai-tutor.md)。
 - **双语界面与外观。** 界面支持简体中文 `zh-CN` 和英文 `en-US`，默认使用简体中文。你可以切换浅色与深色主题，在 8 组强调色中选择，并将代码字号设置在 `11` 到 `20` px 之间。
 
 ## 内置 Course Pack
@@ -49,7 +49,7 @@ node -e '
 - Node.js 22 或更新版本，以及 `pnpm` 12。
 - Rust stable 工具链，包含 `rustfmt` 和 `clippy`，支持 Rust edition 2024。
 - Go 1.22 或更新版本，用于运行完整的 Rust 集成测试套件。
-- 本机已安装的 ACP 代理 CLI，例如 `claude`、`gemini`、`codex` 或 `opencode`，用于启用 **AI 助教**。
+- 本机已安装的 ACP 兼容代理 CLI 或适配器，例如 `claude-agent-acp`（Claude Code）、`gemini`、`codex-acp`（Codex CLI）或 `opencode`，用于启用 **AI 助教**。
 
 在 Debian 或 Ubuntu 上构建前，先安装 Tauri 2 所需的系统库：
 

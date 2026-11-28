@@ -359,16 +359,70 @@ export const enUS: Messages = {
       "Connect directly to your locally authenticated ACP coding agent. Processes start lazily on your first prompt or handshake test.",
     presetLabel: "Local ACP Agent preset",
     presets: {
-      claudeCode: "Claude Code (claude --acp)",
+      claudeCode: "Claude Code (claude-agent-acp)",
       geminiCli: "Gemini CLI (gemini --acp)",
-      codexCli: "Codex CLI (codex --acp)",
+      codexCli: "Codex CLI (codex-acp)",
       openCode: "OpenCode (opencode acp)",
-      custom: "Custom --acp launch command",
+      custom: "Custom ACP launch command",
     },
     commandLabel: "Launch command",
     commandPlaceholder: "e.g. my-agent --acp",
     commandHint:
       "Changing the agent or command tears down any active process and starts a fresh ACP session on your next prompt.",
+    guidance: {
+      openSettingsAction: "Open ACP Tutor Settings",
+      presets: {
+        claudeCode: {
+          setupHint:
+            "Uses the local Claude Agent ACP adapter (@agentclientprotocol/claude-agent-acp) and reuses your existing Claude Code login (claude auth login).",
+          installSummary:
+            "Install the Claude Agent ACP adapter globally in your terminal, then test the handshake or retry:",
+          installCommand: "npm install -g @agentclientprotocol/claude-agent-acp",
+          authSummary:
+            "Sign in with Claude Code in a terminal (reusing your local login), then retry:",
+          loginCommand: "claude auth login",
+        },
+        geminiCli: {
+          setupHint:
+            "Connects directly to Gemini CLI over ACP (gemini --acp) using your existing local login.",
+          installSummary:
+            "Install Gemini CLI globally so gemini is available on PATH, then retry:",
+          installCommand: "npm install -g @google/gemini-cli",
+          authSummary: "Run Gemini CLI in a terminal to complete local login, then retry:",
+          loginCommand: "gemini",
+        },
+        codexCli: {
+          setupHint:
+            "Uses the local Codex ACP adapter (@agentclientprotocol/codex-acp) and reuses your existing Codex CLI login (codex login).",
+          installSummary:
+            "Install the Codex ACP adapter globally in your terminal, then test the handshake or retry:",
+          installCommand: "npm install -g @agentclientprotocol/codex-acp",
+          authSummary:
+            "Sign in with Codex CLI in a terminal (reusing your local login), then retry:",
+          loginCommand: "codex login",
+        },
+        openCode: {
+          setupHint:
+            "Connects directly to OpenCode over ACP (opencode acp) using your existing local provider login.",
+          installSummary:
+            "Install the OpenCode CLI and ensure opencode is available on PATH, or enter its absolute executable path above.",
+          installCommand: null,
+          authSummary:
+            "Run OpenCode in a terminal to sign in with your configured provider, then retry:",
+          loginCommand: "opencode",
+        },
+        custom: {
+          setupHint:
+            "Enter any local ACP-compatible launch command or absolute executable path.",
+          installSummary:
+            "Confirm the executable is installed and available on PATH, or enter its absolute path in Launch command.",
+          installCommand: null,
+          authSummary:
+            "Complete provider sign-in in your local agent CLI from a terminal, then retry.",
+          loginCommand: null,
+        },
+      },
+    },
     policyLabel: "Permission Policy",
     policyGroupLabel: "Choose ACP Permission Policy",
     policies: {
@@ -647,7 +701,11 @@ export const enUS: Messages = {
     COMMAND_SHELL_UNAVAILABLE: "The {shell} shell is unavailable. On Windows, Git for Windows provides bash and sh.",
     TERMINAL_NOT_FOUND: "This terminal is no longer available.",
     ACP_COMMAND_INVALID: "The ACP launch command is empty or has invalid quoting. Check your settings.",
+    ACP_ADAPTER_NOT_FOUND:
+      "Could not find the local ACP executable “{command}”. Install the adapter or update the launch command.",
     ACP_AGENT_START_FAILED: "Could not start the local ACP agent process. Check that the CLI is installed and executable.",
+    ACP_AUTH_REQUIRED:
+      "Provider authentication is required before this local ACP agent can reply. Complete CLI sign-in and retry.",
     ACP_HANDSHAKE_FAILED: "The ACP handshake failed or timed out. Verify the command speaks JSON-RPC 2.0 ACP.",
     ACP_PROTOCOL_ERROR: "ACP protocol communication failed. Try again or check your agent configuration.",
     ACP_PROCESS_EXITED: "The ACP agent process exited unexpectedly. Click Retry to reconnect.",

@@ -17,7 +17,9 @@ use install::RuntimeRecipe;
 
 pub use model::*;
 pub use probe::{HostProbeResult, HostToolchainProbe};
-pub(crate) use probe::{executable_name, find_host_executable, probe_executable_output};
+pub(crate) use probe::{
+    executable_name, find_host_executable, host_search_directories, probe_executable_output,
+};
 
 const LANGUAGES: [(CourseLanguage, &[HostTool], HostTool); 4] = [
     (

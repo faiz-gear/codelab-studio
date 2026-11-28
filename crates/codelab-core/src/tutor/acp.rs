@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -18,11 +18,12 @@ use super::backend::{
     BackendEvent, BackendEventSink, BackendPermissionPrompt, TutorBackend, TutorBackendSession,
     TutorLaunchSpec, TutorTurnInput, compose_turn_prompt,
 };
-use super::model::{TutorHandshakeResult, TutorPermissionKind};
+use super::model::{AcpAgentPreset, TutorHandshakeResult, TutorPermissionKind};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const EXIT_CODE_GRACE: Duration = Duration::from_millis(250);
 const MAX_RPC_LINE_BYTES: usize = 4 * 1024 * 1024;
+const ACP_AUTH_REQUIRED_CODE: i64 = -32000;
 const CLIENT_NAME: &str = "codelab-studio";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -33,16 +34,11 @@ pub struct AcpStdioBackend;
 impl TutorBackend for AcpStdioBackend {
     fn handshake(&self, spec: &TutorLaunchSpec) -> Result<TutorHandshakeResult, DomainError> {
         let (program, args) = split_command_line(&spec.command)?;
-        let (child, stdout, stdin) = spawn_acp_process(&program, &args, &spec.cwd)?;
+        let (child, stdout, stdin) = spawn_acp_process(spec, &program, &args)?;
 
         let child = Arc::new(Mutex::new(Some(child)));
         let stdin = Arc::new(Mutex::new(Some(stdin)));
         let pending: PendingClientMap = Arc::new(Mutex::new(HashMap::new()));
-        let (tx, rx) = mpsc::channel();
-        pending
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(1, tx);
 
         let reader_pending = Arc::clone(&pending);
         let reader_child = Arc::clone(&child);
@@ -60,7 +56,6 @@ impl TutorBackend for AcpStdioBackend {
                         .remove(&id)
                 {
                     let _ = sender.send(value);
-                    break;
                 }
             }
             reader_pending
@@ -70,15 +65,35 @@ impl TutorBackend for AcpStdioBackend {
             let _ = reader_child;
         });
 
-        let init_req = initialize_request(1);
-        let write_result = write_json_line(&stdin, &init_req);
-        let outcome = match write_result {
-            Err(_) => Err(DomainError::new(ErrorCode::AcpHandshakeFailed)
-                .with_detail("command", spec.command.clone())),
-            Ok(()) => match rx.recv_timeout(HANDSHAKE_TIMEOUT) {
-                Ok(response) => parse_initialize_result(spec, &response),
-                Err(_) => Err(DomainError::new(ErrorCode::AcpHandshakeFailed)
-                    .with_detail("command", spec.command.clone())),
+        let outcome = match call_handshake_rpc(
+            &stdin,
+            &pending,
+            1,
+            &initialize_request(1),
+            HANDSHAKE_TIMEOUT,
+        ) {
+            None => Err(handshake_failed_error(spec)),
+            Some(init_response) => match parse_initialize_result(spec, &init_response) {
+                Err(err) => Err(err),
+                Ok(result) => {
+                    if advertises_auth_status(&init_response) {
+                        let auth_req = json!({
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "auth/status",
+                            "params": {},
+                        });
+                        if let Some(auth_resp) =
+                            call_handshake_rpc(&stdin, &pending, 2, &auth_req, HANDSHAKE_TIMEOUT)
+                        {
+                            check_auth_status_response(spec, &auth_resp).map(|()| result)
+                        } else {
+                            Ok(result)
+                        }
+                    } else {
+                        Ok(result)
+                    }
+                }
             },
         };
 
@@ -123,6 +138,8 @@ struct AcpStdioSession {
     active_turn: Arc<Mutex<Option<ActiveTurnState>>>,
     shutting_down: Arc<AtomicBool>,
     next_rpc_id: AtomicU64,
+    preset: AcpAgentPreset,
+    command: String,
     session_id: String,
     agent_name: Option<String>,
     sink: BackendEventSink,
@@ -131,7 +148,7 @@ struct AcpStdioSession {
 impl AcpStdioSession {
     fn spawn(spec: &TutorLaunchSpec, sink: BackendEventSink) -> Result<Self, DomainError> {
         let (program, args) = split_command_line(&spec.command)?;
-        let (child, stdout, stdin) = spawn_acp_process(&program, &args, &spec.cwd)?;
+        let (child, stdout, stdin) = spawn_acp_process(spec, &program, &args)?;
 
         let child = Arc::new(Mutex::new(Some(child)));
         let stdin = Arc::new(Mutex::new(Some(stdin)));
@@ -228,6 +245,7 @@ impl AcpStdioSession {
                 })
                 .map_err(|_| {
                     DomainError::new(ErrorCode::AcpAgentStartFailed)
+                        .with_detail("preset", spec.preset.id())
                         .with_detail("command", spec.command.clone())
                 })?;
         }
@@ -240,6 +258,8 @@ impl AcpStdioSession {
             active_turn,
             shutting_down,
             next_rpc_id: AtomicU64::new(1),
+            preset: spec.preset,
+            command: spec.command.clone(),
             session_id: String::new(),
             agent_name: None,
             sink,
@@ -250,7 +270,7 @@ impl AcpStdioSession {
             initialize_params(),
             HANDSHAKE_TIMEOUT,
             ErrorCode::AcpHandshakeFailed,
-            &spec.command,
+            spec,
         );
         let handshake = match init_response.and_then(|resp| parse_initialize_result(spec, &resp)) {
             Ok(info) => info,
@@ -270,22 +290,21 @@ impl AcpStdioSession {
             }),
             HANDSHAKE_TIMEOUT,
             ErrorCode::AcpHandshakeFailed,
-            &spec.command,
+            spec,
         );
         let session_id = match new_session_response.and_then(|resp| {
+            if is_auth_required_error(&resp) {
+                return Err(auth_required_error(spec.preset, &spec.command));
+            }
             if resp.get("error").is_some() {
-                return Err(DomainError::new(ErrorCode::AcpHandshakeFailed)
-                    .with_detail("command", spec.command.clone()));
+                return Err(handshake_failed_error(spec));
             }
             resp.get("result")
                 .and_then(|r| r.get("sessionId").or_else(|| r.get("session_id")))
                 .and_then(Value::as_str)
                 .map(str::to_owned)
                 .filter(|id| !id.trim().is_empty())
-                .ok_or_else(|| {
-                    DomainError::new(ErrorCode::AcpHandshakeFailed)
-                        .with_detail("command", spec.command.clone())
-                })
+                .ok_or_else(|| handshake_failed_error(spec))
         }) {
             Ok(id) => id,
             Err(err) => {
@@ -303,7 +322,7 @@ impl AcpStdioSession {
         params: Value,
         timeout: Duration,
         error_code: ErrorCode,
-        command_label: &str,
+        spec: &TutorLaunchSpec,
     ) -> Result<Value, DomainError> {
         let id = self.next_rpc_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel();
@@ -322,14 +341,18 @@ impl AcpStdioSession {
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .remove(&id);
-            return Err(DomainError::new(error_code).with_detail("command", command_label));
+            return Err(DomainError::new(error_code)
+                .with_detail("preset", spec.preset.id())
+                .with_detail("command", spec.command.clone()));
         }
         rx.recv_timeout(timeout).map_err(|_| {
             self.pending_client
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .remove(&id);
-            DomainError::new(error_code).with_detail("command", command_label)
+            DomainError::new(error_code)
+                .with_detail("preset", spec.preset.id())
+                .with_detail("command", spec.command.clone())
         })
     }
 }
@@ -378,6 +401,8 @@ impl TutorBackendSession for AcpStdioSession {
         let active_turn = Arc::clone(&self.active_turn);
         let shutting_down = Arc::clone(&self.shutting_down);
         let sink = Arc::clone(&self.sink);
+        let preset = self.preset;
+        let command = self.command.clone();
         let turn_id = input.turn_id;
         thread::Builder::new()
             .name("codelab-acp-turn".into())
@@ -399,10 +424,14 @@ impl TutorBackendSession for AcpStdioSession {
                             return;
                         }
                         if response.get("error").is_some() {
-                            sink(BackendEvent::TurnFailed {
-                                turn_id,
-                                code: ErrorCode::AcpProtocolError,
-                            });
+                            let error = if is_auth_required_error(&response) {
+                                auth_required_error(preset, &command)
+                            } else {
+                                DomainError::new(ErrorCode::AcpProtocolError)
+                                    .with_detail("preset", preset.id())
+                                    .with_detail("command", command)
+                            };
+                            sink(BackendEvent::TurnFailed { turn_id, error });
                             return;
                         }
                         let stop_reason = response
@@ -988,17 +1017,135 @@ fn extract_update_delta(notification: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn call_handshake_rpc(
+    stdin: &Mutex<Option<StdinWriter>>,
+    pending: &PendingClientMap,
+    id: u64,
+    request: &Value,
+    timeout: Duration,
+) -> Option<Value> {
+    let (tx, rx) = mpsc::channel();
+    pending
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(id, tx);
+    if write_json_line(stdin, request).is_err() {
+        pending
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&id);
+        return None;
+    }
+    match rx.recv_timeout(timeout) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            pending
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&id);
+            None
+        }
+    }
+}
+
+fn is_auth_required_error(response: &Value) -> bool {
+    response
+        .get("error")
+        .and_then(|err| err.get("code"))
+        .and_then(Value::as_i64)
+        == Some(ACP_AUTH_REQUIRED_CODE)
+}
+
+fn auth_required_error(preset: AcpAgentPreset, command: &str) -> DomainError {
+    DomainError::new(ErrorCode::AcpAuthRequired)
+        .with_detail("preset", preset.id())
+        .with_detail("command", command)
+}
+
+fn handshake_failed_error(spec: &TutorLaunchSpec) -> DomainError {
+    DomainError::new(ErrorCode::AcpHandshakeFailed)
+        .with_detail("preset", spec.preset.id())
+        .with_detail("command", spec.command.clone())
+}
+
+fn advertises_auth_status(init_response: &Value) -> bool {
+    let Some(status) = init_response
+        .get("result")
+        .and_then(|r| r.get("agentCapabilities").or_else(|| r.get("capabilities")))
+        .and_then(|caps| caps.get("auth"))
+        .and_then(|auth| auth.get("status"))
+    else {
+        return false;
+    };
+    match status {
+        Value::Bool(enabled) => *enabled,
+        Value::Object(_) => true,
+        _ => false,
+    }
+}
+
+fn check_auth_status_response(spec: &TutorLaunchSpec, response: &Value) -> Result<(), DomainError> {
+    if is_auth_required_error(response) {
+        return Err(auth_required_error(spec.preset, &spec.command));
+    }
+    if response.get("error").is_some() {
+        // Gracefully skip unsupported or non-auth errors (e.g. -32601 Method not found).
+        return Ok(());
+    }
+    let Some(result) = response.get("result") else {
+        return Ok(());
+    };
+    if result.get("authenticated").and_then(Value::as_bool) == Some(false)
+        || result
+            .get("loggedIn")
+            .or_else(|| result.get("logged_in"))
+            .and_then(Value::as_bool)
+            == Some(false)
+    {
+        return Err(auth_required_error(spec.preset, &spec.command));
+    }
+    if result
+        .get("authRequired")
+        .or_else(|| result.get("auth_required"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Err(auth_required_error(spec.preset, &spec.command));
+    }
+    if let Some(status) = result
+        .get("status")
+        .or_else(|| result.get("state"))
+        .and_then(Value::as_str)
+    {
+        let normalized = status.trim().to_ascii_lowercase();
+        if matches!(
+            normalized.as_str(),
+            "unauthenticated"
+                | "auth_required"
+                | "authrequired"
+                | "not_authenticated"
+                | "logged_out"
+                | "loggedout"
+                | "required"
+        ) {
+            return Err(auth_required_error(spec.preset, &spec.command));
+        }
+    }
+    Ok(())
+}
+
 fn parse_initialize_result(
     spec: &TutorLaunchSpec,
     response: &Value,
 ) -> Result<TutorHandshakeResult, DomainError> {
+    if is_auth_required_error(response) {
+        return Err(auth_required_error(spec.preset, &spec.command));
+    }
     if response.get("error").is_some() {
-        return Err(DomainError::new(ErrorCode::AcpHandshakeFailed)
-            .with_detail("command", spec.command.clone()));
+        return Err(handshake_failed_error(spec));
     }
     let Some(result) = response.get("result") else {
-        return Err(DomainError::new(ErrorCode::AcpHandshakeFailed)
-            .with_detail("command", spec.command.clone()));
+        return Err(handshake_failed_error(spec));
     };
     let protocol_version = result.get("protocolVersion").map(|v| {
         v.as_str()
@@ -1145,20 +1292,37 @@ pub(crate) fn split_command_line(input: &str) -> Result<(String, Vec<String>), D
 }
 
 fn spawn_acp_process(
+    spec: &TutorLaunchSpec,
     program: &str,
     args: &[String],
-    cwd: &Path,
 ) -> Result<(Process, Box<dyn Read + Send>, StdinWriter), DomainError> {
     let os_args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    (|| -> io::Result<_> {
-        let canonical_cwd = fs::canonicalize(cwd)?;
-        let handle = open_canonical_dir(&canonical_cwd)?;
-        let directory = Directory {
-            path: canonical_cwd,
-            handle,
-        };
-        let (process, (stdout, stdin)) = spawn_piped(PathBuf::from(program), os_args, directory)?;
-        Ok((process, stdout, stdin))
-    })()
-    .map_err(|_| DomainError::new(ErrorCode::AcpAgentStartFailed).with_detail("command", program))
+    let canonical_cwd = fs::canonicalize(&spec.cwd).map_err(|_| {
+        DomainError::new(ErrorCode::AcpAgentStartFailed)
+            .with_detail("preset", spec.preset.id())
+            .with_detail("command", program)
+    })?;
+    let handle = open_canonical_dir(&canonical_cwd).map_err(|_| {
+        DomainError::new(ErrorCode::AcpAgentStartFailed)
+            .with_detail("preset", spec.preset.id())
+            .with_detail("command", program)
+    })?;
+    let directory = Directory {
+        path: canonical_cwd,
+        handle,
+    };
+    spawn_piped(PathBuf::from(program), os_args, directory)
+        .map(|(process, (stdout, stdin))| (process, stdout, stdin))
+        .map_err(|err| {
+            let code = if err.kind() == io::ErrorKind::NotFound
+                && !program.ends_with(std::path::is_separator)
+            {
+                ErrorCode::AcpAdapterNotFound
+            } else {
+                ErrorCode::AcpAgentStartFailed
+            };
+            DomainError::new(code)
+                .with_detail("preset", spec.preset.id())
+                .with_detail("command", program)
+        })
 }

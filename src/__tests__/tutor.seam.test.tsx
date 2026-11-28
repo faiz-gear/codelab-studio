@@ -2,7 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
-import type { LearningProgress } from "../core/contracts";
+import {
+  ACP_AGENT_PRESETS,
+  DEFAULT_TUTOR_SETTINGS,
+  type LearningProgress,
+} from "../core/contracts";
+import { getMessages } from "../i18n";
 import { createBuiltinGoCourseFixture, FakeCoreClient } from "./fakeCoreClient";
 
 beforeEach(() => {
@@ -667,5 +672,152 @@ describe("Pure ACP Tutor Session frontend seam (CoreClient)", () => {
       expect(secondCmd.payload.context?.chapterId).toBe("ex-0");
     }
     expect(within(drawer).getByText("Session reused")).toBeInTheDocument();
+  });
+
+  it("keeps ACP preset commands strictly aligned across contracts, i18n, and Settings UI", async () => {
+    const expectedCommands: Record<string, string> = {
+      claudeCode: "claude-agent-acp",
+      geminiCli: "gemini --acp",
+      codexCli: "codex-acp",
+      openCode: "opencode acp",
+      custom: "",
+    };
+
+    const en = getMessages("en-US");
+    const zh = getMessages("zh-CN");
+    expect(DEFAULT_TUTOR_SETTINGS.preset).toBe("claudeCode");
+    expect(DEFAULT_TUTOR_SETTINGS.command).toBe("claude-agent-acp");
+
+    for (const preset of ACP_AGENT_PRESETS) {
+      expect(preset.defaultCommand).toBe(expectedCommands[preset.id]);
+      if (preset.defaultCommand) {
+        expect(en.tutor.presets[preset.id]).toContain(preset.defaultCommand);
+        expect(zh.tutor.presets[preset.id]).toContain(preset.defaultCommand);
+      }
+    }
+
+    const user = userEvent.setup();
+    const client = new FakeCoreClient({ settings: { locale: "en-US" } });
+    render(<App client={client} />);
+    await screen.findByRole("heading", { level: 1 });
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Settings" }));
+    await user.click(dialog.getByRole("tab", { name: "ACP Tutor" }));
+    const panel = within(dialog.getByTestId("tutor-settings-panel"));
+
+    expect(panel.getByLabelText("Launch command")).toHaveValue("claude-agent-acp");
+
+    const presetSelect = panel.getByLabelText("Local ACP Agent preset");
+    await user.selectOptions(presetSelect, "codexCli");
+    expect(panel.getByLabelText("Launch command")).toHaveValue("codex-acp");
+    expect(client.commandLog).toContainEqual({
+      type: "updateSettings",
+      payload: { tutor: { preset: "codexCli", command: "codex-acp" } },
+    });
+  });
+
+  it("renders bilingual provider-specific install and CLI login guidance in Settings and TutorDrawer without BYOK/Keychain text", async () => {
+    for (const locale of ["en-US", "zh-CN"] as const) {
+      const user = userEvent.setup();
+      const client = new FakeCoreClient({ settings: { locale } });
+      const { unmount } = render(<App client={client} />);
+      await screen.findByRole("heading", { level: 1 });
+
+      const settingsName = locale === "en-US" ? "Settings" : "设置";
+      const tutorTabName = locale === "en-US" ? "ACP Tutor" : "ACP 助教";
+      const testHandshakeName = locale === "en-US" ? "Test ACP Handshake" : "测试 ACP 握手";
+      const presetLabel = locale === "en-US" ? "Local ACP Agent preset" : "本机 ACP Agent 预设";
+
+      await user.click(screen.getByRole("button", { name: settingsName }));
+      const dialog = screen.getByRole("dialog", { name: settingsName });
+      await user.click(within(dialog).getByRole("tab", { name: tutorTabName }));
+      const panel = within(within(dialog).getByTestId("tutor-settings-panel"));
+
+      // 1. Claude Code missing adapter -> shows @agentclientprotocol/claude-agent-acp install guidance.
+      client.failNext("testTutorHandshake", {
+        code: "ACP_ADAPTER_NOT_FOUND",
+        details: { preset: "claudeCode", command: "claude-agent-acp" },
+      });
+      await user.click(panel.getByRole("button", { name: testHandshakeName }));
+      const claudeMissingAlert = await panel.findByRole("alert");
+      expect(claudeMissingAlert).toHaveTextContent("@agentclientprotocol/claude-agent-acp");
+      expect(claudeMissingAlert).toHaveTextContent("claude-agent-acp");
+      expect(dialog.textContent).not.toMatch(/BYOK|API Key|Keychain/i);
+
+      // 2. Claude Code auth required -> shows `claude auth login` guidance.
+      client.failNext("testTutorHandshake", {
+        code: "ACP_AUTH_REQUIRED",
+        details: { preset: "claudeCode", command: "claude-agent-acp" },
+      });
+      await user.click(panel.getByRole("button", { name: testHandshakeName }));
+      const claudeAuthAlert = await panel.findByRole("alert");
+      expect(claudeAuthAlert).toHaveTextContent("claude auth login");
+      expect(dialog.textContent).not.toMatch(/BYOK|API Key|Keychain/i);
+
+      // 3. Codex CLI missing adapter -> shows @agentclientprotocol/codex-acp install guidance.
+      await user.selectOptions(panel.getByLabelText(presetLabel), "codexCli");
+      client.failNext("testTutorHandshake", {
+        code: "ACP_ADAPTER_NOT_FOUND",
+        details: { preset: "codexCli", command: "codex-acp" },
+      });
+      await user.click(panel.getByRole("button", { name: testHandshakeName }));
+      const codexMissingAlert = await panel.findByRole("alert");
+      expect(codexMissingAlert).toHaveTextContent("@agentclientprotocol/codex-acp");
+      expect(codexMissingAlert).toHaveTextContent("codex-acp");
+
+      // 4. Codex CLI auth required -> shows `codex login` guidance.
+      client.failNext("testTutorHandshake", {
+        code: "ACP_AUTH_REQUIRED",
+        details: { preset: "codexCli", command: "codex-acp" },
+      });
+      await user.click(panel.getByRole("button", { name: testHandshakeName }));
+      const codexAuthAlert = await panel.findByRole("alert");
+      expect(codexAuthAlert).toHaveTextContent("codex login");
+      expect(dialog.textContent).not.toMatch(/BYOK|API Key|Keychain/i);
+
+      await user.keyboard("{Escape}");
+      unmount();
+    }
+
+    // 5. TutorDrawer also surfaces actionable missing-adapter & auth-required guidance inline.
+    const user = userEvent.setup();
+    const client = new FakeCoreClient({ settings: { locale: "en-US" } });
+    await openBuiltinWithWorkspace(client, user);
+    await user.click(screen.getByRole("button", { name: "AI Tutor" }));
+    const drawer = within(screen.getByTestId("tutor-drawer"));
+
+    await user.type(drawer.getByLabelText("Ask the local ACP Tutor"), "Hello tutor");
+    await user.click(drawer.getByRole("button", { name: "Send" }));
+    act(() => {
+      client.emitTutorTurnFailed(1, {
+        code: "ACP_ADAPTER_NOT_FOUND",
+        details: { preset: "claudeCode", command: "claude-agent-acp" },
+      });
+    });
+    const drawerMissingAlert = drawer.getByRole("alert");
+    expect(drawerMissingAlert).toHaveTextContent("@agentclientprotocol/claude-agent-acp");
+    expect(screen.getByTestId("tutor-drawer").textContent).not.toMatch(/BYOK|API Key|Keychain/i);
+    await user.click(
+      within(drawerMissingAlert).getByRole("button", { name: "Open ACP Tutor Settings" })
+    );
+    const openedSettings = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(openedSettings).getByRole("tab", { name: "ACP Tutor" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    await user.keyboard("{Escape}");
+
+    // Retry and hit Codex auth required -> shows `codex login`.
+    await user.click(drawer.getByRole("button", { name: "Retry" }));
+    act(() => {
+      client.emitTutorTurnFailed(1, {
+        code: "ACP_AUTH_REQUIRED",
+        details: { preset: "codexCli", command: "codex-acp" },
+      });
+    });
+    const alerts = drawer.getAllByRole("alert");
+    expect(alerts.at(-1)).toHaveTextContent("codex login");
+    expect(screen.getByTestId("tutor-drawer").textContent).not.toMatch(/BYOK|API Key|Keychain/i);
   });
 });

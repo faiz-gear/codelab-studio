@@ -238,6 +238,78 @@ for (const code of tsErrorCodes) {
   }
 }
 
+// 3b2. Rust <-> TypeScript <-> i18n ACP preset default command parity
+function readTutorPresetLabels(relPath, dictionaryName) {
+  const source = parseTypeScript(relPath);
+  const dictionary = source.statements
+    .filter(ts.isVariableStatement)
+    .flatMap((statement) => statement.declarationList.declarations)
+    .find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === dictionaryName)
+    ?.initializer;
+  const labels = new Map();
+  if (!dictionary || !ts.isObjectLiteralExpression(dictionary)) return labels;
+  const tutor = dictionary.properties
+    .filter(ts.isPropertyAssignment)
+    .find((property) => propertyName(property.name) === "tutor")?.initializer;
+  if (!tutor || !ts.isObjectLiteralExpression(tutor)) return labels;
+  const presets = tutor.properties
+    .filter(ts.isPropertyAssignment)
+    .find((property) => propertyName(property.name) === "presets")?.initializer;
+  if (!presets || !ts.isObjectLiteralExpression(presets)) return labels;
+  for (const property of presets.properties) {
+    if (!ts.isPropertyAssignment(property) || !ts.isStringLiteralLike(property.initializer)) continue;
+    const id = propertyName(property.name);
+    if (id !== undefined) labels.set(id, property.initializer.text);
+  }
+  return labels;
+}
+
+const rustTutorModelSrc = readText("crates/codelab-core/src/tutor/model.rs");
+const rustDefaultCmdBlock =
+  /pub fn default_command\(self\) -> &'static str \{([\s\S]*?)\n {4}\}/.exec(rustTutorModelSrc);
+if (!rustDefaultCmdBlock) {
+  fail("acp-preset-parity", "Could not locate AcpAgentPreset::default_command in crates/codelab-core/src/tutor/model.rs.");
+} else {
+  const rustPresets = new Map();
+  for (const match of rustDefaultCmdBlock[1].matchAll(/Self::([A-Z][A-Za-z0-9]*)\s*=>\s*"([^"]*)"/g)) {
+    rustPresets.set(pascalToCamel(match[1]), match[2]);
+  }
+  const tsPresetsBlock = /export const ACP_AGENT_PRESETS[\s\S]*?=\s*\[([\s\S]*?)\] as const;/.exec(tsContractsSrc);
+  const tsPresets = new Map();
+  if (tsPresetsBlock) {
+    for (const match of tsPresetsBlock[1].matchAll(/id:\s*"([A-Za-z0-9]+)"[^}]*defaultCommand:\s*"([^"]*)"/g)) {
+      tsPresets.set(match[1], match[2]);
+    }
+  }
+  assertSameSet("acp-preset-parity", "AcpAgentPreset", "Rust", [...rustPresets.keys()], "TypeScript", [...tsPresets.keys()]);
+  const zhPresetLabels = readTutorPresetLabels(zhPath, "zhCN");
+  const enPresetLabels = readTutorPresetLabels(enPath, "enUS");
+  for (const [id, rustCmd] of rustPresets) {
+    const tsCmd = tsPresets.get(id);
+    if (tsCmd !== rustCmd) {
+      fail("acp-preset-parity", `Preset "${id}" default command mismatch: Rust has "${rustCmd}" vs TypeScript "${tsCmd}".`);
+    }
+    if (rustCmd) {
+      if (!zhPresetLabels.get(id)?.includes(rustCmd)) {
+        fail("acp-preset-parity", `${zhPath} tutor.presets.${id} does not show "${rustCmd}".`);
+      }
+      if (!enPresetLabels.get(id)?.includes(rustCmd)) {
+        fail("acp-preset-parity", `${enPath} tutor.presets.${id} does not show "${rustCmd}".`);
+      }
+    }
+  }
+  const defaultTutorMatch =
+    /export const DEFAULT_TUTOR_SETTINGS:\s*TutorSettings\s*=\s*\{([\s\S]*?)\};/.exec(tsContractsSrc);
+  const defaultPreset = defaultTutorMatch && /preset:\s*"([A-Za-z0-9]+)"/.exec(defaultTutorMatch[1])?.[1];
+  const defaultCommand = defaultTutorMatch && /command:\s*"([^"]*)"/.exec(defaultTutorMatch[1])?.[1];
+  if (!defaultPreset || defaultCommand !== rustPresets.get(defaultPreset)) {
+    fail(
+      "acp-preset-parity",
+      `DEFAULT_TUTOR_SETTINGS (${defaultPreset}: "${defaultCommand}") does not match Rust default "${rustPresets.get(defaultPreset)}".`
+    );
+  }
+}
+
 // 3c. Register every command called by the Tauri CoreClient.
 const invokedCommands = new Set();
 function collectInvokedCommands(node) {
