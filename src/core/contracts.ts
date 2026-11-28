@@ -90,7 +90,9 @@ export const ERROR_CODES = [
   "COMMAND_SHELL_UNAVAILABLE",
   "TERMINAL_NOT_FOUND",
   "ACP_COMMAND_INVALID",
+  "ACP_ADAPTER_NOT_FOUND",
   "ACP_AGENT_START_FAILED",
+  "ACP_AUTH_REQUIRED",
   "ACP_HANDSHAKE_FAILED",
   "ACP_PROTOCOL_ERROR",
   "ACP_PROCESS_EXITED",
@@ -123,9 +125,9 @@ export const ACP_AGENT_PRESETS: readonly {
   label: string;
   defaultCommand: string;
 }[] = [
-  { id: "claudeCode", label: "Claude Code", defaultCommand: "claude --acp" },
+  { id: "claudeCode", label: "Claude Code", defaultCommand: "claude-agent-acp" },
   { id: "geminiCli", label: "Gemini CLI", defaultCommand: "gemini --acp" },
-  { id: "codexCli", label: "Codex CLI", defaultCommand: "codex --acp" },
+  { id: "codexCli", label: "Codex CLI", defaultCommand: "codex-acp" },
   { id: "openCode", label: "OpenCode", defaultCommand: "opencode acp" },
   { id: "custom", label: "Custom", defaultCommand: "" },
 ] as const;
@@ -142,7 +144,7 @@ export interface TutorSettings {
 
 export const DEFAULT_TUTOR_SETTINGS: TutorSettings = {
   preset: "claudeCode",
-  command: "claude --acp",
+  command: "claude-agent-acp",
   permissionPolicy: "guided_readonly",
   teachingStyle: "socratic",
 };

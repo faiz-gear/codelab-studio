@@ -11,7 +11,7 @@ pub(crate) mod verification;
 mod windows;
 
 use std::collections::BTreeMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -45,12 +45,73 @@ pub(crate) fn spawn_piped(
     directory: Directory,
 ) -> io::Result<(Process, Ports)> {
     let program = resolve_piped_program(program);
+    let env = piped_environment(&program);
     Process::spawn_piped(Spawn {
         program,
         args,
-        env: BTreeMap::new(),
+        env,
         directory,
     })
+}
+
+fn piped_environment(program: &Path) -> BTreeMap<OsString, OsString> {
+    piped_environment_with(
+        program,
+        std::env::var_os("PATH").as_deref(),
+        crate::runtime::host_search_directories(),
+    )
+}
+
+fn piped_environment_with(
+    program: &Path,
+    inherited_path: Option<&OsStr>,
+    search_dirs: impl IntoIterator<Item = PathBuf>,
+) -> BTreeMap<OsString, OsString> {
+    fn push_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
+        if !dir.as_os_str().is_empty()
+            && dir.is_absolute()
+            && std::env::join_paths([&dir]).is_ok()
+            && !dirs.iter().any(|existing| existing == &dir)
+        {
+            dirs.push(dir);
+        }
+    }
+
+    let mut dirs = Vec::new();
+    if let Some(path) = inherited_path {
+        for dir in std::env::split_paths(path) {
+            push_dir(&mut dirs, dir);
+        }
+    }
+    if let Some(parent) = program
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty() && p.is_absolute() && p.is_dir())
+    {
+        push_dir(&mut dirs, parent.to_path_buf());
+    }
+    for dir in search_dirs {
+        if !dir.as_os_str().is_empty() && dir.is_absolute() && dir.is_dir() {
+            push_dir(&mut dirs, dir);
+        }
+    }
+
+    #[cfg(unix)]
+    if dirs.is_empty() {
+        for fallback in ["/usr/bin", "/bin"] {
+            let fallback = PathBuf::from(fallback);
+            if fallback.is_dir() {
+                push_dir(&mut dirs, fallback);
+            }
+        }
+    }
+
+    let mut env = BTreeMap::new();
+    if !dirs.is_empty()
+        && let Ok(joined) = std::env::join_paths(dirs)
+    {
+        env.insert(OsString::from("PATH"), joined);
+    }
+    env
 }
 
 fn resolve_piped_program(program: PathBuf) -> PathBuf {
@@ -490,4 +551,117 @@ fn environment(
         env.insert("PATH".into(), path);
     }
     Ok(env)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn piped_environment_filters_empty_and_non_absolute_path_segments() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let nvm_bin = temp.path().join("nvm-bin");
+        std::fs::create_dir_all(&nvm_bin).unwrap();
+        let program = nvm_bin.join("fake-nvm-acp");
+
+        for inherited in [None, Some(OsStr::new(""))] {
+            let env = piped_environment_with(&program, inherited, [nvm_bin.clone()]);
+            let path = env
+                .get(OsStr::new("PATH"))
+                .expect("PATH must be set for discovered bin");
+            #[cfg(unix)]
+            assert!(
+                !path.to_string_lossy().starts_with(':'),
+                "PATH must not start with empty segment: {path:?}"
+            );
+            let segments: Vec<PathBuf> = std::env::split_paths(path).collect();
+            assert_eq!(segments, vec![nvm_bin.clone()]);
+            assert!(
+                segments
+                    .iter()
+                    .all(|dir| !dir.as_os_str().is_empty() && dir.is_absolute())
+            );
+        }
+
+        // Non-absolute program parents and relative search directories are ignored.
+        let env_relative = piped_environment_with(
+            Path::new("./relative-adapter"),
+            Some(OsStr::new("")),
+            [
+                PathBuf::from("."),
+                PathBuf::from("relative/bin"),
+                nvm_bin.clone(),
+            ],
+        );
+        let segments: Vec<PathBuf> =
+            std::env::split_paths(env_relative.get(OsStr::new("PATH")).unwrap()).collect();
+        assert_eq!(segments, vec![nvm_bin.clone()]);
+
+        #[cfg(unix)]
+        {
+            let abs_a = temp.path().join("abs-a");
+            let abs_b = temp.path().join("abs-b");
+            let dirty = OsString::from(format!(
+                ":{}:.:relative/bin::{}:",
+                abs_a.display(),
+                abs_b.display()
+            ));
+            let env = piped_environment_with(&program, Some(&dirty), [nvm_bin.clone()]);
+            let segments: Vec<PathBuf> =
+                std::env::split_paths(env.get(OsStr::new("PATH")).unwrap()).collect();
+            assert_eq!(segments, vec![abs_a, abs_b, nvm_bin]);
+
+            // Even when PATH="" and no search directories exist, Unix falls back to
+            // standard absolute system bins so inherited PATH="" never searches CWD.
+            let fallback_env = piped_environment_with(
+                Path::new("missing-global-acp"),
+                Some(OsStr::new("")),
+                std::iter::empty(),
+            );
+            let fallback_path = fallback_env
+                .get(OsStr::new("PATH"))
+                .expect("Unix fallback PATH must override empty inherited PATH");
+            assert!(!fallback_path.is_empty());
+            assert!(
+                std::env::split_paths(fallback_path)
+                    .all(|dir| !dir.as_os_str().is_empty() && dir.is_absolute())
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn piped_environment_skips_unjoinable_directories_without_dropping_valid_entries() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let bad_volta_bin = temp.path().join("volta:colon").join("bin");
+        let nvm_bin = temp.path().join("nvm-bin");
+        let inherited_bin = temp.path().join("inherited-bin");
+        std::fs::create_dir_all(&bad_volta_bin).unwrap();
+        std::fs::create_dir_all(&nvm_bin).unwrap();
+        std::fs::create_dir_all(&inherited_bin).unwrap();
+
+        let program = nvm_bin.join("fake-nvm-acp");
+        let env = piped_environment_with(
+            &program,
+            Some(inherited_bin.as_os_str()),
+            [bad_volta_bin.clone(), nvm_bin.clone()],
+        );
+        let path = env
+            .get(OsStr::new("PATH"))
+            .expect("valid directories must remain joinable when an unrelated dir contains ':'");
+        let segments: Vec<PathBuf> = std::env::split_paths(path).collect();
+        assert_eq!(segments, vec![inherited_bin.clone(), nvm_bin.clone()]);
+        assert!(!segments.contains(&bad_volta_bin));
+
+        // An unjoinable program parent also does not drop valid inherited/search dirs.
+        let bad_program = bad_volta_bin.join("adapter");
+        let env_bad_program = piped_environment_with(
+            &bad_program,
+            Some(inherited_bin.as_os_str()),
+            [bad_volta_bin.clone(), nvm_bin.clone()],
+        );
+        let segments: Vec<PathBuf> =
+            std::env::split_paths(env_bad_program.get(OsStr::new("PATH")).unwrap()).collect();
+        assert_eq!(segments, vec![inherited_bin, nvm_bin]);
+    }
 }

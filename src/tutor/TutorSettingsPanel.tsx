@@ -10,8 +10,9 @@ import {
   type TutorHandshakeResult,
   type UpdateSettingsPatch,
 } from "../core/contracts";
-import { formatDomainError, interpolate, type Messages } from "../i18n";
+import { interpolate, type Messages } from "../i18n";
 import { domainError } from "../workspace/editorSession";
+import { TutorErrorNotice } from "./TutorErrorNotice";
 
 export interface TutorSettingsPanelProps {
   client: CoreClient;
@@ -140,6 +141,7 @@ export function TutorSettingsPanel({
               {t.saveConfig}
             </button>
           </div>
+          <p className="field-hint">{t.guidance.presets[preset].setupHint}</p>
           <p className="field-hint">{t.commandHint}</p>
         </div>
 
@@ -164,9 +166,12 @@ export function TutorSettingsPanel({
         </div>
 
         {handshakeError && (
-          <div className="inline-alert inline-alert--danger" role="alert">
-            {formatDomainError(handshakeError, settings.locale)}
-          </div>
+          <TutorErrorNotice
+            error={handshakeError}
+            fallbackPreset={preset}
+            locale={settings.locale}
+            messages={messages}
+          />
         )}
       </form>
 

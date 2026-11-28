@@ -378,6 +378,8 @@ describe("Unified 4-Tab Settings, Local Metrics, Keyboard A11y & Bilingual Error
       url: "https://example.org/course.git",
       checkId: "v1",
       failures: "1",
+      command: "claude-agent-acp",
+      preset: "claudeCode",
     };
 
     const zhMessages = getMessages("zh-CN");

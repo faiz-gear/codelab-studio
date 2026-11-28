@@ -14,11 +14,21 @@ pub enum AcpAgentPreset {
 }
 
 impl AcpAgentPreset {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claudeCode",
+            Self::GeminiCli => "geminiCli",
+            Self::CodexCli => "codexCli",
+            Self::OpenCode => "openCode",
+            Self::Custom => "custom",
+        }
+    }
+
     pub fn default_command(self) -> &'static str {
         match self {
-            Self::ClaudeCode => "claude --acp",
+            Self::ClaudeCode => "claude-agent-acp",
             Self::GeminiCli => "gemini --acp",
-            Self::CodexCli => "codex --acp",
+            Self::CodexCli => "codex-acp",
             Self::OpenCode => "opencode acp",
             Self::Custom => "",
         }
@@ -80,6 +90,20 @@ impl TutorSettings {
             self.preset.default_command().to_owned()
         } else {
             trimmed.to_owned()
+        }
+    }
+
+    pub fn migrate_legacy_defaults(&mut self) -> bool {
+        let legacy_match = matches!(
+            (self.preset, self.command.trim()),
+            (AcpAgentPreset::ClaudeCode, "claude --acp")
+                | (AcpAgentPreset::CodexCli, "codex --acp")
+        );
+        if legacy_match {
+            self.command = self.preset.default_command().to_owned();
+            true
+        } else {
+            false
         }
     }
 }

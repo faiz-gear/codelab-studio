@@ -7,9 +7,9 @@ interface TutorPreviewProps {
 }
 
 const ACP_PRESETS = [
-  { name: "Claude Code", cmd: "claude --acp" },
+  { name: "Claude Code", cmd: "claude-agent-acp" },
   { name: "Gemini CLI", cmd: "gemini --acp" },
-  { name: "Codex CLI", cmd: "codex --acp" },
+  { name: "Codex CLI", cmd: "codex-acp" },
   { name: "OpenCode", cmd: "opencode acp" },
 ];
 

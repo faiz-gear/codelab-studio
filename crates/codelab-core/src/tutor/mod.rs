@@ -763,15 +763,23 @@ impl TutorManager {
                     (self.on_session_updated)(snapshot);
                 }
             }
-            BackendEvent::TurnFailed { turn_id, code } => {
-                let snapshot = {
+            BackendEvent::TurnFailed { turn_id, error } => {
+                let (old_session, snapshot) = {
                     let mut state = self.lock();
                     if state.session_generation != generation {
                         return;
                     }
-                    state.fail_turn(&turn_id, DomainError::new(code));
-                    state.snapshot_opt()
+                    let old = if error.code == ErrorCode::AcpAuthRequired {
+                        state.teardown_session_inner()
+                    } else {
+                        None
+                    };
+                    state.fail_turn(&turn_id, error);
+                    (old, state.snapshot_opt())
                 };
+                if let Some(session) = old_session {
+                    session.shutdown();
+                }
                 if let Some(snapshot) = snapshot {
                     (self.on_session_updated)(snapshot);
                 }

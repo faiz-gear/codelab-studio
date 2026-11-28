@@ -331,6 +331,19 @@ export interface Messages {
     commandLabel: string;
     commandPlaceholder: string;
     commandHint: string;
+    guidance: {
+      openSettingsAction: string;
+      presets: Record<
+        AcpAgentPreset,
+        {
+          setupHint: string;
+          installSummary: string;
+          installCommand: string | null;
+          authSummary: string;
+          loginCommand: string | null;
+        }
+      >;
+    };
     policyLabel: string;
     policyGroupLabel: string;
     policies: Record<PermissionPolicy, { title: string; description: string }>;
@@ -834,15 +847,59 @@ export const zhCN: Messages = {
       "直接复用你本机已认证的 ACP 编码 Agent，仅在首次提问或握手测试时按需启动进程。",
     presetLabel: "本机 ACP Agent 预设",
     presets: {
-      claudeCode: "Claude Code（claude --acp）",
+      claudeCode: "Claude Code（claude-agent-acp）",
       geminiCli: "Gemini CLI（gemini --acp）",
-      codexCli: "Codex CLI（codex --acp）",
+      codexCli: "Codex CLI（codex-acp）",
       openCode: "OpenCode（opencode acp）",
-      custom: "自定义 --acp 启动命令",
+      custom: "自定义 ACP 启动命令",
     },
     commandLabel: "启动命令",
     commandPlaceholder: "例如：my-agent --acp",
     commandHint: "切换 Agent 或启动命令后，将在下次发问时自动重建当前 Workspace 的 ACP 会话。",
+    guidance: {
+      openSettingsAction: "打开 ACP 助教设置",
+      presets: {
+        claudeCode: {
+          setupHint:
+            "通过本机 Claude Agent ACP 适配器（@agentclientprotocol/claude-agent-acp）连接，直接复用已有 Claude Code 登录状态（claude auth login）。",
+          installSummary: "请先在终端全局安装 Claude Agent ACP 适配器，然后重新测试握手或重试：",
+          installCommand: "npm install -g @agentclientprotocol/claude-agent-acp",
+          authSummary: "请先在终端使用 Claude Code 完成登录（直接复用本机登录态），然后重试：",
+          loginCommand: "claude auth login",
+        },
+        geminiCli: {
+          setupHint: "直接通过本机 Gemini CLI（gemini --acp）连接，复用本机已有登录状态。",
+          installSummary: "请先在终端全局安装 Gemini CLI 并确认 gemini 位于 PATH 中，然后重试：",
+          installCommand: "npm install -g @google/gemini-cli",
+          authSummary: "请先在终端运行 Gemini CLI 完成登录，然后重试：",
+          loginCommand: "gemini",
+        },
+        codexCli: {
+          setupHint:
+            "通过本机 Codex ACP 适配器（@agentclientprotocol/codex-acp）连接，直接复用已有 Codex CLI 登录状态（codex login）。",
+          installSummary: "请先在终端全局安装 Codex ACP 适配器，然后重新测试握手或重试：",
+          installCommand: "npm install -g @agentclientprotocol/codex-acp",
+          authSummary: "请先在终端使用 Codex CLI 完成登录（直接复用本机登录态），然后重试：",
+          loginCommand: "codex login",
+        },
+        openCode: {
+          setupHint: "直接通过本机 OpenCode（opencode acp）连接，复用本机已有提供方登录。",
+          installSummary:
+            "请先安装 OpenCode CLI 并确认 opencode 位于 PATH 中，或在上方填写可执行文件绝对路径。",
+          installCommand: null,
+          authSummary: "请先在终端运行 OpenCode 完成提供方登录，然后重试：",
+          loginCommand: "opencode",
+        },
+        custom: {
+          setupHint: "输入任意支持 ACP 协议的本机启动命令或可执行文件绝对路径。",
+          installSummary:
+            "请确认该可执行文件已安装并位于 PATH 中，或在启动命令中填写完整绝对路径。",
+          installCommand: null,
+          authSummary: "请先在终端通过该本机 Agent CLI 完成提供方登录，然后重试。",
+          loginCommand: null,
+        },
+      },
+    },
     policyLabel: "Permission Policy 权限策略",
     policyGroupLabel: "选择 ACP 权限审批策略",
     policies: {
@@ -1107,7 +1164,9 @@ export const zhCN: Messages = {
     COMMAND_SHELL_UNAVAILABLE: "找不到 {shell}。在 Windows 上，Git for Windows 提供 bash 和 sh。",
     TERMINAL_NOT_FOUND: "该终端已不可用。",
     ACP_COMMAND_INVALID: "ACP 启动命令为空或引号格式无效，请检查设置。",
+    ACP_ADAPTER_NOT_FOUND: "未找到本机 ACP 可执行文件 “{command}”。请先安装对应适配器或修改启动命令。",
     ACP_AGENT_START_FAILED: "无法启动本机 ACP Agent 进程，请确认 CLI 已安装且命令可执行。",
+    ACP_AUTH_REQUIRED: "该本机 ACP Agent 需要先完成提供方账号登录认证才能回复，请在终端登录后重试。",
     ACP_HANDSHAKE_FAILED: "ACP 握手超时或失败，请确认该命令支持 JSON-RPC 2.0 ACP 协议。",
     ACP_PROTOCOL_ERROR: "ACP 协议通信出错，请重试或重新配置 Agent。",
     ACP_PROCESS_EXITED: "ACP Agent 进程已意外退出，可点击重试重新连接。",

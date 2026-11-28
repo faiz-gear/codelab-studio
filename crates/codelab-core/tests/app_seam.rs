@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use codelab_core::{
-    AccentPreset, App, AppCommand, AppConfig, AppEvent, AppResponse, CourseLanguage, ErrorCode,
-    GlobalSettings, Locale, RecordRecentWorkspaceInput, ShutdownReport, StoreKind, ThemeMode,
-    TrustSource, TrustSourceKind, UpdateSettingsPatch,
+    AccentPreset, AcpAgentPreset, App, AppCommand, AppConfig, AppEvent, AppResponse,
+    CourseLanguage, ErrorCode, GLOBAL_DATA_SCHEMA_VERSION, GlobalSettings, Locale,
+    RecordRecentWorkspaceInput, ShutdownReport, StoreKind, ThemeMode, TrustSource, TrustSourceKind,
+    TutorSettingsPatch, UpdateSettingsPatch,
 };
 use tempfile::TempDir;
 
@@ -593,4 +594,188 @@ fn ipc_wire_json_roundtrips_commands_responses_and_domain_errors() {
     assert_eq!(err_json["code"], "INVALID_CODE_FONT_SIZE");
     assert_eq!(err_json["details"]["min"], "11");
     assert_eq!(err_json["details"]["max"], "20");
+}
+
+#[test]
+fn fresh_tutor_presets_use_compatible_acp_adapter_commands() {
+    assert_eq!(
+        AcpAgentPreset::ClaudeCode.default_command(),
+        "claude-agent-acp"
+    );
+    assert_eq!(AcpAgentPreset::GeminiCli.default_command(), "gemini --acp");
+    assert_eq!(AcpAgentPreset::CodexCli.default_command(), "codex-acp");
+    assert_eq!(AcpAgentPreset::OpenCode.default_command(), "opencode acp");
+    assert_eq!(AcpAgentPreset::Custom.default_command(), "");
+
+    let dir = TempDir::new().expect("temp dir");
+    let app = App::open(AppConfig {
+        data_dir: dir.path().to_path_buf(),
+    })
+    .expect("open app");
+
+    let AppResponse::Bootstrap(bootstrap) = app.execute(AppCommand::Bootstrap).expect("bootstrap")
+    else {
+        panic!("expected Bootstrap");
+    };
+    assert_eq!(bootstrap.settings.tutor.preset, AcpAgentPreset::ClaudeCode);
+    assert_eq!(bootstrap.settings.tutor.command, "claude-agent-acp");
+
+    let AppResponse::Settings(codex_settings) = app
+        .execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+            tutor: Some(TutorSettingsPatch {
+                preset: Some(AcpAgentPreset::CodexCli),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+        .expect("switch to codex preset")
+    else {
+        panic!("expected Settings");
+    };
+    assert_eq!(codex_settings.tutor.preset, AcpAgentPreset::CodexCli);
+    assert_eq!(codex_settings.tutor.command, "codex-acp");
+}
+
+#[test]
+fn legacy_claude_and_codex_settings_migrate_in_place_without_quarantining_other_stores() {
+    assert_eq!(
+        GLOBAL_DATA_SCHEMA_VERSION, 1,
+        "GLOBAL_DATA_SCHEMA_VERSION is shared across all 8 JsonStore files and must not bump"
+    );
+
+    for (preset_json, legacy_cmd, expected_preset, expected_cmd) in [
+        (
+            "claudeCode",
+            "claude --acp",
+            AcpAgentPreset::ClaudeCode,
+            "claude-agent-acp",
+        ),
+        (
+            "codexCli",
+            "codex --acp",
+            AcpAgentPreset::CodexCli,
+            "codex-acp",
+        ),
+    ] {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(
+            dir.path().join("settings.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "data": {
+                    "theme": "dark",
+                    "accent": "violet",
+                    "codeFontSize": 14.0,
+                    "locale": "en-US",
+                    "preferredIde": "cursor",
+                    "tutor": {
+                        "preset": preset_json,
+                        "command": legacy_cmd,
+                        "permissionPolicy": "strict_ask_all",
+                        "teachingStyle": "direct"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .expect("write legacy settings");
+        std::fs::write(
+            dir.path().join("trust.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "data": [{
+                    "sourceKind": "gitRepo",
+                    "normalizedSource": "https://github.com/faiz-gear/sample-pack",
+                    "trustedAt": "2026-01-01T00:00:00Z"
+                }]
+            })
+            .to_string(),
+        )
+        .expect("write trust store");
+
+        let app = App::open(AppConfig {
+            data_dir: dir.path().to_path_buf(),
+        })
+        .expect("open app with legacy settings");
+        let AppResponse::Bootstrap(bootstrap) =
+            app.execute(AppCommand::Bootstrap).expect("bootstrap")
+        else {
+            panic!("expected Bootstrap");
+        };
+
+        assert!(
+            bootstrap.recovery_notices.is_empty(),
+            "legacy settings migration must not quarantine stores: {:?}",
+            bootstrap.recovery_notices
+        );
+        assert_eq!(bootstrap.trust_entries.len(), 1);
+        assert_eq!(bootstrap.settings.theme, ThemeMode::Dark);
+        assert_eq!(bootstrap.settings.tutor.preset, expected_preset);
+        assert_eq!(bootstrap.settings.tutor.command, expected_cmd);
+
+        // Persisted atomically to settings.json on load.
+        let disk_settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).expect("read settings.json"),
+        )
+        .expect("parse migrated settings.json");
+        assert_eq!(disk_settings["schemaVersion"], 1);
+        assert_eq!(disk_settings["data"]["tutor"]["command"], expected_cmd);
+
+        // No .corrupt.* backup files created.
+        let corrupt_files: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().contains(".corrupt."))
+            .collect();
+        assert!(
+            corrupt_files.is_empty(),
+            "unexpected corrupt backups: {corrupt_files:?}"
+        );
+    }
+}
+
+#[test]
+fn custom_tutor_commands_are_preserved_across_restarts_for_every_preset() {
+    for (preset, custom_cmd) in [
+        (
+            AcpAgentPreset::ClaudeCode,
+            "/opt/adapters/claude-agent-acp --verbose",
+        ),
+        (
+            AcpAgentPreset::CodexCli,
+            "/opt/adapters/codex-acp --profile dev",
+        ),
+        (AcpAgentPreset::Custom, "claude --acp"),
+        (AcpAgentPreset::Custom, "codex --acp"),
+    ] {
+        let dir = TempDir::new().expect("temp dir");
+        {
+            let app = App::open(AppConfig {
+                data_dir: dir.path().to_path_buf(),
+            })
+            .expect("open app");
+            app.execute(AppCommand::UpdateSettings(UpdateSettingsPatch {
+                tutor: Some(TutorSettingsPatch {
+                    preset: Some(preset),
+                    command: Some(custom_cmd.to_owned()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }))
+            .expect("save custom tutor command");
+        }
+
+        let restarted = App::open(AppConfig {
+            data_dir: dir.path().to_path_buf(),
+        })
+        .expect("reopen app");
+        let AppResponse::Settings(settings) = restarted
+            .execute(AppCommand::GetSettings)
+            .expect("get settings")
+        else {
+            panic!("expected Settings");
+        };
+        assert_eq!(settings.tutor.preset, preset);
+        assert_eq!(settings.tutor.command, custom_cmd);
+    }
 }

@@ -1041,7 +1041,10 @@ export class FakeCoreClient implements CoreClient {
   }
 
   emitTutorCrash(workspaceId: number) {
-    const error: DomainError = { code: "ACP_PROCESS_EXITED" };
+    return this.emitTutorTurnFailed(workspaceId, { code: "ACP_PROCESS_EXITED" });
+  }
+
+  emitTutorTurnFailed(workspaceId: number, error: DomainError) {
     return this.updateTutorSession(workspaceId, (session) => {
       const messages = session.messages.map((msg, idx) =>
         idx === session.messages.length - 1 && msg.role === "assistant"

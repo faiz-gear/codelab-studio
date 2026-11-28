@@ -2,7 +2,7 @@
 
 Use a trusted scratch Workspace. Use an installed, authenticated ACP-compatible agent to check a live response. For a local protocol check, copy the `FAKE_ACP_AGENT_JS` fixture from the Core seam test to a scratch `.cjs` file and set the ACP launch command to `node /absolute/path/to/fixture.cjs`. Keep prompts and selections within the disposable course material. [ACP fixture](../../../../crates/codelab-core/tests/tutor_seam.rs)
 
-If Claude Code rejects the preset's `--acp` flag, use the Claude Agent ACP adapter with an existing Claude Code login. Check the login with `claude auth status` and install the verified adapter version in the run's scratch directory. [Claude Agent ACP](https://github.com/agentclientprotocol/claude-agent-acp)
+The built-in **Claude Code** preset launches `claude-agent-acp` (`@agentclientprotocol/claude-agent-acp`) and **Codex CLI** launches `codex-acp` (`@agentclientprotocol/codex-acp`), reusing each provider's local CLI login (`claude auth login` / `codex login`). Check logins with `claude auth status` or `codex login status`. If an adapter is not installed globally, first verify the missing-adapter guidance in Settings, then install the adapter into the run's scratch directory for a live check. [Claude Agent ACP](https://github.com/agentclientprotocol/claude-agent-acp) · [Codex ACP](https://github.com/agentclientprotocol/codex-acp#authentication)
 
 ```sh
 npm install --prefix "$VERIFY_TMP/adapter" --cache "$VERIFY_TMP/npm-cache" \
@@ -10,7 +10,7 @@ npm install --prefix "$VERIFY_TMP/adapter" --cache "$VERIFY_TMP/npm-cache" \
 printf '%s\n' "$VERIFY_TMP/adapter/node_modules/.bin/claude-agent-acp"
 ```
 
-Paste the printed path into **启动命令**. Capture the successful handshake and the completed response. The handshake checks the protocol connection. Sending a prompt also checks the agent's session and provider authentication.
+Paste the printed path into **启动命令** (or add its `.bin` directory to `PATH` before launch to verify the default preset command directly). Capture the successful handshake and the completed response. The handshake checks the protocol connection (and `auth/status` when advertised by the adapter). Sending a prompt also checks the agent's session and provider authentication.
 
 1. Open **设置** → **ACP 助教**. Select the local agent preset or enter its launch command. Click **测试 ACP 握手** and capture the returned agent name or the exact prerequisite error. Check the default **引导只读** permission policy.
 2. In Go Exercise 1, open the manual and `task-api/main.go`. Use output from the [daemon run](command-execution.md) for the terminal region. Select at least two characters in the manual, Monaco, and terminal in turn. Capture each selection pill, choose **提问**, and confirm the quote names the correct region. Close Tutor between selections.
